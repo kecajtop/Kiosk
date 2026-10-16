@@ -41,6 +41,20 @@ KIOSK_BUBBLE = "/usr/local/bin/kiosk-bubble"
 LOGO = "/usr/share/kiosk-setup/logo-kiosk.png"
 FONT_DIR = "/usr/share/kiosk-setup/fonts"     # IBM Plex Mono (licencja OFL) dla panelu WWW
 MPD_SOCKET = "/run/kiosk-mpd/socket"
+# Wersja light (pakiet kiosk-setup-light): ekran (Chromium, kamery RTSP), panel, MQTT i muzyka —
+# bez mowy (TTS), interkomu i asystenta głosowego.
+LIGHT = os.path.exists("/usr/share/kiosk-setup/light")
+PKG_NAMES = ("kiosk-setup", "kiosk-setup-light")
+
+
+def pkg_version():
+    """Wersja zainstalowanego pakietu (pełnego albo light)."""
+    for name in PKG_NAMES:
+        r = subprocess.run(["dpkg-query", "-W", "-f=${db:Status-Status} ${Version}", name], capture_output=True, text=True)
+        st = (r.stdout or "").split()
+        if len(st) == 2 and st[0] == "installed":
+            return st[1] + (" (light)" if name.endswith("light") else "")
+    return ""
 TTS_DIR = "/var/lib/kiosk-mpd/tts"
 PORT = int(os.environ.get("KIOSK_API_PORT", "8088"))
 
@@ -783,6 +797,8 @@ def synth(text, voice, speed, path):
 
 
 def say(text, voice=None, speed=150, chime=None):
+    if LIGHT:
+        return "Pominięto: wersja light nie ma mowy (tekst: %s)" % str(text or "").strip()[:80]
     text = str(text or "").strip()
     if not text:
         raise ValueError("podaj tekst do przeczytania")
@@ -2470,6 +2486,9 @@ class MqttBridge:
         for comp, oid, conf in ents:
             topic = "homeassistant/%s/%s/%s/config" % (comp, did, oid)
             self.disc_topics.add(topic)
+            if LIGHT and oid in ("say", "voice", "say_time", "say_time_date", "say_weather"):
+                c.publish(topic, "", qos=1, retain=True)  # wersja light: bez mowy
+                continue
             if comp == "camera" and not self.cfg.get("screenshot"):
                 c.publish(topic, "", qos=1, retain=True)  # zrzuty wyłączone = bez kamery
                 continue
@@ -3167,7 +3186,7 @@ def make_backup():
     import tarfile
     buf = io.BytesIO()
     fw = bool(qrun(["iptables", "-S", "OUTPUT"]).count("--match-set kiosk_"))
-    manifest = {"version": qrun(["dpkg-query", "-W", "-f=${Version}", "kiosk-setup"]), "host": os.uname().nodename,
+    manifest = {"version": pkg_version(), "host": os.uname().nodename,
                 "date": time.strftime("%Y-%m-%d %H:%M:%S"), "firewall": fw}
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
         data = json.dumps(manifest, ensure_ascii=False, indent=1).encode()
@@ -3248,7 +3267,7 @@ def read_updates():
         if len(out) == 2:
             vals = {"UPDATE_URL": out[0], "UPDATE_AUTO": out[1] or "no"}
     return {"url": vals["UPDATE_URL"], "auto": vals["UPDATE_AUTO"] == "yes",
-            "version": qrun(["dpkg-query", "-W", "-f=${Version}", "kiosk-setup"]),
+            "version": pkg_version(),
             "running": bool(qrun(["systemctl", "list-units", "--no-legend", "--state=active", "kiosk-update-*"]).strip()),
             "progress": read_json("/run/kiosk-update.json", {}),
             "log": tail_file(UPDATE_LOG, 40) if os.path.exists(UPDATE_LOG) else ""}
@@ -4010,6 +4029,8 @@ def debug_diag():
     # Usługi
     for unit, label in (("kiosk-api", "Panel i API"), ("kiosk-mpd", "Dźwięk MPD"), ("kiosk-dlna", "Odtwarzacz DLNA"),
                         ("x11vnc", "VNC"), ("lightdm", "LightDM"), ("kiosk-satellite", "Asystent głosowy")):
+        if LIGHT and unit == "kiosk-satellite":
+            continue
         st = qrun(["systemctl", "is-active", unit]).strip() or "nieznany"
         if st == "inactive" and unit in ("lightdm", "kiosk-dlna", "kiosk-satellite"):
             add("Usługi", label, None, "nie działa (" + {"lightdm": "tryb bez pulpitu", "kiosk-dlna": "brak gmediarender?"}.get(unit, "nie zainstalowany") + ")")
@@ -4078,7 +4099,7 @@ def debug_diag():
         add("System", "Temperatura", max(temps) < 85, "%.0f °C" % max(temps))
     tz = qrun(["timedatectl", "show", "-p", "Timezone", "--value"]).strip()
     add("System", "Czas", True, time.strftime("%Y-%m-%d %H:%M:%S") + " (" + (tz or "?") + ")")
-    ver = qrun(["dpkg-query", "-W", "-f=${Version}", "kiosk-setup"])
+    ver = pkg_version()
     add("System", "Wersja kiosk-setup", True, ver or "?")
     return out
 
@@ -4184,7 +4205,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed("GET", path):
             return self.send(403, {"error": "brak uprawnień (konto domownika)"})
         if path == "/api/me":
-            return self.send(200, {"role": self.role})
+            return self.send(200, {"role": self.role, "light": LIGHT})
         m = re.match(r"^/font/plex-mono-(400|500|600)\.ttf$", path)
         if m:
             name = {"400": "Regular", "500": "Medium", "600": "SemiBold"}[m.group(1)]
@@ -5889,7 +5910,7 @@ function watchUpdate(){ clearInterval(UPT); const t0=Date.now(); let seen=false;
   UPT=setInterval(async()=>{ try{ const r=await loadUpdate(); if(r.running) seen=true; else if(seen||Date.now()-t0>20000){ clearInterval(UPT); toast('Aktualizacja zakończona: '+r.version,'okm'); setTimeout(()=>location.reload(),3000); } }catch(e){ /* panel restartuje się podczas instalacji */ } }, 3000); }
 $('updeb').onchange=()=>{ const f=$('updeb').files[0]; $('updeb').value=''; if(!f) return; if(!confirm('Zainstalować '+f.name+'? Ustawienia zostają, ekran kiosku może na chwilę się odświeżyć.')) return; upload('api/update/upload', f).then(watchUpdate).catch(()=>{}); };
 $('upf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/updates',{url:$('upurl').value.trim(), auto:$('upauto').checked})).then(()=>loadUpdate().catch(()=>{})); });
-$('upgh').onclick=()=>{ $('upurl').value='https://raw.githubusercontent.com/kecajtop/Kiosk/main/update.json'; toast('Adres wpisany — kliknij Zapisz','okm'); };
+$('upgh').onclick=()=>{ $('upurl').value='https://raw.githubusercontent.com/kecajtop/Kiosk/main/update'+(LIGHT?'-light':'')+'.json'; toast('Adres wpisany — kliknij Zapisz','okm'); };
 $('uplatest').onclick=()=>act(()=>post('api/update/latest'));
 $('upcheck').onclick=()=>act(()=>post('api/update/check')).then(watchUpdate);
 // ---- zrzut ekranu
@@ -6022,7 +6043,19 @@ $('pesf').addEventListener('submit', async e=>{ e.preventDefault(); try{ const r
 // Nawigacja: grupy (menu boczne) i podstrony w grupie. Adres strony: #id-podstrony.
 const USER_PANES=['start','widoki','dymek','powiedz','glos','radio','interkom'];
 const PANES=[...document.querySelectorAll('.pane')];
-function paneOk(p){ return ME==='admin' || USER_PANES.includes(p.id); }
+let LIGHT=false; const SPEECH_PANES=['powiedz','interkom','asystent'];
+function paneOk(p){ if(LIGHT && SPEECH_PANES.includes(p.id)) return false; return ME==='admin' || USER_PANES.includes(p.id); }
+function applyLight(){ // wersja light: bez mowy — chowa przyciski i pola związane z mową
+  if(!LIGHT) return;
+  const hide=e=>{ if(e) e.hidden=true; };
+  hide($('qsayf')); hide(document.querySelector('[data-proxy="saytime"]'));
+  const v=$('voice'); if(v) hide(v.closest('.field')||v.parentElement); hide($('voicehint'));
+  const b=$('bsay'); if(b) hide(b.closest('label')||b);
+  const ch=$('chime'); if(ch) hide(ch.closest('.field'));        // gong i przyciszanie — tylko dla komunikatów głosowych
+  const gl=document.querySelector('.subnav a[data-pane="glos"]'); if(gl) gl.textContent='Głośność';
+  const gh=$('h-glos'); if(gh) gh.textContent='Głośność';
+  const gp=gh && gh.parentElement.querySelector('.lead'); if(gp) gp.textContent='Głośność muzyki i radia na kiosku.';
+}
 function applyRole(){
   const adm=ME==='admin';
   document.querySelectorAll('.adm').forEach(e=>{ e.hidden=!adm; });
@@ -6060,7 +6093,7 @@ document.querySelectorAll('.subnav').forEach(nav=>nav.addEventListener('keydown'
   const t=tabs[(i+d+tabs.length)%tabs.length]; if(t) showTab(t.dataset.pane, true);
 }));
 window.addEventListener('hashchange', ()=>showTab(location.hash.slice(1)));
-api('api/me').then(r=>{ ME=r.role; applyRole(); showTab(location.hash.slice(1)||'start'); }).catch(()=>{});
+api('api/me').then(r=>{ ME=r.role; LIGHT=!!r.light; applyRole(); applyLight(); showTab(location.hash.slice(1)||'start'); }).catch(()=>{});
 applyRole(); showTab(location.hash.slice(1)||'start');
 
 
@@ -6231,7 +6264,7 @@ def main():
     ANNOUNCER = Announcer()
     AUTO = Automation()
     MOTION = Motion()
-    PKG_VERSION = qrun(["dpkg-query", "-W", "-f=${Version}", "kiosk-setup"])
+    PKG_VERSION = pkg_version()
     try:
         with open(OVERLAY_CONF) as f:
             has_icons = "KIOSK_NOWPLAYING=" in f.read()

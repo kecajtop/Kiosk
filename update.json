@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.4",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.4_amd64.deb",
-  "sha256": "5e948c3433bdfe094ac56f5d280a91cdc52dbc95d7c0f8b33fce894ce06c7c27",
-  "size": 22943686,
+  "version": "1:1.0.5",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.5_amd64.deb",
+  "sha256": "12cefed51a45c89d7dd2175a2ff46c11947a4a3cc62c06cfdd1d6bd7a637d355",
+  "size": 22945218,
   "date": "2026-10-16",
-  "notes": "Większy słownik mimiki oczu (ok. 350 słów i fraz)."
+  "notes": "Wersja light jako osobny pakiet; aktualizacje osobno dla każdej edycji."
 }

@@ -17,7 +17,15 @@ mkdir -p "$DIR"
 exec > >(tee -a "$LOG") 2>&1
 echo "===== $(date '+%Y-%m-%d %H:%M:%S') kiosk-update ${1:-} ====="
 
-installed() { dpkg-query -W -f='${Version}' kiosk-setup 2>/dev/null; }
+# Edycja: pełna (kiosk-setup) albo light (kiosk-setup-light) — ta, która jest zainstalowana.
+edition() {
+    local p
+    for p in kiosk-setup kiosk-setup-light; do
+        [ "$(dpkg-query -W -f='${db:Status-Status}' "$p" 2>/dev/null)" = installed ] && { echo "$p"; return; }
+    done
+    echo kiosk-setup
+}
+installed() { dpkg-query -W -f='${Version}' "$(edition)" 2>/dev/null; }
 
 # Postęp na ekranie kiosku (kiosk-status czyta /run/kiosk-update.json).
 PROG=/run/kiosk-update.json
@@ -54,7 +62,13 @@ install_deb() {
     local deb=$1 pkg ver cur
     pkg=$(dpkg-deb -f "$deb" Package 2>/dev/null)
     ver=$(dpkg-deb -f "$deb" Version 2>/dev/null)
-    [ "$pkg" = kiosk-setup ] || { echo "BŁĄD: $deb to nie jest pakiet kiosk-setup"; return 1; }
+    case "$pkg" in kiosk-setup|kiosk-setup-light) ;; *) echo "BŁĄD: $deb to nie jest pakiet kiosk-setup"; return 1 ;; esac
+    if [ "${2:-}" = only-newer ] && [ "$pkg" != "$(edition)" ]; then
+        # Automatycznie nie zmieniamy edycji (pełna <-> light) — tylko ręcznie, z pliku.
+        echo "BŁĄD: pakiet $pkg to inna edycja niż zainstalowana ($(edition)) — zmień adres aktualizacji"
+        progress error 0 "Adres aktualizacji wskazuje inną edycję ($pkg)"
+        return 1
+    fi
     cur=$(installed)
     echo "Zainstalowana: ${cur:-brak}, w pliku: $ver"
     if [ "${2:-}" = only-newer ] && [ -n "$cur" ] && ! dpkg --compare-versions "$ver" gt "$cur"; then
@@ -102,9 +116,9 @@ resolve() {
     local out
     REL_VER=""; REL_URL=""; REL_SHA=""; REL_NOTES=""
     [ -n "$UPDATE_URL" ] || { echo "Brak adresu aktualizacji (panel WWW → System)." >&2; return 1; }
-    out=$(python3 - "$UPDATE_URL" <<'EOF'
+    out=$(python3 - "$UPDATE_URL" "$(edition)" <<'EOF'
 import json, re, sys, urllib.request
-url = sys.argv[1]
+url, edition = sys.argv[1], sys.argv[2]
 def emit(ver, deb, sha="", notes=""):
     print("\x1f".join([ver or "", deb, sha or "", " ".join(str(notes or "").split())[:300]]))
     sys.exit(0)
@@ -123,7 +137,7 @@ except Exception:
     emit("", url)          # to nie JSON — adres prowadzi wprost do pakietu
 def from_release(rel):
     for a in rel.get("assets", []):
-        m = re.match(r"^kiosk-setup_(.+)_amd64\.deb$", a.get("name", ""))
+        m = re.match(r"^%s_(.+)_amd64\.deb$" % re.escape(edition), a.get("name", ""))
         if m:
             d = a.get("digest") or ""
             emit(m.group(1), a["browser_download_url"], d[7:] if d.startswith("sha256:") else "",
@@ -133,11 +147,14 @@ if isinstance(j, list):
     for rel in j:
         if not rel.get("draft") and not rel.get("prerelease"):
             from_release(rel)
-    sys.exit("brak wydania z plikiem kiosk-setup_*_amd64.deb")
+    sys.exit("brak wydania z plikiem %s_*_amd64.deb" % edition)
 if "assets" in j:
     from_release(j)
-    sys.exit("w wydaniu %s nie ma pliku kiosk-setup_*_amd64.deb" % j.get("tag_name", "?"))
+    sys.exit("w wydaniu %s nie ma pliku %s_*_amd64.deb" % (j.get("tag_name", "?"), edition))
 if j.get("url"):
+    if j.get("package") and j["package"] != edition:
+        sys.exit("plik %s opisuje pakiet %s, a zainstalowany jest %s (adres update%s.json)"
+                 % (url, j["package"], edition, "-light" if edition.endswith("light") else ""))
     emit(str(j.get("version", "")), j["url"], j.get("sha256", ""), j.get("notes", ""))
 sys.exit("nieznany format JSON (oczekiwane: version, url, sha256)")
 EOF

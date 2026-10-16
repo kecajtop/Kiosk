@@ -1,0 +1,9 @@
+{
+  "package": "kiosk-setup-light",
+  "version": "1:1.0.5",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.5_amd64.deb",
+  "sha256": "4d168c22dab49676eab36964bd4383d1e9a2c91fa32d0fd97b6e66146b6105b2",
+  "size": 326162,
+  "date": "2026-10-16",
+  "notes": "Wersja light: ekran, Chromium, kamery RTSP, panel WWW, MQTT/HA i muzyka, bez mowy."
+}

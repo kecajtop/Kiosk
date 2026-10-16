@@ -871,8 +871,25 @@ w menu bocznym HA: stan każdego kiosku, pełny panel kiosku bez osobnego logowa
 akcje na wszystkich naraz (powiedz, dymek, widok, ekrany, odświeżenie, aktualizacja
 z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 
+## Wersja light (kiosk-setup-light)
+
+Lżejsza edycja tego samego kiosku dla słabszych komputerów: ekran (strona WWW w Chromium,
+kamery RTSP, kamera USB), wszystkie zegary i widoki, panel WWW, MQTT i Home Assistant,
+automatyka ekranu, aktualizacje oraz muzyka (MPD, radio, odtwarzacz DLNA, głośność, „Teraz gra”).
+Nie ma mowy: syntezy głosu (Piper, espeak), mówiącego zegara, czytania komunikatów, interkomu
+i asystenta głosowego. Pakiet ma ok. 0,3 MB zamiast ok. 22 MB i nie instaluje espeak-ng.
+
+- Instalacja: `sudo apt install ./kiosk-setup-light_X_amd64.deb` — zastępuje pełny pakiet
+  (i odwrotnie), ustawienia zostają.
+- Aktualizacje z GitHuba: `https://raw.githubusercontent.com/kecajtop/Kiosk/main/update-light.json`
+  (przycisk „Użyj GitHub” w wersji light wpisuje ten adres sam). Kiosk nie zmieni edycji
+  automatycznie — tylko przy ręcznej instalacji pliku.
+- Budowanie: `./build.sh --light`.
+
 ## Historia wersji
 
+- **1.0.5** (16.10.2026) — wersja light (`kiosk-setup-light`): ekran, Chromium, kamery RTSP,
+  panel WWW, MQTT/HA i muzyka, bez mowy; osobny plik aktualizacji `update-light.json`.
 - **1.0.4** (16.10.2026) — większy słownik mimiki oczu (ok. 350 słów i fraz po polsku i angielsku),
   dopasowanie od początku słowa (np. „stopni” nie wywołuje złości), wygrywa nastrój z największą
   liczbą trafień.

@@ -1,10 +1,17 @@
 # Zmiany
 
+## 1.0.5 (2026-10-16)
+- **Wersja light** — pakiet `kiosk-setup-light` (ok. 0,3 MB): ekran (Chromium, kamery RTSP, USB), wszystkie
+  zegary i widoki, panel WWW, MQTT/Home Assistant, automatyka ekranu, aktualizacje i muzyka (MPD, radio, DLNA).
+  Bez mowy (Piper, espeak), mówiącego zegara, interkomu i asystenta głosowego. Zastępuje pełny pakiet i odwrotnie.
+- Aktualizacje z GitHuba osobno dla każdej edycji: `update.json` (pełna) i `update-light.json` (light);
+  kiosk nie zmienia edycji automatycznie.
+- Gotowe pakiety: `releases/kiosk-setup_1.0.5_amd64.deb`, `releases/kiosk-setup-light_1.0.5_amd64.deb`.
+
 ## 1.0.4 (2026-10-16)
 - **Mimika oczu:** słownik ok. 350 słów i fraz po polsku i angielsku (powitania, posiłki, pogoda, alarmy,
   goście i przesyłki, przypomnienia, pora snu, upomnienia). Dopasowanie od początku słowa, wygrywa nastrój
   z największą liczbą trafień.
-- Gotowy pakiet: `releases/kiosk-setup_1.0.4_amd64.deb`.
 
 ## 1.0.3 (2026-10-16)
 - **Nowe wyglądy zegara:** Oczy robota z zegarem, Same oczy robota, Zegar słowny (PL), Zegar słowny (EN),

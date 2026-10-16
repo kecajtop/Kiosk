@@ -1,10 +1,12 @@
 Package: kiosk-setup
-Version: 1:1.0.4
+Version: 1:1.0.5
 Section: admin
 Priority: optional
 Architecture: amd64
 Recommends: gmediarender, ddcutil, python3-venv
 Suggests: overlayroot
+Conflicts: kiosk-setup-light
+Replaces: kiosk-setup-light
 Depends: xserver-xorg, xinit, x11-xserver-utils, chromium-browser, mpv, feh, plymouth, plymouth-themes, imagemagick, ipset, iptables-persistent, dnsutils, openssh-server, x11vnc, python3, python3-paho-mqtt, python3-tk, mpd, mpc, espeak-ng, ffmpeg, alsa-utils, fonts-dejavu-core, debconf (>= 0.5)
 Maintainer: Kiosk Admin <admin@localhost>
 Description: Konfiguracja Ubuntu Server jako kiosku IoT (X + Chromium + Plymouth + firewall + SSH + VNC)
