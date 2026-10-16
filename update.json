@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.2",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.2_amd64.deb",
-  "sha256": "deb8bf92771448f4453725470946276522b39817996637f799dd72507ac22b0f",
-  "size": 22932008,
+  "version": "1:1.0.3",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.3_amd64.deb",
+  "sha256": "1426659b531d979df49e9d441ce819274c27c74bebc79a9b3a45cbfb3edb9f93",
+  "size": 22942042,
   "date": "2026-10-16",
-  "notes": "Nowe wyglądy zegara: Oczy z zegarem i Same oczy."
+  "notes": "Nowe zegary: oczy robota, zegar słowny PL/EN, zegar radiowy, kod czasu DCF77, LED z pierścieniem, minimalistyczny, woltomierze kwadratowe; oczy reagują na mowę."
 }

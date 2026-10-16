@@ -10,7 +10,12 @@ analog (wskazówki), volt (woltomierze), seg7 (wyświetlacz 7-segmentowy),
 matrix (matryca LED z kropek), lcd1602 / lcd2004 (wyświetlacz znakowy LCD z dużymi
 cyframi; podświetlenie lcd_color: green, blue, amber) oraz animowane: snake (wąż), platform (platformówka
 z robotem), c64 (ekran 8-bitowego komputera), bsod (niebieski ekran), eyes (oczy z zegarem)
-i eyes_only (same oczy) — oczy rozglądają się i mrugają.
+i eyes_only (same oczy) — oczy rozglądają się i mrugają; robot i robot_only — świecące
+oczy robota, które zmieniają wyraz (radość, smutek, złość, senność, zdziwienie). Gdy kiosk mówi,
+oczy patrzą na rozmówcę, pulsują w rytm głosu i przybierają wyraz pasujący do treści.
+words_pl / words_en (zegar słowny), dcf (zegar radiowy LCD), dcf77 (kod czasu DCF77 na pierścieniu
+sekund), ledring (cyfry LED z pierścieniem 60 diod), minimal (minimalistyczna tarcza), voltsq
+(kwadratowe woltomierze ze skalą 90°).
 Zmiana działa w ciągu kilku sekund, bez przeładowania.
 
 Godzina HH:MM, data po polsku i (jeśli włączona w kiosk-api) pogoda. Grafikę rysuje ImageMagick (czcionka
@@ -36,7 +41,8 @@ SIZES = {"s": 0.050, "m": 0.075, "l": 0.110}
 WEATHER_CACHE = "/run/kiosk-weather.json"  # zapisuje kiosk-api co 10 min
 STYLE_FILE = "/etc/kiosk-setup/clock.json"
 STYLES = ("classic", "flip", "analog", "volt", "seg7", "matrix", "snake", "platform", "c64", "bsod", "lcd1602", "lcd2004",
-          "eyes", "eyes_only")
+          "eyes", "eyes_only", "robot", "robot_only", "words_pl", "words_en", "dcf", "ledring", "dcf77",
+          "minimal", "voltsq")
 ICON_COLORS = {"sunny": "#F2A900", "partlycloudy": "#F2A900", "lightning": "#F2A900", "lightning-rainy": "#F2A900",
                "rainy": "#4C9AFF", "pouring": "#4C9AFF", "hail": "#4C9AFF", "clear-night": "#C9D1D9",
                "snowy": "#E6F0FF", "snowy-rainy": "#E6F0FF"}
@@ -84,7 +90,7 @@ def _png(cmd):
 SEG_ON, SEG_OFF = "#FF5A30", "#170E0D"
 
 
-def seg7_shapes(t, H, colon_on=True):
+def seg7_shapes(t, H, colon_on=True, on=None, off=None, seconds=True, slant=0.10):
     """Kształty wyświetlacza 7-segmentowego: [(punkty, kolor)], szerokość, wysokość.
     HH:MM wysokości H, sekundy o połowę mniejsze, pochylenie jak w prawdziwych wyświetlaczach."""
     shapes = []
@@ -102,7 +108,7 @@ def seg7_shapes(t, H, colon_on=True):
         segs = {"a": hs(x, x + w, y + h2), "g": hs(x, x + w, ym), "d": hs(x, x + w, y1 - h2),
                 "f": vs(x + h2, y, ym), "b": vs(x + w - h2, y, ym), "e": vs(x + h2, ym, y1), "c": vs(x + w - h2, ym, y1)}
         for k in "abcdefg":
-            shapes.append((segs[k], SEG_ON if k in SEG[ch] else SEG_OFF))
+            shapes.append((segs[k], (on or SEG_ON) if k in SEG[ch] else (off or SEG_OFF)))
         return w
 
     x, y, gap = pad, pad, H * 0.16
@@ -112,15 +118,16 @@ def seg7_shapes(t, H, colon_on=True):
     cx = x + H * 0.04
     for yy in (y + H * 0.32, y + H * 0.68):
         shapes.append(([(cx - r, yy - r), (cx + r, yy - r), (cx + r, yy + r), (cx - r, yy + r)],
-                       SEG_ON if colon_on else SEG_OFF))
+                       (on or SEG_ON) if colon_on else (off or SEG_OFF)))
     x = cx + r + gap
     for ch in time.strftime("%M", t):
         x += digit(ch, x, y, H) + gap
-    hs_ = H * 0.5
-    x += H * 0.06
-    for ch in time.strftime("%S", t):
-        x += digit(ch, x, y + H - hs_, hs_) + gap * 0.5
-    k = 0.10
+    if seconds:
+        hs_ = H * 0.5
+        x += H * 0.06
+        for ch in time.strftime("%S", t):
+            x += digit(ch, x, y + H - hs_, hs_) + gap * 0.5
+    k = slant
     shapes = [([(px + (y + H - py) * k, py) for px, py in pts], c) for pts, c in shapes]
     return shapes, x + pad + H * k, H + 2 * pad
 
@@ -289,12 +296,16 @@ DRAW = {"flip": draw_flip, "analog": draw_analog, "volt": draw_volt, "seg7": dra
 # snake (wąż na ekranie LCD), platform (platformówka z robotem), c64 (ekran 8-bitowego
 # komputera), bsod (niebieski ekran), eyes / eyes_only (oczy). Rysowane w Tk co klatkę; podgląd w panelu: ImageMagick.
 
-ANIM = ("snake", "platform", "c64", "bsod", "seg7", "volt", "analog", "lcd1602", "lcd2004", "eyes", "eyes_only")
+ANIM = ("snake", "platform", "c64", "bsod", "seg7", "volt", "analog", "lcd1602", "lcd2004", "eyes", "eyes_only", "robot", "robot_only",
+        "words_pl", "words_en", "dcf", "ledring", "dcf77", "minimal", "voltsq")
 MONO_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 if not os.path.exists(MONO_BOLD):
     MONO_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 ASPECT = {"snake": (33, 15), "platform": (112, 64), "c64": (40, 25), "bsod": (16, 10), "seg7": (16, 6), "volt": (16, 7), "analog": (10, 9), "lcd1602": (105, 27), "lcd2004": (125, 41),
-          "eyes": (16, 11), "eyes_only": (16, 8)}
+          "eyes": (16, 11), "eyes_only": (16, 8),
+          "robot": (16, 10), "robot_only": (16, 8), "words_pl": (21, 15), "words_en": (11, 11),
+          "dcf": (16, 9), "ledring": (1, 1), "dcf77": (4, 3),
+          "minimal": (1, 1), "voltsq": (16, 7)}
 
 # Robot (własna postać) 10×11 pikseli: . = przezroczysty.
 HERO = ["....R.....", "....R.....", "..WWWWWW..", ".WWWWWWWW.", ".WBWWWWBW.", ".WWWWWWWW.",
@@ -487,6 +498,38 @@ def bsod_texts(t):
             (time.strftime("%H:%M", t), 0.19, 1.0), (date_text(t), 0.052, 0.4)]
 
 
+# --- mowa: kiosk-api zapisuje, kiedy kiosk mówi (czas, krzywa głośności, nastrój tekstu)
+SPEAK_FILE = "/run/kiosk-speaking.json"
+
+
+class Speech:
+    def __init__(self):
+        self.data, self.mtime, self.checked = {}, None, 0.0
+
+    def state(self, now):
+        """(mówi?, głośność 0..1, nastrój) — plik sprawdzany co 0,2 s."""
+        if now - self.checked > 0.2:
+            self.checked = now
+            try:
+                m = os.path.getmtime(SPEAK_FILE)
+                if m != self.mtime:
+                    self.mtime = m
+                    with open(SPEAK_FILE) as f:
+                        self.data = json.load(f)
+            except (OSError, ValueError):
+                self.data = {}
+        d = self.data
+        if not d.get("active"):
+            return False, 0.0, None
+        start, end = d.get("start", 0), d.get("end", 0)
+        if not (start - 0.2 <= now <= end + 0.3):
+            return False, 0.0, d.get("mood") if now <= end + 2.0 else None
+        env = d.get("env") or []
+        i = int((now - start) / (d.get("step") or 0.06))
+        level = env[i] if 0 <= i < len(env) else 0.0
+        return True, float(level), d.get("mood") or "neutral"
+
+
 # --- oczy: para oczu, które rozglądają się i mrugają (eyes — z godziną pod spodem, eyes_only — same oczy)
 EYE = {"white": "#F2EFE6", "iris": "#2FA3C4", "iris2": "#1B6F87", "pupil": "#0A0D10", "lid": "#1A2129",
        "line": "#05070A", "shine": "#FFFFFF"}
@@ -545,10 +588,23 @@ class Eyes:
         self.double = False
         self.minute = time.localtime().tm_min
         self.dil = 1.0
+        self.speech = Speech()
+        self.base = 0.08
 
     def update(self, now):
         r = self.r
         t = time.localtime(now)
+        talking, level, mood = self.speech.state(now)
+        # Podczas mowy: patrzą na rozmówcę (środek), powieki wg nastroju, źrenice w rytm głosu.
+        base = {"happy": 0.22, "sad": 0.36, "sleepy": 0.5, "angry": 0.3, "suspicious": 0.42,
+                "surprised": 0.0}.get(mood, 0.08) if mood else 0.08
+        self.base += (base - self.base) * 0.15
+        if talking:
+            if now >= self.next_look:
+                self.tx, self.ty = r.uniform(-0.12, 0.12), r.uniform(-0.1, 0.08)
+                self.next_look = now + r.uniform(0.4, 1.2)
+            if self.blink_t0 is None and self.blink_at - now > 3.0:
+                self.blink_at = now + r.uniform(1.0, 3.0)
         if self.with_clock and t.tm_min != self.minute:
             self.minute = t.tm_min
             self.tx, self.ty = 0.0, 0.95          # zerknij na godzinę
@@ -563,14 +619,14 @@ class Eyes:
         k = 0.32                                    # szybki skok, potem spoczynek
         self.gx += (self.tx - self.gx) * k
         self.gy += (self.ty - self.gy) * k
-        self.dil = 1.0 + 0.10 * math.sin(now * 0.7)
+        self.dil = 1.0 + 0.10 * math.sin(now * 0.7) + (0.28 * level if talking else 0.0)
         if self.blink_t0 is None and now >= self.blink_at:
             self.blink_t0 = now
         if self.blink_t0 is not None:
             p = (now - self.blink_t0) / 0.22       # 0..1 zamykanie i otwieranie
             if p >= 1:
                 self.blink_t0 = None
-                self.lid = 0.08
+                self.lid = self.base
                 if not self.double and r.random() < 0.18:
                     self.double = True
                     self.blink_at = now + 0.12
@@ -578,7 +634,9 @@ class Eyes:
                     self.double = False
                     self.blink_at = now + r.uniform(2.5, 6.5)
             else:
-                self.lid = 0.08 + 0.92 * (1 - abs(1 - 2 * p))
+                self.lid = self.base + (1 - self.base) * (1 - abs(1 - 2 * p))
+        else:
+            self.lid = self.base
         return self.gx, self.gy, self.lid, self.dil
 
 
@@ -614,8 +672,581 @@ def preview_eyes(style, t, out, width=360):
     _png(["convert", "-size", "%dx%d" % (W, H), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
 
 
+
+# --- oczy robota: świecące zaokrąglone prostokąty z wyrazem twarzy (robot — z godziną, robot_only — same oczy)
+RBT = {"bg": "#000000", "eye": "#3FE6FF", "glow": "#0A4652", "ink": "#3FE6FF", "dim": "#1E7F90"}
+# Wyrazy: (obniżenie powieki przy zewnętrznym kącie, przy wewnętrznym, dolna powieka „uśmiech”, wysokość, szerokość)
+RBT_MOODS = {"neutral": (0.0, 0.0, 0.0, 1.0, 1.0), "happy": (0.0, 0.0, 0.48, 0.92, 1.05),
+             "sad": (0.42, 0.0, 0.0, 0.88, 1.0), "angry": (0.0, 0.48, 0.0, 0.92, 1.0),
+             "sleepy": (0.52, 0.52, 0.0, 1.0, 1.04), "surprised": (0.0, 0.0, 0.0, 1.28, 0.88),
+             "suspicious": (0.38, 0.38, 0.22, 1.0, 1.02)}
+
+
+def _rrect(x0, y0, x1, y1, r, seg=5):
+    """Wielokąt zaokrąglonego prostokąta (lista x, y)."""
+    r = max(0.0, min(r, (x1 - x0) / 2.0, (y1 - y0) / 2.0))
+    pts = []
+    for cx, cy, a0 in ((x1 - r, y0 + r, -90), (x1 - r, y1 - r, 0), (x0 + r, y1 - r, 90), (x0 + r, y0 + r, 180)):
+        for i in range(seg + 1):
+            a = math.radians(a0 + 90.0 * i / seg)
+            pts += [cx + r * math.cos(a), cy + r * math.sin(a)]
+    return pts
+
+
+def robot_geometry(style, W, H):
+    # Pole oczu mieści największy wyraz (zdziwienie, oko bliżej patrzącego, ruch w pionie),
+    # więc oczy nigdy nie nachodzą na godzinę.
+    area_h = H * (0.64 if style == "robot" else 0.94)
+    eh = (area_h - 2 * robot_dy(style, H)) / (1.28 * 1.16 * 1.12)
+    ew = min(W * 0.24, eh / 1.18)
+    eh = ew * 1.18
+    cy = (H * 0.03 + area_h / 2.0) if style == "robot" else H / 2.0
+    gap = ew * 0.55
+    return (W / 2.0 - gap / 2.0 - ew / 2.0, W / 2.0 + gap / 2.0 + ew / 2.0), cy, ew, eh
+
+
+def robot_dy(style, H):
+    return H * (0.035 if style == "robot" else 0.07)
+
+
+def robot_clock_y(H):
+    return H * 0.70
+
+
+def robot_parts(style, W, H, st):
+    """Kształty obu oczu: [(punkty, kolor)] — zawsze tyle samo elementów (Tk tylko przesuwa punkty)."""
+    cxs, cy, ew, eh = robot_geometry(style, W, H)
+    out_o, out_i, smile, hs, ws = st["mood"]
+    gx, gy, blink = st["gx"], st["gy"], st["blink"]
+    talk = st.get("talk", 0.0)
+    shapes = []
+    for side, cx0 in ((-1, cxs[0]), (1, cxs[1])):
+        persp = 1.0 + 0.09 * gx * side           # oko po stronie spojrzenia trochę większe
+        w = ew * ws * persp * (1 + 0.04 * talk)
+        h = eh * hs * persp * max(0.07, 1.0 - blink) * (1 + 0.12 * talk)   # pulsują w rytm głosu
+        cx = cx0 + gx * W * 0.07
+        cy1 = cy + gy * robot_dy(style, H)
+        x0, x1, y0, y1 = cx - w / 2, cx + w / 2, cy1 - h / 2, cy1 + h / 2
+        r = min(w, h) * 0.24
+        g = max(3.0, ew * 0.07)
+        shapes.append((_rrect(x0 - g, y0 - g, x1 + g, y1 + g, r + g), RBT["glow"]))
+        shapes.append((_rrect(x0, y0, x1, y1, r), RBT["eye"]))
+        # górna powieka: linia od kąta zewnętrznego do wewnętrznego (lewe oko: zewnętrzny = lewy)
+        left, right = (out_o, out_i) if side < 0 else (out_i, out_o)
+        m = g * 2 + 2
+        shapes.append(([x0 - m, y0 - m - h, x1 + m, y0 - m - h, x1 + m, y0 + right * h - (m if not right else 0),
+                        x0 - m, y0 + left * h - (m if not left else 0)], RBT["bg"]))
+        # dolna powieka „uśmiech”: łuk wypukły do góry — oczy jak ^ ^
+        pts = [x1 + m, y1 + m + h, x0 - m, y1 + m + h]
+        n = 12
+        for i in range(n + 1):
+            u = -1 + 2.0 * i / n
+            pts += [cx + u * (w / 2 + m), y1 + m - smile * h * (1 - u * u) * 1.05 - (m if smile else 0) * (1 - u * u)]
+        shapes.append((pts, RBT["bg"]))
+    return shapes
+
+
+class RobotEyes:
+    """Wyraz, spojrzenie i mruganie oczu robota."""
+
+    def __init__(self, with_clock):
+        import random
+        self.r = random.Random()
+        self.with_clock = with_clock
+        self.mood = list(RBT_MOODS["neutral"])
+        self.target = "neutral"
+        self.mood_until = time.time() + 4
+        self.gx = self.gy = self.tx = self.ty = 0.0
+        self.next_look = 0.0
+        self.blink = 0.0
+        self.blink_at = time.time() + 2.5
+        self.blink_t0 = None
+        self.minute = time.localtime().tm_min
+        self.speech = Speech()
+        self.talk = 0.0
+
+    def update(self, now):
+        r = self.r
+        t = time.localtime(now)
+        talking, level, mood = self.speech.state(now)
+        if mood:                                   # mówi albo przed chwilą skończył: wyraz z treści
+            self.target, self.mood_until = mood, now + 2.0
+        if talking:
+            if now >= self.next_look:
+                self.tx, self.ty = r.uniform(-0.15, 0.15), r.uniform(-0.12, 0.08)
+                self.next_look = now + r.uniform(0.4, 1.2)
+            if self.blink_t0 is None and self.blink_at - now > 3.0:
+                self.blink_at = now + r.uniform(1.0, 3.0)
+        self.talk += ((level if talking else 0.0) - self.talk) * 0.5
+        if self.with_clock and t.tm_min != self.minute and not talking:
+            self.minute = t.tm_min
+            self.target, self.mood_until = "happy", now + 3.0
+            self.tx, self.ty, self.next_look = 0.0, 0.8, now + 2.5
+        if now >= self.mood_until:
+            h = t.tm_hour
+            pool = ["neutral"] * 6 + ["happy"] * 3 + ["suspicious", "surprised", "sad", "angry"]
+            if h >= 22 or h < 6:
+                pool += ["sleepy"] * 6
+            self.target = r.choice(pool)
+            self.mood_until = now + (r.uniform(5, 12) if self.target == "neutral" else r.uniform(2.5, 5))
+        goal = RBT_MOODS[self.target]
+        self.mood = [a + (b - a) * 0.18 for a, b in zip(self.mood, goal)]
+        if now >= self.next_look:
+            if r.random() < 0.35:
+                self.tx, self.ty = 0.0, 0.0
+            else:
+                self.tx, self.ty = r.choice((-1, -0.6, 0.6, 1)), r.uniform(-0.7, 0.7)
+            self.next_look = now + r.uniform(0.8, 3.0)
+        self.gx += (self.tx - self.gx) * 0.25
+        self.gy += (self.ty - self.gy) * 0.25
+        if self.blink_t0 is None and now >= self.blink_at:
+            self.blink_t0 = now
+        if self.blink_t0 is not None:
+            p = (now - self.blink_t0) / 0.20
+            if p >= 1:
+                self.blink_t0, self.blink = None, 0.0
+                self.blink_at = now + (0.15 if r.random() < 0.15 else r.uniform(2.5, 6.0))
+            else:
+                self.blink = 1 - abs(1 - 2 * p)
+        return {"mood": self.mood, "gx": self.gx, "gy": self.gy, "blink": self.blink, "talk": self.talk}
+
+
+def preview_robot(style, t, out, width=360):
+    aw, ah = ASPECT[style]
+    W, H = width, int(width * ah / aw)
+    st = {"mood": RBT_MOODS["happy"] if style == "robot" else RBT_MOODS["neutral"], "gx": 0.3, "gy": 0.0, "blink": 0.0}
+    mvg = ["stroke none"]
+    for pts, col in robot_parts(style, W, H, st):
+        mvg += ["fill '%s'" % col, "polygon " + " ".join("%.1f,%.1f" % (pts[j], pts[j + 1]) for j in range(0, len(pts), 2))]
+    if style == "robot":
+        mvg += ["fill '%s'" % RBT["ink"], "font '%s'" % MONO_BOLD, "font-size %d" % int(H * 0.17), "gravity north",
+                "text 0,%d '%s'" % (int(robot_clock_y(H)), time.strftime("%H:%M", t)),
+                "fill '%s'" % RBT["dim"], "font '%s'" % FONT, "font-size %d" % int(H * 0.06),
+                "text 0,%d '%s'" % (int(robot_clock_y(H) + H * 0.19), date_text(t))]
+    _png(["convert", "-size", "%dx%d" % (W, H), "xc:" + RBT["bg"], "-draw", "\n".join(mvg), "PNG24:" + out])
+
+
+
+# ---------------------------------------------------------------- sceny: zegar słowny, DCF, pierścień LED
+# Każda scena to lista elementów o stałej liczbie: ("poly", punkty, kolor), ("oval", prostokąt, kolor),
+# ("text", (x, y), kolor, tekst, (rodzina, rozmiar, gruby), kotwica), ("line", punkty, kolor, grubość).
+# Tk tworzy elementy raz i co klatkę zmienia tylko ich punkty, kolor i tekst; podgląd rysuje ImageMagick.
+
+WORDS = {
+    "pl": {"cols": 21, "fill": "AĄBCDEĘFGHIJKLŁMNOÓPRSŚTUWYZŹŻ",
+           "order": ["JEST", "ZA", "DWADZIEŚCIA", "PIĘĆ", "DZIESIĘĆ", "KWADRANS", "PO", "WPÓŁ", "DO",
+                     "PIERWSZA", "PIERWSZEJ", "DRUGA", "DRUGIEJ", "TRZECIA", "TRZECIEJ", "CZWARTA", "CZWARTEJ",
+                     "PIĄTA", "PIĄTEJ", "SZÓSTA", "SZÓSTEJ", "SIÓDMA", "SIÓDMEJ", "ÓSMA", "ÓSMEJ",
+                     "DZIEWIĄTA", "DZIEWIĄTEJ", "DZIESIĄTA", "DZIESIĄTEJ", "JEDENASTA", "JEDENASTEJ",
+                     "DWUNASTA", "DWUNASTEJ"]},
+    "en": {"cols": 11, "fill": "ABCDEFGHIJKLMNOPRSTUVWXYZ",
+           "order": ["IT", "IS", "HALF", "TEN*", "QUARTER", "TWENTY", "FIVE*", "PAST", "TO",
+                     "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN",
+                     "TWELVE", "OCLOCK"]},
+}
+PL_NOM = ["DWUNASTA", "PIERWSZA", "DRUGA", "TRZECIA", "CZWARTA", "PIĄTA", "SZÓSTA", "SIÓDMA", "ÓSMA",
+          "DZIEWIĄTA", "DZIESIĄTA", "JEDENASTA"]
+PL_LOC = [w[:-1] + ("EJ" if w.endswith("A") else "") for w in PL_NOM]
+PL_LOC = [{"DWUNASTA": "DWUNASTEJ", "PIERWSZA": "PIERWSZEJ", "DRUGA": "DRUGIEJ", "TRZECIA": "TRZECIEJ",
+           "CZWARTA": "CZWARTEJ", "PIĄTA": "PIĄTEJ", "SZÓSTA": "SZÓSTEJ", "SIÓDMA": "SIÓDMEJ", "ÓSMA": "ÓSMEJ",
+           "DZIEWIĄTA": "DZIEWIĄTEJ", "DZIESIĄTA": "DZIESIĄTEJ", "JEDENASTA": "JEDENASTEJ"}[w] for w in PL_NOM]
+EN_HOURS = ["TWELVE", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN"]
+_WGRID = {}
+
+
+def word_grid(lang):
+    """Siatka liter: słowa w stałej kolejności, między nimi co najmniej jedna litera, reszta losowa (stała)."""
+    if lang in _WGRID:
+        return _WGRID[lang]
+    import random
+    cfg = WORDS[lang]
+    cols, rnd = cfg["cols"], random.Random(7)
+    hours = set(PL_NOM + PL_LOC) if lang == "pl" else set()
+    rows, pos, row, x = [], {}, [], 0
+    for key in [k for k in cfg["order"] if k not in hours]:
+        w = key.rstrip("*")
+        need = len(w) + (1 if row else 0)
+        if x + need > cols:
+            rows.append(row)
+            row, x = [], 0
+        if row:
+            row.append(None)
+            x += 1
+        pos[key] = (len(rows), x, len(w))
+        row.extend(w)
+        x += len(w)
+    rows.append(row)
+    if hours:
+        # Nazwy godzin (zawsze świeci tylko jedna) — upakowane ciasno: najdłuższe najpierw, do pierwszego wiersza z miejscem.
+        hrows = []
+        for w in sorted(hours, key=lambda w: (-len(w), w)):
+            for hr in hrows:
+                if len(hr) + 1 + len(w) <= cols:
+                    pos[w] = (len(rows) + hrows.index(hr), len(hr) + 1, len(w))
+                    hr.extend([None] + list(w))
+                    break
+            else:
+                pos[w] = (len(rows) + len(hrows), 0, len(w))
+                hrows.append(list(w))
+        rows += hrows
+    grid = []
+    for r in rows:
+        r = list(r) + [None] * (cols - len(r))
+        # luz w wierszu rozłożony losowo między słowami — wygląda jak prawdziwa tablica
+        grid.append([c if c else rnd.choice(cfg["fill"]) for c in r])
+    _WGRID[lang] = (grid, pos)
+    return grid, pos
+
+
+def word_keys(lang, t):
+    h, m = t.tm_hour % 12, t.tm_min // 5 * 5
+    if lang == "pl":
+        mins = {5: ["PIĘĆ"], 10: ["DZIESIĘĆ"], 15: ["KWADRANS"], 20: ["DWADZIEŚCIA"], 25: ["DWADZIEŚCIA", "PIĘĆ"]}
+        if m == 0:
+            return ["JEST", PL_NOM[h]]
+        if m < 30:
+            return ["JEST"] + mins[m] + ["PO", PL_LOC[h]]
+        if m == 30:
+            return ["JEST", "WPÓŁ", "DO", PL_LOC[(h + 1) % 12]]
+        return ["JEST", "ZA"] + mins[60 - m] + [PL_NOM[(h + 1) % 12]]
+    mins = {5: ["FIVE*"], 10: ["TEN*"], 15: ["QUARTER"], 20: ["TWENTY"], 25: ["TWENTY", "FIVE*"], 30: ["HALF"]}
+    if m == 0:
+        return ["IT", "IS", EN_HOURS[h], "OCLOCK"]
+    if m <= 30:
+        return ["IT", "IS"] + mins[m] + ["PAST", EN_HOURS[h]]
+    return ["IT", "IS"] + mins[60 - m] + ["TO", EN_HOURS[(h + 1) % 12]]
+
+
+def scene_words(style, W, H, t):
+    lang = "pl" if style == "words_pl" else "en"
+    grid, pos = word_grid(lang)
+    rows, cols = len(grid), len(grid[0])
+    cell = min(W * 0.92 / cols, H * 0.86 / rows)
+    x0, y0 = (W - cell * cols) / 2.0, (H - cell * rows) / 2.0
+    lit = set()
+    for k in word_keys(lang, t):
+        r, c, n = pos[k]
+        lit.update((r, c + i) for i in range(n))
+    font = ("DejaVu Sans Mono", max(6, int(cell * 0.62)), True)
+    items = []
+    for r in range(rows):
+        for c in range(cols):
+            on = (r, c) in lit
+            items.append(("text", (x0 + (c + 0.5) * cell, y0 + (r + 0.5) * cell), "#FFF1D6" if on else "#262A30",
+                          grid[r][c], font, "center"))
+    extra = t.tm_min % 5
+    d = cell * 0.16
+    for i, (cx, cy) in enumerate(((x0 - cell * 0.25, y0 - cell * 0.25), (x0 + cell * cols + cell * 0.25, y0 - cell * 0.25),
+                                   (x0 + cell * cols + cell * 0.25, y0 + cell * rows + cell * 0.25),
+                                   (x0 - cell * 0.25, y0 + cell * rows + cell * 0.25))):
+        items.append(("oval", (cx - d, cy - d, cx + d, cy + d), "#FFF1D6" if i < extra else "#262A30"))
+    return items
+
+
+DCF_C = {"bg": "#111410", "lcd": "#B9C2A6", "lcd2": "#A7B193", "on": "#1C2119", "off": "#AAB397", "frame": "#2B3128"}
+DCF_DAYS = ["PN", "WT", "ŚR", "CZ", "PT", "SB", "ND"]
+
+
+def scene_dcf(style, W, H, t, now=None, weather=None):
+    now = now if now is not None else time.time()
+    pw, ph = W * 0.92, min(H * 0.84, W * 0.92 * 0.52)
+    px, py = (W - pw) / 2.0, (H - ph) / 2.0
+    items = [("poly", _rrect(px - pw * 0.02, py - pw * 0.02, px + pw * 1.02, py + ph + pw * 0.02, pw * 0.04), DCF_C["frame"]),
+             ("poly", _rrect(px, py, px + pw, py + ph, pw * 0.02), DCF_C["lcd"])]
+    top = py + ph * 0.06
+    fs = max(8, int(ph * 0.11))
+    # maszt nadajnika i fale (fale zapalają się po kolei — „odbiór sygnału”)
+    mx, my, mh = px + pw * 0.05, top + ph * 0.05, ph * 0.13
+    items.append(("line", [mx, my + mh, mx + mh * 0.25, my, mx + mh * 0.5, my + mh], DCF_C["on"], max(2, int(ph * 0.012))))
+    phase = int(now * 2) % 4
+    for i in range(3):
+        rr = mh * (0.30 + 0.22 * i)
+        cxw, cyw = mx + mh * 0.25, my + mh * 0.05
+        pts = []
+        for a in range(-50, 51, 10):
+            ra = math.radians(a - 90)
+            pts += [cxw + rr * math.cos(ra), cyw + rr * math.sin(ra)]
+        items.append(("line", pts, DCF_C["on"] if i < phase else DCF_C["off"], max(2, int(ph * 0.01))))
+    items.append(("text", (mx + mh * 1.1, top + mh * 0.5), DCF_C["on"], "DCF", ("DejaVu Sans", int(fs * 0.8), True), "w"))
+    items.append(("text", (px + pw * 0.55, top + mh * 0.5), DCF_C["on"], "%s %02d.%02d.%d" % (DCF_DAYS[t.tm_wday], t.tm_mday, t.tm_mon, t.tm_year),
+                  ("DejaVu Sans", fs, True), "center"))
+    temp = ("%+.0f°C" % weather["temp"]) if weather and weather.get("temp") is not None else ""
+    items.append(("text", (px + pw * 0.95, top + mh * 0.5), DCF_C["on"], temp, ("DejaVu Sans", fs, True), "e"))
+    # cyfry
+    _, uw, uh = seg7_shapes(t, 100.0, slant=0.06)
+    Hd = min(pw * 0.90 / uw, ph * 0.66 / uh) * 100.0
+    shapes, sw_, sh_ = seg7_shapes(t, Hd, (now % 1) < 0.5, DCF_C["on"], DCF_C["off"], True, 0.06)
+    ox = px + (pw - sw_) / 2.0
+    oy = py + ph * 0.28 + (ph * 0.70 - sh_) / 2.0
+    for pts, col in shapes:
+        items.append(("poly", [c for p_ in pts for c in (ox + p_[0], oy + p_[1])], col))
+    return items
+
+
+def scene_ledring(style, W, H, t, now=None):
+    now = now if now is not None else time.time()
+    R = min(W, H) * 0.44
+    cx, cy = W / 2.0, H / 2.0
+    on, dim, mark = "#FF2A1A", "#2A0C0A", "#FF2A1A"
+    items = []
+    sec = t.tm_sec
+    for i in range(60):
+        a = math.radians(i * 6 - 90)
+        r = R * (0.040 if i % 5 == 0 else 0.028)
+        x, y = cx + R * math.cos(a), cy + R * math.sin(a)
+        lit = (i <= sec) if sec else (i == 0)
+        col = on if lit else (mark if i % 5 == 0 else dim)
+        if i % 5 == 0 and not lit:
+            col = "#B21D12"
+        items.append(("oval", (x - r, y - r, x + r, y + r), col))
+    _, uw, uh = seg7_shapes(t, 100.0, seconds=False, slant=0.0)
+    Hd = min(R * 1.25 / uw, R * 0.55 / uh) * 100.0
+    shapes, sw_, sh_ = seg7_shapes(t, Hd, (now % 1) < 0.5, on, "#1E0907", False, 0.0)
+    ox, oy = cx - sw_ / 2.0, cy - sh_ / 2.0 - R * 0.06
+    for pts, col in shapes:
+        items.append(("poly", [c for p_ in pts for c in (ox + p_[0], oy + p_[1])], col))
+    items.append(("text", (cx, oy + sh_ + R * 0.06), "#B21D12", "%s %02d.%02d" % (DCF_DAYS[t.tm_wday], t.tm_mday, t.tm_mon),
+                  ("DejaVu Sans Mono", max(8, int(R * 0.11)), True), "n"))
+    return items
+
+
+# --- kod czasu DCF77: telegram minutowy na pierścieniu sekund (bit 1 = impuls 0,2 s, bit 0 = 0,1 s)
+DCF77_GROUPS = [  # (od, do, nazwa, kolor łuku)
+    (0, 0, "M", "#7A8794"), (1, 14, "ostrzeżenia", "#4A5560"), (15, 15, "R", "#7A8794"), (16, 16, "A1", "#7A8794"),
+    (17, 17, "Z1", "#7A8794"), (18, 18, "Z2", "#7A8794"), (19, 19, "A2", "#7A8794"), (20, 20, "S", "#7A8794"),
+    (21, 27, "minuta", "#E0533D"), (28, 28, "P1", "#7A8794"), (29, 34, "godzina", "#F2A900"), (35, 35, "P2", "#7A8794"),
+    (36, 41, "dzień", "#3FB8D6"), (42, 44, "dz. tyg.", "#7BD88F"), (45, 49, "miesiąc", "#B38BFA"),
+    (50, 57, "rok", "#F07FB0"), (58, 58, "P3", "#7A8794")]
+
+
+def dcf77_bits(t):
+    """59 bitów telegramu DCF77 dla minuty zaczynającej się po tym telegramie (czas t = ta minuta)."""
+    b = [0] * 59
+
+    def bcd(val, start, weights):
+        tens, ones = divmod(val, 10)
+        bits = [(ones >> k) & 1 for k in range(4)] + [(tens >> k) & 1 for k in range(len(weights) - 4)]
+        for i, v in enumerate(bits[:len(weights)]):
+            b[start + i] = v
+    dst = t.tm_isdst > 0
+    b[17], b[18], b[20] = int(dst), int(not dst), 1
+    bcd(t.tm_min, 21, [1, 2, 4, 8, 10, 20, 40])
+    b[28] = sum(b[21:28]) % 2
+    bcd(t.tm_hour, 29, [1, 2, 4, 8, 10, 20])
+    b[35] = sum(b[29:35]) % 2
+    bcd(t.tm_mday, 36, [1, 2, 4, 8, 10, 20])
+    wd = t.tm_wday + 1
+    b[42], b[43], b[44] = wd & 1, (wd >> 1) & 1, (wd >> 2) & 1
+    bcd(t.tm_mon, 45, [1, 2, 4, 8, 10])
+    bcd(t.tm_year % 100, 50, [1, 2, 4, 8, 10, 20, 40, 80])
+    b[58] = sum(b[36:58]) % 2
+    return b
+
+
+def scene_dcf77(style, W, H, t, now=None):
+    now = now if now is not None else time.time()
+    lt = time.localtime(now)
+    sec = lt.tm_sec
+    tele = time.localtime(now - sec + 60)           # telegram w tej minucie opisuje następną minutę
+    bits = dcf77_bits(tele)
+    R = min(W * 0.36, H * 0.40)
+    cx, cy = W / 2.0, H / 2.0
+    on, dim, cur = "#F3F5F7", "#2A323A", "#FF5A30"
+    items = []
+    frac = now % 1
+    for i in range(60):
+        a = math.radians(i * 6 - 90)
+        ca, sa = math.cos(a), math.sin(a)
+        if i == 59:                                   # sekunda 59: brak impulsu (znacznik minuty)
+            ln, wd, col = 0.0, 0.0, dim
+        else:
+            one = bits[i]
+            ln = R * (0.17 if one else 0.09)
+            wd = R * (0.030 if one else 0.014)
+            col = on if i < sec else dim
+            if i == sec:
+                col = cur if frac < (0.2 if one else 0.1) * 2.5 else on
+        r0 = R
+        px, py = -sa * wd / 2, ca * wd / 2
+        x0, y0, x1, y1 = cx + r0 * ca, cy + r0 * sa, cx + (r0 - ln) * ca, cy + (r0 - ln) * sa
+        items.append(("poly", [x0 + px, y0 + py, x1 + px, y1 + py, x1 - px, y1 - py, x0 - px, y0 - py], col))
+    # łuki grup i podpisy z odczytaną wartością
+    vals = {"minuta": "%02d" % tele.tm_min, "godzina": "%02d" % tele.tm_hour, "dzień": "%02d" % tele.tm_mday,
+            "dz. tyg.": DCF_DAYS[tele.tm_wday], "miesiąc": "%02d" % tele.tm_mon, "rok": "%02d" % (tele.tm_year % 100)}
+    fs = max(7, int(R * 0.060))
+    for a0, a1, name, col in DCF77_GROUPS:
+        rr = R * 1.06
+        pts = []
+        for k in range(9):
+            ang = math.radians((a0 - 0.4 + (a1 - a0 + 0.8) * k / 8.0) * 6 - 90)
+            pts += [cx + rr * math.cos(ang), cy + rr * math.sin(ang)]
+        active = a0 <= sec <= a1
+        items.append(("line", pts, col if (sec > a1 or active) else "#20262C", max(2, int(R * 0.012))))
+        mid = math.radians((a0 + a1) / 2.0 * 6 - 90)
+        rl = R * (1.20 if a1 - a0 > 0 else 1.15)
+        label = name + ((" " + vals[name]) if name in vals else "")
+        items.append(("text", (cx + rl * math.cos(mid), cy + rl * math.sin(mid)), col if active else "#9AA6B2", label,
+                      ("DejaVu Sans", fs if a1 - a0 > 0 else int(fs * 0.85), active), "center"))
+    items.append(("text", (cx, cy - R * 0.36), "#9AA6B2", "DCF77", ("DejaVu Sans", int(R * 0.12), True), "center"))
+    items.append(("text", (cx, cy), on, time.strftime("%H:%M:%S", lt), ("DejaVu Sans Mono", int(R * 0.22), True), "center"))
+    items.append(("text", (cx, cy + R * 0.25), "#9AA6B2", date_text(lt), ("DejaVu Sans", int(R * 0.075), False), "center"))
+    bit = bits[sec] if sec < 59 else None
+    items.append(("text", (cx, cy + R * 0.42), cur, ("bit %d: %d" % (sec, bit)) if bit is not None else "znacznik minuty",
+                  ("DejaVu Sans Mono", int(R * 0.07), True), "center"))
+    return items
+
+
+
+# --- minimalistyczny analogowy: jasna tarcza, cienkie wskazówki, płynny pomarańczowy sekundnik
+def _hand(cx, cy, ang, length, tail, width):
+    a = math.radians(ang - 90)
+    ca, sa = math.cos(a), math.sin(a)
+    px, py = -sa * width / 2, ca * width / 2
+    x0, y0 = cx - ca * tail, cy - sa * tail
+    x1, y1 = cx + ca * length, cy + sa * length
+    return [x0 + px, y0 + py, x1 + px, y1 + py, x1 - px, y1 - py, x0 - px, y0 - py]
+
+
+def scene_minimal(style, W, H, t, now=None):
+    now = now if now is not None else time.time()
+    lt = time.localtime(now)
+    R = min(W, H) * 0.44
+    cx, cy = W / 2.0, H / 2.0
+    ink, face, orange = "#1C1C1E", "#F5F5F7", "#FF9500"
+    items = [("oval", (cx - R, cy - R, cx + R, cy + R), face)]
+    for i in range(60):
+        big = i % 5 == 0
+        items.append(("poly", _hand(cx, cy, i * 6, R * 0.95, -R * (0.86 if big else 0.91), R * (0.018 if big else 0.007)),
+                      ink if big else "#8E8E93"))
+    for h in range(1, 13):
+        a = math.radians(h * 30 - 90)
+        items.append(("text", (cx + R * 0.72 * math.cos(a), cy + R * 0.72 * math.sin(a)), ink, str(h),
+                      ("DejaVu Sans", max(8, int(R * 0.14)), False), "center"))
+    items.append(("text", (cx, cy + R * 0.38), orange, "%s %d" % (DCF_DAYS[lt.tm_wday], lt.tm_mday),
+                  ("DejaVu Sans", max(7, int(R * 0.075)), True), "center"))
+    sec = lt.tm_sec + (now % 1)
+    mins = lt.tm_min + sec / 60.0
+    hrs = lt.tm_hour % 12 + mins / 60.0
+    items.append(("poly", _hand(cx, cy, hrs * 30, R * 0.50, R * 0.06, R * 0.045), ink))
+    items.append(("poly", _hand(cx, cy, mins * 6, R * 0.80, R * 0.06, R * 0.032), ink))
+    items.append(("oval", (cx - R * 0.035, cy - R * 0.035, cx + R * 0.035, cy + R * 0.035), ink))
+    items.append(("poly", _hand(cx, cy, sec * 6, R * 0.88, R * 0.16, R * 0.010), orange))
+    items.append(("oval", (cx - R * 0.022, cy - R * 0.022, cx + R * 0.022, cy + R * 0.022), orange))
+    items.append(("oval", (cx - R * 0.009, cy - R * 0.009, cx + R * 0.009, cy + R * 0.009), face))
+    return items
+
+
+# --- kwadratowe woltomierze: skala 90° (ćwierć okręgu), oś wskazówki w prawym dolnym rogu,
+#     zero przy podstawie (wskazówka poziomo w lewo), maksimum u góry (wskazówka pionowo)
+def scene_voltsq(style, W, H, t, now=None):
+    now = now if now is not None else time.time()
+    lt = time.localtime(now)
+    vals = volt_values(now)
+    side = min(W * 0.30, H * 0.78)
+    gap = side * 0.06
+    x = (W - 3 * side - 2 * gap) / 2.0
+    y0 = (H - side) / 2.0 - H * 0.04
+    items = []
+    fs = max(7, int(side * 0.07))
+    ink = "#141414"
+    titles = {"GODZ.": "h", "MIN.": "min", "SEK.": "s"}
+    for (vmax, labels, title), val in zip(VOLT_METERS, vals):
+        x0, x1, y1 = x, x + side, y0 + side
+        b = side * 0.045
+        items.append(("poly", _rrect(x0, y0, x1, y1, side * 0.03), "#0E0E0E"))          # ramka
+        items.append(("poly", _rrect(x0 + b, y0 + b, x1 - b, y1 - b, side * 0.01), "#F6F6F2"))  # tarcza
+        hw = side * 0.27                                                           # obudowa osi
+        px, py = x1 - b - hw * 0.55, y1 - b - hw * 0.55
+        r = side * 0.60
+        lw = max(1, int(side * 0.006))
+        arc = []
+        for k in range(25):
+            a = math.radians(180 + 90 * k / 24.0)
+            arc += [px + r * math.cos(a), py + r * math.sin(a)]
+        items.append(("line", arc, ink, lw))
+        n = len(labels) - 1
+        steps = n * 10
+        for i in range(steps + 1):
+            a = math.radians(180 + 90.0 * i / steps)
+            major, half = i % 10 == 0, i % 5 == 0
+            r1 = r * (1.10 if major else 1.065 if half else 1.04)
+            items.append(("line", [px + r * math.cos(a), py + r * math.sin(a), px + r1 * math.cos(a), py + r1 * math.sin(a)],
+                          ink, max(1, int(side * (0.011 if major else 0.006 if half else 0.004)))))
+        for i, lab in enumerate(labels):
+            a = math.radians(180 + 90.0 * i / n)
+            items.append(("text", (px + r * 0.88 * math.cos(a), py + r * 0.88 * math.sin(a)), ink, lab,
+                          ("DejaVu Sans", fs, False), "center"))
+        items.append(("text", (x0 + b * 2.2, y0 + b * 2.6), ink, titles.get(title, title),
+                      ("DejaVu Sans", int(side * 0.12), False), "nw"))
+        items.append(("text", (x0 + b * 2.2, y1 - b * 1.6), "#555555", "~  kl. 1,5  " + title,
+                      ("DejaVu Sans", max(6, int(side * 0.04)), False), "sw"))
+        a = 180 + 90.0 * min(val, vmax) / vmax
+        items.append(("poly", _hand(px, py, a + 90, r * 1.08, 0, max(1.5, side * 0.008)), ink))   # wskazówka
+        items.append(("poly", _rrect(px - hw * 0.45, py - hw * 0.45, x1 - b, y1 - b, side * 0.015), "#D9DAD6"))
+        items.append(("poly", _rrect(px - hw * 0.45, py - hw * 0.45, x1 - b, py - hw * 0.38, 1), "#C4C5C0"))
+        sr = hw * 0.16
+        items.append(("oval", (px + hw * 0.1 - sr, py + hw * 0.1 - sr, px + hw * 0.1 + sr, py + hw * 0.1 + sr), "#2A2A2A"))
+        x += side + gap
+    items.append(("text", (W / 2.0, y0 + side + H * 0.05), MUTED, date_text(lt) + "  " + time.strftime("%H:%M:%S", lt),
+                  ("DejaVu Sans", max(8, int(H * 0.05)), False), "n"))
+    return items
+
+
+SCENES = {"words_pl": scene_words, "words_en": scene_words, "dcf": scene_dcf, "ledring": scene_ledring, "dcf77": scene_dcf77,
+          "minimal": scene_minimal, "voltsq": scene_voltsq}
+
+
+def scene_items(style, W, H, t, now=None, weather=None):
+    if style == "dcf":
+        return scene_dcf(style, W, H, t, now, weather)
+    if style == "ledring":
+        return scene_ledring(style, W, H, t, now)
+    if style == "dcf77":
+        return scene_dcf77(style, W, H, t, now)
+    if style == "minimal":
+        return scene_minimal(style, W, H, t, now)
+    if style == "voltsq":
+        return scene_voltsq(style, W, H, t, now)
+    return scene_words(style, W, H, t)
+
+
+def preview_scene(style, t, out, width=360):
+    aw, ah = ASPECT[style]
+    W, H = width, int(width * ah / aw)
+    mvg = ["stroke none"]
+    for it in scene_items(style, W, H, t, None, read_weather()):
+        kind, col = it[0], it[2]
+        if kind == "poly":
+            pts = it[1]
+            mvg += ["stroke none", "fill '%s'" % col, "polygon " + " ".join("%.1f,%.1f" % (pts[j], pts[j + 1]) for j in range(0, len(pts), 2))]
+        elif kind == "oval":
+            x0, y0, x1, y1 = it[1]
+            mvg += ["stroke none", "fill '%s'" % col, "ellipse %.1f,%.1f %.1f,%.1f 0,360" % ((x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2)]
+        elif kind == "line":
+            pts = it[1]
+            mvg += ["fill none", "stroke '%s'" % col, "stroke-width %d" % it[3],
+                    "polyline " + " ".join("%.1f,%.1f" % (pts[j], pts[j + 1]) for j in range(0, len(pts), 2)), "stroke none"]
+        else:
+            (x, y), txt, (fam, size, bold), anchor = it[1], it[3], it[4], it[5]
+            if not txt:
+                continue
+            fnt = MONO_BOLD if "Mono" in fam else (FONT_BOLD if bold else FONT)
+            ta = {"w": "start", "e": "end", "nw": "start", "sw": "start"}.get(anchor, "middle")
+            yb = y + size * 0.36 if anchor in ("center", "w", "e") else (y if anchor == "sw" else y + size * 0.9)
+            mvg += ["fill '%s'" % col, "font '%s'" % fnt, "font-size %d" % size, "text-anchor %s" % ta,
+                    "text %.1f,%.1f '%s'" % (x, yb, txt.replace("'", ""))]
+    bg = {"dcf": DCF_C["bg"]}.get(style, "#000000")
+    _png(["convert", "-size", "%dx%d" % (W, H), "xc:" + bg, "-draw", "\n".join(mvg), "PNG24:" + out])
+
+
 def preview_anim(style, t, out, width=360):
     """Statyczny kadr do podglądu w panelu (ImageMagick)."""
+    if style in SCENES:
+        preview_scene(style, t, out, width)
+        return
+    if style in ("robot", "robot_only"):
+        preview_robot(style, t, out, width)
+        return
     if style in ("eyes", "eyes_only"):
         preview_eyes(style, t, out, width)
         return
@@ -997,6 +1628,63 @@ def run_anim(tk, parent, root, style, W, H, place, alive):
             for it, ln in zip(items, c64_lines(time.localtime(now), int(now * 2) % 2 == 0)):
                 cv.itemconfigure(it, text=ln)
             later(250, frame)
+        frame()
+    elif style in SCENES:
+        cv.configure(bg={"dcf": DCF_C["bg"]}.get(style, "#000000"))
+        wcache = {"w": read_weather(), "t": time.time()}
+
+        def tk_font(f):
+            return (f[0], -f[1], "bold" if f[2] else "normal")
+        anch = {"center": "center", "w": "w", "e": "e", "n": "n", "nw": "nw", "sw": "sw"}
+        items = []
+        for it in scene_items(style, W, H, time.localtime(), time.time(), wcache["w"]):
+            if it[0] == "poly":
+                items.append(cv.create_polygon(*it[1], fill=it[2], outline=""))
+            elif it[0] == "oval":
+                items.append(cv.create_oval(*it[1], fill=it[2], outline=""))
+            elif it[0] == "line":
+                items.append(cv.create_line(*it[1], fill=it[2], width=it[3], capstyle="round", joinstyle="round"))
+            else:
+                items.append(cv.create_text(*it[1], fill=it[2], text=it[3], font=tk_font(it[4]), anchor=anch[it[5]]))
+        last = [None] * len(items)
+
+        def frame():
+            now = time.time()
+            if now - wcache["t"] > 60:
+                wcache["w"], wcache["t"] = read_weather(), now
+            for i, (item, it) in enumerate(zip(items, scene_items(style, W, H, time.localtime(now), now, wcache["w"]))):
+                key = (it[2], it[3] if it[0] == "text" else None, tuple(it[1]), it[4] if it[0] == "text" else None)
+                if key != last[i]:
+                    if last[i] is None or last[i][2] != key[2]:
+                        cv.coords(item, *it[1])
+                    last[i] = key
+                    if it[0] == "text":
+                        cv.itemconfigure(item, fill=it[2], text=it[3], font=tk_font(it[4]))
+                    else:
+                        cv.itemconfigure(item, fill=it[2])
+            later(100, frame)
+        frame()
+    elif style in ("robot", "robot_only"):
+        cv.configure(bg=RBT["bg"])
+        g = RobotEyes(style == "robot")
+        polys = [cv.create_polygon(*pts, fill=col, outline="") for pts, col in robot_parts(style, W, H, g.update(time.time()))]
+        clock = None
+        if style == "robot":
+            fs = max(12, int(min(H * 0.17, W * 0.13)))
+            ty = robot_clock_y(H)
+            clock = (cv.create_text(W // 2, ty, anchor="n", text="", fill=RBT["ink"], font=("DejaVu Sans Mono", -fs, "bold")),
+                     cv.create_text(W // 2, ty + fs * 1.1, anchor="n", text="", fill=RBT["dim"],
+                                    font=("DejaVu Sans", -max(9, int(fs * 0.34)))))
+
+        def frame():
+            now = time.time()
+            for it, (pts, _) in zip(polys, robot_parts(style, W, H, g.update(now))):
+                cv.coords(it, *pts)
+            if clock:
+                t = time.localtime(now)
+                cv.itemconfigure(clock[0], text=time.strftime("%H:%M", t))
+                cv.itemconfigure(clock[1], text=date_text(t))
+            later(33, frame)
         frame()
     elif style in ("eyes", "eyes_only"):
         cv.configure(bg=BG)

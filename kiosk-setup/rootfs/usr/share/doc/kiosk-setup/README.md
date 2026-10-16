@@ -245,7 +245,13 @@ rozdzielczościach daje gorszy obraz — do kamer lepszy DisplayPort/HDMI.
 klasyczny, klapkowy (flip), analogowy, woltomierze, 7-segmentowy, matryca LED oraz
 animowane: wąż, platformówka (robot uderza w klocek z cyfrą, gdy zmienia się minuta),
 ekran komputera 8-bit, niebieski ekran, **oczy z zegarem** (oczy rozglądają się,
-mrugają i zerkają na godzinę przy zmianie minuty) i **same oczy**. Do tego wyświetlacze znakowe **LCD 1602** (duże HH:MM, dzień
+mrugają i zerkają na godzinę przy zmianie minuty) i **same oczy**, **oczy robota** (świecące, z wyrazem: radość, smutek, złość, senność, zdziwienie;
+z godziną albo same), **zegar słowny** po polsku i po angielsku (siatka liter, świecą słowa,
+np. „JEST ZA KWADRANS TRZECIA”, kropki w rogach = minuty), **zegar radiowy** (wyświetlacz LCD
+z masztem DCF), **kod czasu DCF77** (pierścień sekund z bitami telegramu: minuta, godzina, data,
+bity parzystości) i **LED z pierścieniem** (60 diod sekundnika). Gdy kiosk mówi, oczy (ludzkie
+i robota) patrzą na rozmówcę, pulsują w rytm głosu i przybierają wyraz pasujący do treści
+(„uwaga” — zdziwienie, „niestety” — smutek, „smacznego” — radość, „dobranoc” — senność). Do tego wyświetlacze znakowe **LCD 1602** (duże HH:MM, dzień
 tygodnia i sekundy) i **LCD 2004** (duże HH:MM:SS, data i temperatura) z wyborem
 podświetlenia: zielone, niebieskie albo bursztynowe. Wygląd dotyczy zegara w rogu, kafelka w
 siatce kamer i nocnego zegara; zmiana działa po kilku sekundach, bez przeładowania
@@ -865,6 +871,8 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 
 ## Historia wersji
 
+- **1.0.3** (16.10.2026) — nowe wyglądy zegara: oczy robota (z godziną i same), zegar słowny
+  PL i EN, zegar radiowy LCD, kod czasu DCF77, LED z pierścieniem; oczy reagują na mowę kiosku.
 - **1.0.2** (16.10.2026) — nowe wyglądy zegara: „Oczy z zegarem” (para oczu rozgląda się,
   mruga i zerka na godzinę przy zmianie minuty) i „Same oczy” (bez godziny).
 - **1.0.1** (16.10.2026) — pierwsze wydanie; zawiera wszystkie funkcje opisane w tej

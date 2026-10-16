@@ -444,6 +444,65 @@ def fade(setter, a, b, steps=5, pause=0.06):
         time.sleep(pause)
 
 
+# Stan mowy dla oczu na ekranie (kiosk-clock: wygląd „oczy” / „oczy robota”): kiedy kiosk mówi,
+# oczy patrzą na rozmówcę, pulsują w rytm głosu i przybierają wyraz pasujący do treści.
+SPEAK_FILE = "/run/kiosk-speaking.json"
+SPEECH_MOODS = (
+    ("surprised", ("uwaga", "alarm", "pożar", "dym ", "zalan", "właman", "awari", "ktoś", "dzwonek", "furtk", "drzwi")),
+    ("sad", ("niestety", "deszcz", "burz", "ulew", "błąd", "nie udało", "brak ", "mróz", "zimno", "smut", "przykro")),
+    ("sleepy", ("dobranoc", "śpij", "spać", "późno", "kolorowych snów")),
+    ("angry", ("zamknij", "wyłącz natychmiast", "nie wolno", "zakaz", "stop")),
+    ("happy", ("dzień dobry", "witaj", "cześć", "brawo", "gratul", "smacznego", "obiad", "kolacj", "śniadani",
+               "słonecz", "pogodnie", "dziękuj", "super", "świetn", "urodzin", "wesoł", "miłego", "zapraszam")),
+)
+
+
+def speech_mood(text):
+    t = " " + str(text or "").lower() + " "
+    for mood, words in SPEECH_MOODS:
+        if any(w in t for w in words):
+            return mood
+    if t.strip().endswith("?"):
+        return "suspicious"
+    if t.strip().endswith("!"):
+        return "surprised"
+    return "neutral"
+
+
+def wav_info(path, step=0.06):
+    """Czas trwania i krzywa głośności (0..1 co `step` s) pliku WAV 16-bit."""
+    try:
+        with wave.open(path, "rb") as w:
+            rate, ch, sw, n = w.getframerate(), w.getnchannels(), w.getsampwidth(), w.getnframes()
+            data = w.readframes(n)
+        dur = n / float(rate or 1)
+        if sw != 2 or not n:
+            return dur, []
+        cnt = len(data) // 2
+        vals = struct.unpack("<%dh" % cnt, data[:cnt * 2])
+        win = max(1, int(rate * step) * ch)
+        env = []
+        for i in range(0, cnt, win):
+            chunk = vals[i:i + win:8]
+            env.append(math.sqrt(sum(v * v for v in chunk) / max(1, len(chunk))) if chunk else 0.0)
+        top = max(env) if env else 0
+        return dur, [round(min(1.0, e / (top * 0.8)), 2) if top else 0 for e in env]
+    except Exception as e:
+        log("mowa (oczy): %s" % e)
+        return 0.0, []
+
+
+def write_speaking(state):
+    try:
+        tmp = SPEAK_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(state, f, ensure_ascii=False)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, SPEAK_FILE)
+    except Exception:
+        pass
+
+
 class Announcer:
     """Kolejka komunikatów głosowych: gong, mowa; muzyka (MPD) i odtwarzacz DLNA grają
     w tym czasie ciszej. Komunikaty po kolei, bez przerywania muzyki."""
@@ -453,8 +512,9 @@ class Announcer:
         self.proc = None
         threading.Thread(target=self._run, daemon=True).start()
 
-    def put(self, path, chime):
-        self.q.put((path, chime))
+    def put(self, path, chime, text=None):
+        """text: treść komunikatu (None = to nie mowa, np. sam gong)."""
+        self.q.put((path, chime, text))
 
     def stop(self):
         try:
@@ -511,7 +571,7 @@ class Announcer:
         duck = prefs["duck"]
         st = audio_status()
         vol = st["volume"] if st.get("available") and st.get("volume") is not None else 80
-        files = [self._render(p, c, vol) for p, c in batch]
+        files = [self._render(p, c, vol) for p, c, _ in batch]
         restore = []
         try:
             if duck < 100:
@@ -525,7 +585,16 @@ class Announcer:
             for i, f in enumerate(files):
                 if i:
                     time.sleep(0.4)
+                path, chime, text = batch[i]
+                if text is not None:
+                    dur, env = wav_info(path)
+                    lead = wav_info(ensure_chime())[0] if chime and f != path else 0.0
+                    start = time.time() + lead
+                    write_speaking({"active": True, "start": start, "end": start + dur, "step": 0.06, "env": env,
+                                    "mood": speech_mood(text), "text": str(text)[:200]})
                 self._aplay(f)
+                if text is not None:
+                    write_speaking({"active": False, "end": time.time()})
         finally:
             self.proc = None
             time.sleep(0.3)
@@ -534,7 +603,7 @@ class Announcer:
                     fade(lambda x: mpc("volume", str(x)), v * duck // 100, v, steps=8)
                 else:
                     fade(dlna_volume, v * duck // 100, v, steps=8)
-            for f, (p, _) in zip(files, batch):
+            for f, (p, _, _) in zip(files, batch):
                 if f != p:
                     try:
                         os.unlink(f)
@@ -687,7 +756,7 @@ def say(text, voice=None, speed=150, chime=None):
     os.chmod(path, 0o644)
     if chime is None:
         chime = audio_prefs()["chime"]
-    ANNOUNCER.put(path, bool(chime))
+    ANNOUNCER.put(path, bool(chime), text)
     return "Czytam (%s%s): %s" % (used, ", z gongiem" if chime else "", text[:80])
 
 
@@ -1637,7 +1706,11 @@ CLOCK_STYLES = (("classic", "Klasyczny"), ("flip", "Klapkowy (flip)"), ("analog"
                 ("volt", "Woltomierze"), ("seg7", "7-segmentowy"), ("matrix", "Matryca LED"),
                 ("snake", "Wąż (animacja)"), ("platform", "Platformówka (animacja)"), ("c64", "Komputer 8-bit"),
                 ("bsod", "Niebieski ekran"), ("lcd1602", "LCD 1602"), ("lcd2004", "LCD 2004"),
-                ("eyes", "Oczy z zegarem"), ("eyes_only", "Same oczy"))
+                ("eyes", "Oczy z zegarem"), ("eyes_only", "Same oczy"), ("robot", "Oczy robota z zegarem"),
+                ("robot_only", "Same oczy robota"), ("words_pl", "Zegar słowny (PL)"), ("words_en", "Zegar słowny (EN)"),
+                ("dcf", "Zegar radiowy (LCD)"), ("dcf77", "Kod czasu DCF77"),
+                ("ledring", "LED z pierścieniem"), ("minimal", "Minimalistyczny"),
+                ("voltsq", "Woltomierze kwadratowe"))
 LCD_COLORS = (("green", "Zielone"), ("blue", "Niebieskie"), ("amber", "Bursztynowe"))
 _CLOCK_PREV = {}
 
@@ -3028,7 +3101,7 @@ def announce_audio(src, chime=True):
     if r.returncode != 0 or not os.path.exists(out):
         raise ValueError("nie da się odczytać nagrania: " + r.stderr.strip()[-200:])
     os.chmod(out, 0o644)
-    ANNOUNCER.put(out, bool(chime))
+    ANNOUNCER.put(out, bool(chime), "")
     return "Odtwarzam wiadomość" + (" z gongiem" if chime else "")
 
 

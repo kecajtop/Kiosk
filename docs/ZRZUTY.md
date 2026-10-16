@@ -1,6 +1,6 @@
 # Zrzuty ekranu
 
-Zrzuty z wersji 1.0.2: ekran 1280×720, panel w przeglądarce 1400×900 i na telefonie. Dane są przykładowe.
+Zrzuty z wersji 1.0.3: ekran 1280×720, panel w przeglądarce 1400×900 i na telefonie. Dane są przykładowe.
 
 ## Zegary
 
@@ -16,8 +16,13 @@ kafelkiem w siatce kamer albo zegarem nocnym na cały ekran.
 | **Wąż** (animacja)<br>![](img/clock-snake.png) | **Platformówka** (animacja)<br>![](img/clock-platform.png) |
 | **Komputer 8-bit** (animacja)<br>![](img/clock-c64.png) | **Niebieski ekran** (animacja)<br>![](img/clock-bsod.png) |
 | **Oczy z zegarem** (animacja)<br>![](img/clock-eyes.png) | **Same oczy** (animacja)<br>![](img/clock-eyes_only.png) |
+| **Oczy robota z zegarem** (animacja, wyraz twarzy)<br>![](img/clock-robot.png) | **Same oczy robota**<br>![](img/clock-robot_only.png) |
+| **Zegar słowny (PL)**<br>![](img/clock-words_pl.png) | **Zegar słowny (EN)**<br>![](img/clock-words_en.png) |
+| **Zegar radiowy (LCD)**<br>![](img/clock-dcf.png) | **Kod czasu DCF77**<br>![](img/clock-dcf77.png) |
+| **LED z pierścieniem**<br>![](img/clock-ledring.png) | **Minimalistyczny**<br>![](img/clock-minimal.png) |
+| **Woltomierze kwadratowe**<br>![](img/clock-voltsq.png) | |
 
-Podświetlenie LCD może być zielone, niebieskie albo bursztynowe.
+Podświetlenie LCD może być zielone, niebieskie albo bursztynowe. Oczy (ludzkie i robota) reagują na mowę kiosku: patrzą na rozmówcę, pulsują w rytm głosu i zmieniają wyraz zależnie od treści komunikatu.
 
 ## Panel WWW kiosku
 
