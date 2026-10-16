@@ -6,7 +6,7 @@
 
 ## Przegląd
 
-kiosk-setup (wersja 1.0.1) zamienia komputer z Ubuntu w kiosk: pokazuje kamery, stronę Home Assistant albo jedno i drugie, mówi, gra radio i reaguje na Home Assistant. Sterujesz nim z panelu WWW, z Home Assistant (MQTT), z API HTTP, z menu w terminalu albo dla wielu kiosków naraz z dodatku HA „Kioski”.
+kiosk-setup (wersja 1.0.2) zamienia komputer z Ubuntu w kiosk: pokazuje kamery, stronę Home Assistant albo jedno i drugie, mówi, gra radio i reaguje na Home Assistant. Sterujesz nim z panelu WWW, z Home Assistant (MQTT), z API HTTP, z menu w terminalu albo dla wielu kiosków naraz z dodatku HA „Kioski”.
 
 ![Panel WWW kiosku — strona Start](img/panel-start.png)
 
@@ -17,7 +17,7 @@ Panel WWW: menu sekcji po lewej (Start, Ekran, Komunikaty, Dźwięk, Automatyka,
 | Kiosk | kecaj, 192.168.0.214, użytkownik `kecaj` |
 | Home Assistant | 192.168.0.1:8123 |
 | Kamera | rtsp://admin:…@192.168.0.203:554/ |
-| Pakiet | kiosk-setup\_1.0.1\_amd64.deb (wersja 1:1.0.1, amd64, ok. 22 MB, zawiera Piper TTS); kod i wydania: github.com/kecajtop/Kiosk |
+| Pakiet | kiosk-setup\_1.0.2\_amd64.deb (wersja 1:1.0.2, amd64, ok. 22 MB, zawiera Piper TTS); kod i wydania: github.com/kecajtop/Kiosk |
 
 **Wymagania:** Ubuntu (Server albo z pulpitem), GRUB, procesor x86-64, monitor (do dwóch wyjść: HDMI, DisplayPort, VGA), sieć lokalna. Opcjonalnie: głośnik, mikrofon (interkom, asystent głosowy), monitor z DDC/CI (sterowanie podświetleniem).
 
@@ -46,7 +46,7 @@ Pierwsza instalacja to jedno polecenie i kreator; każda kolejna wersja zachowuj
 
    ```bash
    sudo apt update
-   sudo apt install ./kiosk-setup_1.0.1_amd64.deb
+   sudo apt install ./kiosk-setup_1.0.2_amd64.deb
    ```
 3. Kreator zapyta o: użytkownika (`kecaj`), ekran (**desktop** = pulpit + kiosk na drugim monitorze, **kiosk** = cały komputer), tryb (web/rtsp/mix/usb), adres strony lub kamer, logo, firewall (przy pulpicie: **nie**), wyłączanie ekranu i komputera, MQTT, dostęp SSH/VNC.
 4. Ustaw strefę czasową i uruchom ponownie: `sudo timedatectl set-timezone Europe/Warsaw`, potem `sudo reboot`.
@@ -77,7 +77,7 @@ Kod, gotowy pakiet i plik aktualizacji są w [github.com/kecajtop/Kiosk](https:/
 
 Przy adresie z GitHuba zapora kiosku sama przepuszcza serwery GitHuba. „Jaka wersja jest dostępna?” w panelu albo `sudo kiosk-update latest` tylko sprawdza, nic nie instaluje.
 
-**Numeracja.** Pakiet ma numer wersji `1:1.0.1`.
+**Numeracja.** Pakiet ma numer wersji `1:1.0.2`.
 
 **Budowanie ze źródeł.** Programy kiosku są w `kiosk-setup/src/`. Skrypt `kiosk-setup/build.sh` wkleja je do instalatora i buduje `.deb`; Piper bierze z gotowego pakietu (`--piper-from`) albo pomija (`--no-piper`). Panel WWW (HTML, CSS, JavaScript) jest wbudowany w `kiosk-setup/src/kiosk-api`.
 
@@ -128,9 +128,9 @@ To, co kiosk pokazuje, ustawiasz w panelu (zakładki Ekran i Widoki), z HA albo 
 
 ### Zegary
 
-Zegar ma 12 wyglądów do wyboru w panelu: Ekran → Co wyświetla kiosk → Wygląd zegara. Ten sam wygląd dotyczy nakładki w rogu, kafelka w siatce kamer i zegara nocnego, a zmiana działa od razu, bez mrugnięcia logo.
+Zegar ma 14 wyglądów do wyboru w panelu: Ekran → Co wyświetla kiosk → Wygląd zegara. Ten sam wygląd dotyczy nakładki w rogu, kafelka w siatce kamer i zegara nocnego, a zmiana działa od razu, bez mrugnięcia logo.
 
-![Zegary kiosku: klasyczny, klapkowy, analogowy, woltomierze, 7-segmentowy, matryca LED, LCD 1602, LCD 2004, wąż, platformówka, komputer 8-bit, niebieski ekran](img/zegary.png)
+![Zegary kiosku: klasyczny, klapkowy, analogowy, woltomierze, 7-segmentowy, matryca LED, LCD 1602, LCD 2004, wąż, platformówka, komputer 8-bit, niebieski ekran, oczy z zegarem, same oczy](img/zegary.png)
 
 | Wygląd | Nazwa w `clock.json` | Sekundy | Uwagi |
 | --- | --- | --- | --- |
@@ -146,6 +146,8 @@ Zegar ma 12 wyglądów do wyboru w panelu: Ekran → Co wyświetla kiosk → Wyg
 | Platformówka | `platform` | — | Animacja: robot podbija klocki z cyframi |
 | Komputer 8-bit | `c64` | tak | Ekran w stylu komputera 8-bitowego |
 | Niebieski ekran | `bsod` | — | „Kiosk napotkał nową minutę” |
+| Oczy z zegarem | `eyes` | — | Animacja: oczy rozglądają się i mrugają, przy zmianie minuty zerkają na godzinę pod spodem |
+| Same oczy | `eyes_only` | — | Animacja: same oczy na całe pole, bez godziny |
 
 Podświetlenie wyświetlaczy LCD: zielone, niebieskie albo bursztynowe (pole pod listy wyglądów). Zegar na cały ekran wyłącza się, wybierając w polu „Zegar” inne miejsce (w rogu albo brak) i klikając „Pokaż na kiosku”.
 
@@ -428,7 +430,7 @@ Mapa wszystkiego, co pakiet instaluje. Przydaje się przy ręcznej diagnostyce, 
 | `/usr/local/bin/kiosk-layout` | Rozkład okien na monitorze kiosku: kamery, przeglądarka, zegar, zdjęcia, alert |
 | `/usr/local/bin/kiosk-display` | Monitory: xrandr, wybór wyjścia, obrót, jasność |
 | `/usr/local/bin/kiosk-bubble` | Dymek z komunikatem na ekranie |
-| `/usr/local/bin/kiosk-clock` | Zegar: 12 wyglądów; nakładka w rogu, kafelek w siatce, zegar nocny; zmiana wyglądu bez przeładowania |
+| `/usr/local/bin/kiosk-clock` | Zegar: 14 wyglądów; nakładka w rogu, kafelek w siatce, zegar nocny; zmiana wyglądu bez przeładowania |
 | `/usr/local/bin/kiosk-status` | Ikony połączeń, postęp aktualizacji i karta „Teraz gra” na ekranie |
 | `/usr/local/bin/kiosk-ticker` | Przewijany pasek informacyjny na dole ekranu |
 | `/usr/local/bin/kiosk-agenda` | Plan dnia z kalendarzy HA w rogu ekranu |
@@ -516,8 +518,9 @@ Kopia zapasowa z panelu (System → Kopia) obejmuje cały ten katalog.
 
 ## Historia wersji kiosk-setup
 
-Wersja 1.0.1 to pierwsze wydanie kiosk-setup: wszystkie funkcje opisane w tej dokumentacji należą do niej.
+Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami.
 
 | Wersja | Data | Zawartość |
 | --- | --- | --- |
+| 1.0.2 | 16.10.2026 | Nowe wyglądy zegara: „Oczy z zegarem” (oczy rozglądają się, mrugają i zerkają na godzinę przy zmianie minuty) i „Same oczy” |
 | 1.0.1 | 16.10.2026 | Pierwsze wydanie: ekran z kamerami RTSP, stroną HA, trybem mix i kamerą USB, wiele monitorów, pulpit + kiosk, widoki i ich rotacja; 12 wyglądów zegara, zegar nocny, zdjęcia, plan dnia, pogoda, pasek informacyjny, dymki, alert z kamerą; ikony połączeń, postęp aktualizacji i karta „Teraz gra” na ekranie; mowa (Piper, espeak), gong, radio, MPD, DLNA, interkom, asystent głosowy; harmonogram, obecność, wykrywanie ruchu z nagraniami; MQTT z auto-wykryciem w HA, API HTTP, panel WWW z kontami i HTTPS, dodatek HA „Kioski”; jasność DDC/CI lub programowa (także odwrócona); nazwa kiosku, dysk tylko do odczytu, firewall, kopia ustawień; aktualizacje z panelu, nocne i z GitHuba (update.json, SHA-256) |

@@ -1,6 +1,6 @@
 # Zrzuty ekranu
 
-Zrzuty z wersji 1.0.1: ekran 1280×720, panel w przeglądarce 1400×900 i na telefonie. Dane są przykładowe.
+Zrzuty z wersji 1.0.2: ekran 1280×720, panel w przeglądarce 1400×900 i na telefonie. Dane są przykładowe.
 
 ## Zegary
 
@@ -15,6 +15,7 @@ kafelkiem w siatce kamer albo zegarem nocnym na cały ekran.
 | **LCD 1602** (duże cyfry)<br>![](img/clock-lcd1602.png) | **LCD 2004** (duże cyfry, data)<br>![](img/clock-lcd2004.png) |
 | **Wąż** (animacja)<br>![](img/clock-snake.png) | **Platformówka** (animacja)<br>![](img/clock-platform.png) |
 | **Komputer 8-bit** (animacja)<br>![](img/clock-c64.png) | **Niebieski ekran** (animacja)<br>![](img/clock-bsod.png) |
+| **Oczy z zegarem** (animacja)<br>![](img/clock-eyes.png) | **Same oczy** (animacja)<br>![](img/clock-eyes_only.png) |
 
 Podświetlenie LCD może być zielone, niebieskie albo bursztynowe.
 

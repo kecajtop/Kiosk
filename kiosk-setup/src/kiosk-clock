@@ -9,7 +9,8 @@ Wygląd (/etc/kiosk-setup/clock.json, panel → Ekran): classic, flip (klapki),
 analog (wskazówki), volt (woltomierze), seg7 (wyświetlacz 7-segmentowy),
 matrix (matryca LED z kropek), lcd1602 / lcd2004 (wyświetlacz znakowy LCD z dużymi
 cyframi; podświetlenie lcd_color: green, blue, amber) oraz animowane: snake (wąż), platform (platformówka
-z robotem), c64 (ekran 8-bitowego komputera), bsod (niebieski ekran).
+z robotem), c64 (ekran 8-bitowego komputera), bsod (niebieski ekran), eyes (oczy z zegarem)
+i eyes_only (same oczy) — oczy rozglądają się i mrugają.
 Zmiana działa w ciągu kilku sekund, bez przeładowania.
 
 Godzina HH:MM, data po polsku i (jeśli włączona w kiosk-api) pogoda. Grafikę rysuje ImageMagick (czcionka
@@ -34,7 +35,8 @@ MONTHS = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca",
 SIZES = {"s": 0.050, "m": 0.075, "l": 0.110}
 WEATHER_CACHE = "/run/kiosk-weather.json"  # zapisuje kiosk-api co 10 min
 STYLE_FILE = "/etc/kiosk-setup/clock.json"
-STYLES = ("classic", "flip", "analog", "volt", "seg7", "matrix", "snake", "platform", "c64", "bsod", "lcd1602", "lcd2004")
+STYLES = ("classic", "flip", "analog", "volt", "seg7", "matrix", "snake", "platform", "c64", "bsod", "lcd1602", "lcd2004",
+          "eyes", "eyes_only")
 ICON_COLORS = {"sunny": "#F2A900", "partlycloudy": "#F2A900", "lightning": "#F2A900", "lightning-rainy": "#F2A900",
                "rainy": "#4C9AFF", "pouring": "#4C9AFF", "hail": "#4C9AFF", "clear-night": "#C9D1D9",
                "snowy": "#E6F0FF", "snowy-rainy": "#E6F0FF"}
@@ -285,13 +287,14 @@ DRAW = {"flip": draw_flip, "analog": draw_analog, "volt": draw_volt, "seg7": dra
 
 # ---------------------------------------------------------------- zegary animowane (Tk Canvas)
 # snake (wąż na ekranie LCD), platform (platformówka z robotem), c64 (ekran 8-bitowego
-# komputera), bsod (niebieski ekran). Rysowane w Tk co klatkę; podgląd w panelu: ImageMagick.
+# komputera), bsod (niebieski ekran), eyes / eyes_only (oczy). Rysowane w Tk co klatkę; podgląd w panelu: ImageMagick.
 
-ANIM = ("snake", "platform", "c64", "bsod", "seg7", "volt", "analog", "lcd1602", "lcd2004")
+ANIM = ("snake", "platform", "c64", "bsod", "seg7", "volt", "analog", "lcd1602", "lcd2004", "eyes", "eyes_only")
 MONO_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
 if not os.path.exists(MONO_BOLD):
     MONO_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-ASPECT = {"snake": (33, 15), "platform": (112, 64), "c64": (40, 25), "bsod": (16, 10), "seg7": (16, 6), "volt": (16, 7), "analog": (10, 9), "lcd1602": (105, 27), "lcd2004": (125, 41)}
+ASPECT = {"snake": (33, 15), "platform": (112, 64), "c64": (40, 25), "bsod": (16, 10), "seg7": (16, 6), "volt": (16, 7), "analog": (10, 9), "lcd1602": (105, 27), "lcd2004": (125, 41),
+          "eyes": (16, 11), "eyes_only": (16, 8)}
 
 # Robot (własna postać) 10×11 pikseli: . = przezroczysty.
 HERO = ["....R.....", "....R.....", "..WWWWWW..", ".WWWWWWWW.", ".WBWWWWBW.", ".WWWWWWWW.",
@@ -484,8 +487,138 @@ def bsod_texts(t):
             (time.strftime("%H:%M", t), 0.19, 1.0), (date_text(t), 0.052, 0.4)]
 
 
+# --- oczy: para oczu, które rozglądają się i mrugają (eyes — z godziną pod spodem, eyes_only — same oczy)
+EYE = {"white": "#F2EFE6", "iris": "#2FA3C4", "iris2": "#1B6F87", "pupil": "#0A0D10", "lid": "#1A2129",
+       "line": "#05070A", "shine": "#FFFFFF"}
+
+
+def eyes_geometry(style, W, H):
+    """Środki i promienie obu oczu oraz pole na godzinę (eyes)."""
+    eh = H * (0.62 if style == "eyes" else 0.92)
+    rx = min(W * 0.20, eh * 0.42)
+    ry = rx * 1.12
+    cy = (H * 0.06 + ry) if style == "eyes" else H / 2.0
+    gap = rx * 0.42
+    cxs = (W / 2.0 - gap / 2.0 - rx, W / 2.0 + gap / 2.0 + rx)
+    return cxs, cy, rx, ry
+
+
+def eye_parts(cx, cy, rx, ry, gx, gy, lid, dil=1.0):
+    """Kształty jednego oka: [(rodzaj, punkty/prostokąt, kolor)]. gx, gy w -1..1, lid 0 (otwarte)..1 (zamknięte)."""
+    ri = min(rx, ry) * 0.48
+    rp = ri * 0.48 * dil
+    ix = cx + gx * (rx - ri) * 0.80
+    iy = cy + gy * (ry - ri) * 0.80
+    out = [("oval", (cx - rx, cy - ry, cx + rx, cy + ry), EYE["white"]),
+           ("oval", (ix - ri, iy - ri, ix + ri, iy + ri), EYE["iris2"]),
+           ("oval", (ix - ri * 0.82, iy - ri * 0.82, ix + ri * 0.82, iy + ri * 0.82), EYE["iris"]),
+           ("oval", (ix - rp, iy - rp, ix + rp, iy + rp), EYE["pupil"]),
+           ("oval", (ix - ri * 0.42 - rp * 0.32, iy - ri * 0.42 - rp * 0.32, ix - ri * 0.42 + rp * 0.32, iy - ri * 0.42 + rp * 0.32), EYE["shine"])]
+    n = 24
+    top = []
+    edge = []
+    for i in range(n + 1):
+        u = -1 + 2.0 * i / n
+        h = math.sqrt(max(0.0, 1 - u * u))
+        top.append((cx + u * rx, cy - ry * h))
+        edge.append((cx + u * rx, cy + (-1 + 2 * lid) * ry * h))
+    poly = top + edge[::-1]
+    out.append(("poly", [c for pt in poly for c in pt], EYE["lid"]))
+    out.append(("line", [c for pt in edge for c in pt], EYE["line"]))
+    out.append(("ring", (cx - rx, cy - ry, cx + rx, cy + ry), EYE["line"]))
+    return out
+
+
+class Eyes:
+    """Ruch oczu: skoki spojrzenia w losowe miejsca, mruganie, zerknięcie na zegar przy zmianie minuty."""
+
+    def __init__(self, with_clock):
+        import random
+        self.r = random.Random()
+        self.with_clock = with_clock
+        self.gx = self.gy = 0.0
+        self.tx = self.ty = 0.0
+        self.next_look = 0.0
+        self.lid = 0.08
+        self.blink_at = time.time() + 2.0
+        self.blink_t0 = None
+        self.double = False
+        self.minute = time.localtime().tm_min
+        self.dil = 1.0
+
+    def update(self, now):
+        r = self.r
+        t = time.localtime(now)
+        if self.with_clock and t.tm_min != self.minute:
+            self.minute = t.tm_min
+            self.tx, self.ty = 0.0, 0.95          # zerknij na godzinę
+            self.next_look = now + 2.2
+            self.blink_at = min(self.blink_at, now + 0.6)
+        if now >= self.next_look:
+            if r.random() < 0.25:
+                self.tx, self.ty = r.uniform(-0.15, 0.15), r.uniform(-0.1, 0.15)
+            else:
+                self.tx, self.ty = r.uniform(-1, 1), r.uniform(-0.85, 0.85)
+            self.next_look = now + r.uniform(0.7, 3.2)
+        k = 0.32                                    # szybki skok, potem spoczynek
+        self.gx += (self.tx - self.gx) * k
+        self.gy += (self.ty - self.gy) * k
+        self.dil = 1.0 + 0.10 * math.sin(now * 0.7)
+        if self.blink_t0 is None and now >= self.blink_at:
+            self.blink_t0 = now
+        if self.blink_t0 is not None:
+            p = (now - self.blink_t0) / 0.22       # 0..1 zamykanie i otwieranie
+            if p >= 1:
+                self.blink_t0 = None
+                self.lid = 0.08
+                if not self.double and r.random() < 0.18:
+                    self.double = True
+                    self.blink_at = now + 0.12
+                else:
+                    self.double = False
+                    self.blink_at = now + r.uniform(2.5, 6.5)
+            else:
+                self.lid = 0.08 + 0.92 * (1 - abs(1 - 2 * p))
+        return self.gx, self.gy, self.lid, self.dil
+
+
+def eyes_clock_texts(t):
+    return time.strftime("%H:%M", t), date_text(t)
+
+
+def preview_eyes(style, t, out, width=360):
+    aw, ah = ASPECT[style]
+    W, H = width, int(width * ah / aw)
+    mvg = ["stroke none"]
+    cxs, cy, rx, ry = eyes_geometry(style, W, H)
+    for i, cx in enumerate(cxs):
+        for kind, pts, col in eye_parts(cx, cy, rx, ry, 0.35, 0.25, 0.12):
+            if kind == "oval":
+                x0, y0, x1, y1 = pts
+                mvg += ["fill '%s'" % col, "stroke none", "ellipse %.1f,%.1f %.1f,%.1f 0,360" % ((x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2)]
+            elif kind == "poly":
+                mvg += ["fill '%s'" % col, "stroke none", "polygon " + " ".join("%.1f,%.1f" % (pts[j], pts[j + 1]) for j in range(0, len(pts), 2))]
+            elif kind == "line":
+                mvg += ["fill none", "stroke '%s'" % col, "stroke-width %.1f" % max(1.5, rx * 0.06),
+                        "polyline " + " ".join("%.1f,%.1f" % (pts[j], pts[j + 1]) for j in range(0, len(pts), 2))]
+            else:
+                x0, y0, x1, y1 = pts
+                mvg += ["fill none", "stroke '%s'" % col, "stroke-width %.1f" % max(1.5, rx * 0.07),
+                        "ellipse %.1f,%.1f %.1f,%.1f 0,360" % ((x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2)]
+    if style == "eyes":
+        tm, dt = eyes_clock_texts(t)
+        fs = int(H * 0.20)
+        mvg += ["stroke none", "fill '%s'" % INK, "font '%s'" % FONT_BOLD, "font-size %d" % fs, "gravity north",
+                "text 0,%d '%s'" % (int(H * 0.66), tm), "fill '%s'" % MUTED, "font '%s'" % FONT,
+                "font-size %d" % int(H * 0.065), "text 0,%d '%s'" % (int(H * 0.66 + fs * 1.05), dt)]
+    _png(["convert", "-size", "%dx%d" % (W, H), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
+
+
 def preview_anim(style, t, out, width=360):
     """Statyczny kadr do podglądu w panelu (ImageMagick)."""
+    if style in ("eyes", "eyes_only"):
+        preview_eyes(style, t, out, width)
+        return
     if style in ("seg7", "volt", "analog"):
         render(out, t, 64, 18, None, None, style)
         return
@@ -864,6 +997,43 @@ def run_anim(tk, parent, root, style, W, H, place, alive):
             for it, ln in zip(items, c64_lines(time.localtime(now), int(now * 2) % 2 == 0)):
                 cv.itemconfigure(it, text=ln)
             later(250, frame)
+        frame()
+    elif style in ("eyes", "eyes_only"):
+        cv.configure(bg=BG)
+        cxs, cy, rx, ry = eyes_geometry(style, W, H)
+        g = Eyes(style == "eyes")
+        items = []
+        for cx in cxs:
+            row = []
+            for kind, pts, col in eye_parts(cx, cy, rx, ry, 0, 0, 0.08):
+                if kind == "oval":
+                    row.append(cv.create_oval(*pts, fill=col, outline=""))
+                elif kind == "poly":
+                    row.append(cv.create_polygon(*pts, fill=col, outline=""))
+                elif kind == "line":
+                    row.append(cv.create_line(*pts, fill=col, width=max(2, int(rx * 0.06)), capstyle="round", smooth=True))
+                else:
+                    row.append(cv.create_oval(*pts, fill="", outline=col, width=max(2, int(rx * 0.07))))
+            items.append(row)
+        clock = None
+        if style == "eyes":
+            fs = max(12, int(min(H * 0.20, W * 0.16)))
+            ty = cy + ry + (H - (cy + ry)) * 0.08
+            clock = (cv.create_text(W // 2, ty, anchor="n", text="", fill=INK, font=("DejaVu Sans", -fs, "bold")),
+                     cv.create_text(W // 2, ty + fs * 1.12, anchor="n", text="", fill=MUTED,
+                                    font=("DejaVu Sans", -max(9, int(fs * 0.30)))))
+
+        def frame():
+            now = time.time()
+            gx, gy, lid, dil = g.update(now)
+            for cx, row in zip(cxs, items):
+                for it, (kind, pts, _) in zip(row, eye_parts(cx, cy, rx, ry, gx, gy, lid, dil)):
+                    cv.coords(it, *pts)
+            if clock:
+                tm, dt = eyes_clock_texts(time.localtime(now))
+                cv.itemconfigure(clock[0], text=tm)
+                cv.itemconfigure(clock[1], text=dt)
+            later(33, frame)
         frame()
     else:  # bsod
         cv.configure(bg=BSOD["bg"])

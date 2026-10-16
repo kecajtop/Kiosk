@@ -244,7 +244,8 @@ rozdzielczościach daje gorszy obraz — do kamer lepszy DisplayPort/HDMI.
 **Wygląd zegara** (panel → Ekran → Co wyświetla kiosk) — kafelki z podglądem:
 klasyczny, klapkowy (flip), analogowy, woltomierze, 7-segmentowy, matryca LED oraz
 animowane: wąż, platformówka (robot uderza w klocek z cyfrą, gdy zmienia się minuta),
-ekran komputera 8-bit i niebieski ekran. Do tego wyświetlacze znakowe **LCD 1602** (duże HH:MM, dzień
+ekran komputera 8-bit, niebieski ekran, **oczy z zegarem** (oczy rozglądają się,
+mrugają i zerkają na godzinę przy zmianie minuty) i **same oczy**. Do tego wyświetlacze znakowe **LCD 1602** (duże HH:MM, dzień
 tygodnia i sekundy) i **LCD 2004** (duże HH:MM:SS, data i temperatura) z wyborem
 podświetlenia: zielone, niebieskie albo bursztynowe. Wygląd dotyczy zegara w rogu, kafelka w
 siatce kamer i nocnego zegara; zmiana działa po kilku sekundach, bez przeładowania
@@ -864,6 +865,8 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 
 ## Historia wersji
 
+- **1.0.2** (16.10.2026) — nowe wyglądy zegara: „Oczy z zegarem” (para oczu rozgląda się,
+  mruga i zerka na godzinę przy zmianie minuty) i „Same oczy” (bez godziny).
 - **1.0.1** (16.10.2026) — pierwsze wydanie; zawiera wszystkie funkcje opisane w tej
   dokumentacji, w tym aktualizacje z GitHuba (`update.json`, suma SHA-256). Numer
   wersji pakietu: `1:1.0.1`.

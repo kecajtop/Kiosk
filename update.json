@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.1",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.1_amd64.deb",
-  "sha256": "13d7790b3f3c91e58fb87632aab71364e538c47884524ed5f45091497992f106",
-  "size": 22930174,
+  "version": "1:1.0.2",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.2_amd64.deb",
+  "sha256": "deb8bf92771448f4453725470946276522b39817996637f799dd72507ac22b0f",
+  "size": 22932008,
   "date": "2026-10-16",
-  "notes": "Pierwsze wydanie kiosk-setup 1.0.1."
+  "notes": "Nowe wyglądy zegara: Oczy z zegarem i Same oczy."
 }
