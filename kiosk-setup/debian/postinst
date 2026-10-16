@@ -1,0 +1,724 @@
+#!/bin/bash
+set -e
+
+. /usr/share/debconf/confmodule
+
+db_get kiosk-setup/username
+KIOSK_USER="$RET"
+
+db_get kiosk-setup/session
+KIOSK_SESSION="${RET:-kiosk}"
+
+db_get kiosk-setup/mode
+KIOSK_MODE="${RET:-web}"
+
+db_get kiosk-setup/url
+KIOSK_URL="$RET"
+
+db_get kiosk-setup/rtsp_urls
+KIOSK_RTSP_URLS="$RET"
+
+db_get kiosk-setup/usb_device
+KIOSK_USB_DEVICE="${RET:-/dev/video0}"
+
+db_get kiosk-setup/web_percent
+KIOSK_WEB_PERCENT="${RET:-50}"
+
+db_get kiosk-setup/logo_path
+LOGO_SRC="$RET"
+
+db_get kiosk-setup/confirm_firewall
+DO_FIREWALL="$RET"
+
+db_get kiosk-setup/shutdown_minutes
+SHUTDOWN_MINUTES="${RET:-0}"
+
+db_get kiosk-setup/screen_off_minutes
+SCREEN_OFF_MINUTES="${RET:-0}"
+
+db_get kiosk-setup/mqtt_host
+MQTT_HOST="$RET"
+db_get kiosk-setup/mqtt_port
+MQTT_PORT="${RET:-1883}"
+db_get kiosk-setup/mqtt_user
+MQTT_USER="$RET"
+db_get kiosk-setup/mqtt_password
+MQTT_PASSWORD="$RET"
+db_get kiosk-setup/mqtt_prefix
+MQTT_PREFIX="${RET:-kecaj/kiosk}"
+
+db_get kiosk-setup/admin_ips
+ADMIN_IPS="$RET"
+
+if [ "$1" != "configure" ]; then
+    exit 0
+fi
+
+# Aktualizacja bez kreatora: zostają dotychczasowe ustawienia (kiosk.conf, tryb
+# ekranu, MQTT, firewall, logo); odświeżane są tylko programy i usługi.
+db_get kiosk-setup/run_wizard || true
+RUN_WIZARD="${RET:-false}"
+KEEP=0
+if [ -r /etc/kiosk-setup/kiosk.conf ] && [ -n "${2:-}" ] && [ "$RUN_WIZARD" != "true" ] \
+   && [ "${DEBCONF_RECONFIGURE:-0}" != "1" ]; then
+    KEEP=1
+    echo "==> Aktualizacja: zachowuję obecną konfigurację kiosku (kreator: sudo dpkg-reconfigure kiosk-setup)"
+    . /etc/kiosk-setup/kiosk.conf
+    SCREEN_OFF_MINUTES="${KIOSK_SCREEN_OFF_MIN:-0}"
+    SHUTDOWN_MINUTES="${KIOSK_SHUTDOWN_MIN:-0}"
+    if [ -r /etc/kiosk-setup/session.conf ]; then
+        KIOSK_SESSION=$(sed -n 's/^KIOSK_SESSION=//p' /etc/kiosk-setup/session.conf)
+    fi
+    if [ -r /etc/kiosk-setup/firewall.conf ]; then
+        ADMIN_IPS=$(sh -c '. /etc/kiosk-setup/firewall.conf >/dev/null 2>&1; printf "%s" "${ADMIN_IPS:-}"')
+    fi
+    if iptables -S OUTPUT 2>/dev/null | grep -q -- '--match-set kiosk_'; then DO_FIREWALL=true; else DO_FIREWALL=false; fi
+fi
+db_set kiosk-setup/run_wizard false || true
+
+if ! [[ "$SHUTDOWN_MINUTES" =~ ^[0-9]+$ ]]; then
+    echo "UWAGA: nieprawidłowa wartość minut do auto-shutdown ('$SHUTDOWN_MINUTES'), ustawiam 0 (wyłączone)." >&2
+    SHUTDOWN_MINUTES=0
+fi
+if ! [[ "$SCREEN_OFF_MINUTES" =~ ^[0-9]+$ ]]; then
+    SCREEN_OFF_MINUTES=0
+fi
+
+if ! id "$KIOSK_USER" &>/dev/null; then
+    echo "BŁĄD: użytkownik '$KIOSK_USER' nie istnieje w systemie." >&2
+    echo "Utwórz go (sudo adduser $KIOSK_USER) i uruchom: sudo dpkg-reconfigure kiosk-setup" >&2
+    exit 1
+fi
+
+USER_HOME=$(eval echo "~$KIOSK_USER")
+THEME_DIR="/usr/share/plymouth/themes/mylogo"
+
+if [ "$KEEP" = 0 ]; then
+echo "==> Konfiguracja trybu kiosku ($KIOSK_MODE)..."
+case "$KIOSK_MODE" in
+    web|rtsp|usb|mix) ;;
+    *) echo "UWAGA: nieznany tryb '$KIOSK_MODE', używam 'web'." >&2; KIOSK_MODE=web ;;
+esac
+case "$KIOSK_WEB_PERCENT" in ''|*[!0-9]*) KIOSK_WEB_PERCENT=50 ;; esac
+if { [ "$KIOSK_MODE" = "rtsp" ] || [ "$KIOSK_MODE" = "mix" ]; } && [ -z "$KIOSK_RTSP_URLS" ]; then
+    echo "UWAGA: tryb rtsp bez adresów kamer — kiosk pokaże tylko logo." >&2
+    echo "       Dodaj kamery: sudo kiosk-mode rtsp 'rtsp://...' 'rtsp://...'" >&2
+fi
+
+mkdir -p /etc/kiosk-setup
+kq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+# Ręcznie dodane opcje mpv (np. --vo=x11 dla VNC) przetrwają reinstalację.
+KIOSK_MPV_EXTRA=""
+KIOSK_CLOCK=off; KIOSK_CLOCK_POS=tr; KIOSK_CLOCK_SIZE=m
+if [ -r /etc/kiosk-setup/kiosk.conf ]; then
+    KIOSK_MPV_EXTRA=$(sh -c '. /etc/kiosk-setup/kiosk.conf >/dev/null 2>&1; printf "%s" "${KIOSK_MPV_EXTRA:-}"')
+    KIOSK_CLOCK=$(sh -c '. /etc/kiosk-setup/kiosk.conf >/dev/null 2>&1; printf "%s" "${KIOSK_CLOCK:-off}"')
+    KIOSK_CLOCK_POS=$(sh -c '. /etc/kiosk-setup/kiosk.conf >/dev/null 2>&1; printf "%s" "${KIOSK_CLOCK_POS:-tr}"')
+    KIOSK_CLOCK_SIZE=$(sh -c '. /etc/kiosk-setup/kiosk.conf >/dev/null 2>&1; printf "%s" "${KIOSK_CLOCK_SIZE:-m}"')
+fi
+{
+    echo "# Konfiguracja kiosku — zmieniaj przez: sudo kiosk-mode, panel WWW (port 8088) lub dpkg-reconfigure kiosk-setup"
+    echo "KIOSK_USER=$(kq "$KIOSK_USER")"
+    echo "KIOSK_MODE=$(kq "$KIOSK_MODE")"
+    echo "KIOSK_URL=$(kq "$KIOSK_URL")"
+    echo "KIOSK_RTSP_URLS=$(kq "$KIOSK_RTSP_URLS")"
+    echo "KIOSK_USB_DEVICE=$(kq "$KIOSK_USB_DEVICE")"
+    echo "KIOSK_WEB_PERCENT=$(kq "$KIOSK_WEB_PERCENT")"
+    echo "KIOSK_SCREEN_OFF_MIN=$(kq "$SCREEN_OFF_MINUTES")"
+    echo "KIOSK_SHUTDOWN_MIN=$(kq "$SHUTDOWN_MINUTES")"
+    echo "KIOSK_MPV_EXTRA=$(kq "$KIOSK_MPV_EXTRA")"
+    echo "KIOSK_CLOCK=$(kq "$KIOSK_CLOCK")"
+    echo "KIOSK_CLOCK_POS=$(kq "$KIOSK_CLOCK_POS")"
+    echo "KIOSK_CLOCK_SIZE=$(kq "$KIOSK_CLOCK_SIZE")"
+} > /etc/kiosk-setup/kiosk.conf
+# Plik zawiera hasła kamer: czytelny tylko dla roota i użytkownika kiosku.
+chown "root:$KIOSK_USER" /etc/kiosk-setup/kiosk.conf
+chmod 0640 /etc/kiosk-setup/kiosk.conf
+fi
+
+cat > /usr/local/bin/kiosk-session <<'EOF_SESSION'
+# (treść: src/kiosk-session — wkleja build.sh)
+EOF_SESSION
+chmod 0755 /usr/local/bin/kiosk-session
+
+cat > /usr/local/bin/kiosk-layout <<'EOF_LAYOUT'
+# (treść: src/kiosk-layout — wkleja build.sh)
+EOF_LAYOUT
+chmod 0755 /usr/local/bin/kiosk-layout
+
+cat > /usr/local/bin/kiosk-display <<'EOF_DISPLAY'
+# (treść: src/kiosk-display — wkleja build.sh)
+EOF_DISPLAY
+chmod 0755 /usr/local/bin/kiosk-display
+if [ ! -f /etc/kiosk-setup/displays.conf ]; then
+    printf '%s\n' "# Monitory kiosku — zmieniaj w panelu WWW (zakładka Monitory)" "DISPLAY_MAIN=auto" "DISPLAY_MAIN_MODE=auto" \
+        "DISPLAY_ROTATE=normal" "DISPLAY_OTHERS=off" "DISPLAY_SECOND=auto" "DISPLAY_SECOND_MODE=auto" "DISPLAY_SECOND_VIEW=" \
+        > /etc/kiosk-setup/displays.conf
+fi
+chmod 0644 /etc/kiosk-setup/displays.conf
+
+cat > /usr/local/bin/kiosk-bubble <<'EOF_BUBBLE'
+# (treść: src/kiosk-bubble — wkleja build.sh)
+EOF_BUBBLE
+chmod 0755 /usr/local/bin/kiosk-bubble
+
+cat > /usr/local/bin/kiosk-clock <<'EOF_CLOCK'
+# (treść: src/kiosk-clock — wkleja build.sh)
+EOF_CLOCK
+chmod 0755 /usr/local/bin/kiosk-clock
+
+cat > /usr/local/bin/kiosk-ticker <<'EOF_TICKER'
+# (treść: src/kiosk-ticker — wkleja build.sh)
+EOF_TICKER
+chmod 0755 /usr/local/bin/kiosk-ticker
+
+cat > /usr/local/bin/kiosk-agenda <<'EOF_AGENDA'
+# (treść: src/kiosk-agenda — wkleja build.sh)
+EOF_AGENDA
+chmod 0755 /usr/local/bin/kiosk-agenda
+
+# Ikony połączeń i postęp aktualizacji na ekranie kiosku.
+cat > /usr/local/bin/kiosk-status <<'EOF_STATUS'
+# (treść: src/kiosk-status — wkleja build.sh)
+EOF_STATUS
+chmod 0755 /usr/local/bin/kiosk-status
+
+cat > /usr/local/sbin/kiosk-power <<'EOF_POWER'
+# (treść: src/kiosk-power — wkleja build.sh)
+EOF_POWER
+chmod 0755 /usr/local/sbin/kiosk-power
+
+cat > "$USER_HOME/.xinitrc" <<'EOF'
+#!/bin/sh
+# Zarządzane przez pakiet kiosk-setup. Tryb zmieniasz: sudo kiosk-mode
+exec /usr/local/bin/kiosk-session
+EOF
+chown "$KIOSK_USER:$KIOSK_USER" "$USER_HOME/.xinitrc"
+chmod +x "$USER_HOME/.xinitrc"
+
+cat > /usr/local/sbin/kiosk-mode <<'EOF_MODE'
+# (treść: src/kiosk-mode — wkleja build.sh)
+EOF_MODE
+chmod 0755 /usr/local/sbin/kiosk-mode
+
+echo "==> Panel WWW i API sterowania kioskiem (port 8088)..."
+if [ ! -s /etc/kiosk-setup/api-token ]; then
+    head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32 > /etc/kiosk-setup/api-token
+fi
+chown root:root /etc/kiosk-setup/api-token
+chmod 0600 /etc/kiosk-setup/api-token
+
+cat > /usr/local/sbin/kiosk-api <<'EOF_API'
+# (treść: src/kiosk-api — wkleja build.sh)
+EOF_API
+chmod 0755 /usr/local/sbin/kiosk-api
+
+echo "==> MQTT..."
+# Plik z ustawieniami MQTT zapisuje też panel WWW (i synchronizuje debconf).
+# Z debconf nadpisujemy go tylko, gdy podano broker albo pliku jeszcze nie ma.
+if [ ! -f /etc/kiosk-setup/mqtt.json ] || { [ "$KEEP" = 0 ] && [ -n "$MQTT_HOST" ]; }; then
+    MQTT_HOST="$MQTT_HOST" MQTT_PORT="$MQTT_PORT" MQTT_USER="$MQTT_USER" MQTT_PASSWORD="$MQTT_PASSWORD" MQTT_PREFIX="$MQTT_PREFIX" \
+    python3 - <<'EOF_PY'
+import json, os
+e = os.environ
+port = e.get("MQTT_PORT", "1883")
+cfg = {"enabled": bool(e.get("MQTT_HOST")), "host": e.get("MQTT_HOST", ""),
+       "port": int(port) if port.isdigit() else 1883, "user": e.get("MQTT_USER", ""),
+       "password": e.get("MQTT_PASSWORD", ""), "prefix": e.get("MQTT_PREFIX") or "kecaj/kiosk",
+       "discovery": True}
+old = {}
+try:
+    old = json.load(open("/etc/kiosk-setup/mqtt.json"))
+except Exception:
+    pass
+if not cfg["password"] and old.get("password") and old.get("host") == cfg["host"]:
+    cfg["password"] = old["password"]
+fd = os.open("/etc/kiosk-setup/mqtt.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f:
+    json.dump(cfg, f, ensure_ascii=False, indent=1)
+EOF_PY
+fi
+chmod 0600 /etc/kiosk-setup/mqtt.json
+[ -f /etc/kiosk-setup/views.json ] && chmod 0600 /etc/kiosk-setup/views.json
+
+echo "==> Dźwięk: odtwarzacz MPD (media_player dla Home Assistant, port 6600)..."
+# Własna instancja MPD (kiosk-mpd) — standardowa usługa mpd zostaje wyłączona,
+# żeby nie zajmowała portu 6600.
+systemctl disable --now mpd.service mpd.socket >/dev/null 2>&1 || true
+MPD_PASS=$(cat /etc/kiosk-setup/api-token 2>/dev/null)
+if [ -z "$MPD_PASS" ]; then
+    head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32 > /etc/kiosk-setup/api-token
+    chmod 0600 /etc/kiosk-setup/api-token
+    MPD_PASS=$(cat /etc/kiosk-setup/api-token)
+fi
+cat > /etc/kiosk-setup/mpd.conf <<EOF
+# Generowane przez kiosk-setup — zmiany nadpisze reinstalacja.
+music_directory     "/var/lib/kiosk-mpd/music"
+playlist_directory  "/var/lib/kiosk-mpd/playlists"
+db_file             "/var/lib/kiosk-mpd/database"
+state_file          "/var/lib/kiosk-mpd/state"
+bind_to_address     "/run/kiosk-mpd/socket"
+bind_to_address     "any"
+port                "6600"
+password            "$MPD_PASS@read,add,control,admin"
+default_permissions "read"
+auto_update         "no"
+filesystem_charset  "UTF-8"
+audio_output {
+    type        "alsa"
+    name        "Kiosk"
+    mixer_type  "software"
+}
+EOF
+chown root:root /etc/kiosk-setup/mpd.conf
+chmod 0600 /etc/kiosk-setup/mpd.conf
+cat > /etc/systemd/system/kiosk-mpd.service <<'EOF'
+[Unit]
+Description=kecaj kiosk — odtwarzacz dźwięku MPD (media_player dla Home Assistant)
+After=sound.target network-online.target
+Wants=network-online.target
+
+[Service]
+User=mpd
+Group=audio
+RuntimeDirectory=kiosk-mpd
+StateDirectory=kiosk-mpd
+# Konfiguracja z hasłem jest czytelna tylko dla roota; systemd przekazuje ją usłudze.
+LoadCredential=mpd.conf:/etc/kiosk-setup/mpd.conf
+ExecStartPre=/bin/mkdir -p /var/lib/kiosk-mpd/music /var/lib/kiosk-mpd/playlists
+ExecStart=/bin/sh -c 'exec /usr/bin/mpd --no-daemon --stderr "$CREDENTIALS_DIRECTORY/mpd.conf"'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+mkdir -p /var/lib/kiosk-mpd/tts
+chmod 0755 /var/lib/kiosk-mpd/tts
+systemctl daemon-reload
+systemctl enable kiosk-mpd.service >/dev/null 2>&1 || true
+systemctl restart kiosk-mpd.service || echo "UWAGA: nie udało się uruchomić kiosk-mpd (dźwięk). Sprawdź: journalctl -u kiosk-mpd" >&2
+
+echo "==> Odtwarzacz DLNA/UPnP (Home Assistant wykrywa go sam)..."
+if [ -x /usr/bin/gmediarender ]; then
+    # Usługa z pakietu gmediarender ogłaszałaby drugi odtwarzacz — zostaje tylko nasza.
+    systemctl disable --now gmediarender.service >/dev/null 2>&1 || true
+    [ -s /etc/kiosk-setup/dlna-uuid ] || cat /proc/sys/kernel/random/uuid > /etc/kiosk-setup/dlna-uuid
+    chmod 0644 /etc/kiosk-setup/dlna-uuid
+    [ -f /etc/kiosk-setup/dlna.env ] || cat > /etc/kiosk-setup/dlna.env <<'EOF'
+# Odtwarzacz DLNA kiosku (kiosk-dlna.service). Po zmianie: sudo systemctl restart kiosk-dlna
+DLNA_NAME=kecaj kiosk
+DLNA_SINK=alsasink
+DLNA_DEVICE=sysdefault
+DLNA_VOLUME_DB=-6
+EOF
+    # „default” bywa przekierowane do dźwięku pulpitu (PipeWire), niedostępnego dla usług.
+    sed -i 's/^DLNA_DEVICE=default$/DLNA_DEVICE=sysdefault/' /etc/kiosk-setup/dlna.env
+    cat > /etc/systemd/system/kiosk-dlna.service <<'EOF'
+[Unit]
+Description=kecaj kiosk — odtwarzacz DLNA/UPnP (media_player wykrywany przez Home Assistant)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+DynamicUser=yes
+SupplementaryGroups=audio
+EnvironmentFile=/etc/kiosk-setup/dlna.env
+ExecStart=/bin/sh -c 'exec /usr/bin/gmediarender -f "$DLNA_NAME" -u "$(cat /etc/kiosk-setup/dlna-uuid)" --mime-filter audio --gstout-audiosink="$DLNA_SINK" --gstout-audiodevice="$DLNA_DEVICE" --gstout-initial-volume-db="$DLNA_VOLUME_DB" --port 49494 --logfile=stdout'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable kiosk-dlna.service >/dev/null 2>&1 || true
+    systemctl restart kiosk-dlna.service || echo "UWAGA: nie udało się uruchomić kiosk-dlna. Sprawdź: journalctl -u kiosk-dlna" >&2
+else
+    echo "    Brak gmediarender (sudo apt install gmediarender) — HA nie wykryje kiosku jako odtwarzacza; zostaje MPD." >&2
+fi
+
+cat > /etc/systemd/system/kiosk-api.service <<'EOF'
+[Unit]
+Description=kecaj kiosk — panel WWW i API sterowania (port 8088)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/sbin/kiosk-api
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable kiosk-api.service >/dev/null 2>&1 || true
+systemctl restart kiosk-api.service || echo "UWAGA: nie udało się uruchomić kiosk-api." >&2
+API_TOKEN=$(cat /etc/kiosk-setup/api-token)
+
+
+echo "==> Tryb ekranu: pulpit + kiosk albo pełny kiosk..."
+cat > /usr/local/sbin/kiosk-session-mode <<'EOF_SESSMODE'
+# (treść: src/kiosk-session-mode — wkleja build.sh)
+EOF_SESSMODE
+chmod 0755 /usr/local/sbin/kiosk-session-mode
+case "$KIOSK_SESSION" in desktop|kiosk) ;; *) KIOSK_SESSION=kiosk ;; esac
+/usr/local/sbin/kiosk-session-mode "$KIOSK_SESSION" "$KIOSK_USER"
+# kiosk-session-mode mógł zmienić tryb (np. brak menedżera logowania).
+. /etc/kiosk-setup/session.conf
+db_set kiosk-setup/session "$KIOSK_SESSION" || true
+
+echo "==> Włączenie SSH (zdalna konfiguracja)..."
+systemctl enable --now ssh
+
+echo "==> Wyłączenie MOTD..."
+chmod -x /etc/update-motd.d/* 2>/dev/null || true
+sed -i \
+    -e 's/^session.*pam_motd.so.*motd=\/run\/motd\.dynamic.*/#&/' \
+    -e 's/^session.*pam_motd.so.*noupdate.*/#&/' \
+    /etc/pam.d/login
+
+echo "==> Tworzenie motywu Plymouth (mylogo)..."
+mkdir -p "$THEME_DIR"
+
+if [ "$KEEP" = 1 ] && [ -f "$THEME_DIR/logo.png" ]; then
+    echo "    Logo bez zmian."
+elif [ -n "$LOGO_SRC" ] && [ -f "$LOGO_SRC" ]; then
+    echo "    Własne logo: konwersja do bezpiecznego formatu PNG (24/32-bit)..."
+    convert "$LOGO_SRC" -type TrueColorAlpha "PNG32:/etc/kiosk-setup/logo-custom.png"
+    cp /etc/kiosk-setup/logo-custom.png "$THEME_DIR/logo.png"
+else
+    rm -f /etc/kiosk-setup/logo-custom.png
+    if [ "$KIOSK_MODE" = "web" ]; then
+        echo "    Logo kecaj „kiosk” (tryb web)."
+        cp /usr/share/kiosk-setup/logo-kiosk.png "$THEME_DIR/logo.png"
+    else
+        echo "    Logo kecaj „stream” (tryb $KIOSK_MODE)."
+        cp /usr/share/kiosk-setup/logo-stream.png "$THEME_DIR/logo.png"
+    fi
+fi
+
+cat > "$THEME_DIR/mylogo.plymouth" <<'EOF'
+[Plymouth Theme]
+Name=My Logo
+Description=Custom splash with my logo
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/mylogo
+ScriptFile=/usr/share/plymouth/themes/mylogo/mylogo.script
+EOF
+
+cat > "$THEME_DIR/mylogo.script" <<'EOF'
+Window.SetBackgroundTopColor(0.055, 0.071, 0.086);
+Window.SetBackgroundBottomColor(0.055, 0.071, 0.086);
+
+logo.image = Image("logo.png");
+logo.sprite = Sprite(logo.image);
+
+logo.x = Window.GetWidth()  / 2 - logo.image.GetWidth()  / 2;
+logo.y = Window.GetHeight() / 2 - logo.image.GetHeight() / 2;
+logo.sprite.SetPosition(logo.x, logo.y, 10000);
+EOF
+
+echo "==> Rejestracja motywu jako domyślny..."
+update-alternatives --install /usr/share/plymouth/themes/default.plymouth default.plymouth "$THEME_DIR/mylogo.plymouth" 150
+update-alternatives --set default.plymouth "$THEME_DIR/mylogo.plymouth"
+
+cat > /etc/plymouth/plymouthd.conf <<'EOF'
+[Daemon]
+Theme=mylogo
+EOF
+
+echo "==> Konfiguracja GRUB (cichy, czysty boot) i aktualizacja initramfs..."
+cat > /usr/local/sbin/kiosk-bootlogo <<'EOF_BOOTLOGO'
+# (treść: src/kiosk-bootlogo — wkleja build.sh)
+EOF_BOOTLOGO
+chmod 0755 /usr/local/sbin/kiosk-bootlogo
+cat > /etc/systemd/system/kiosk-bootlogo.service <<'EOF'
+[Unit]
+Description=kecaj kiosk — przywrócenie logo po jednorazowym starcie bez logo
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kiosk-bootlogo restore
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable kiosk-bootlogo.service >/dev/null 2>&1 || true
+# Wybór użytkownika (logo wł./wył.) przetrwa aktualizację pakietu.
+BOOTLOGO=on
+[ -r /etc/kiosk-setup/boot.conf ] && BOOTLOGO=$(sh -c '. /etc/kiosk-setup/boot.conf; printf "%s" "${KIOSK_BOOTLOGO:-on}"')
+[ "$BOOTLOGO" = off ] || BOOTLOGO=on
+if [ -f /etc/default/grub ]; then
+    /usr/local/sbin/kiosk-bootlogo "$BOOTLOGO" || echo "    UWAGA: konfiguracja GRUB nie powiodła się, sprawdź: sudo update-grub" >&2
+    update-initramfs -u || echo "    UWAGA: update-initramfs nie powiodło się, sprawdź ręcznie." >&2
+else
+    echo "    UWAGA: brak /etc/default/grub, pomijam konfigurację GRUB (system bez GRUB-a?)." >&2
+fi
+
+
+echo "==> Skrypt konfiguracji sieci/WiFi (do użycia przez SSH)..."
+mkdir -p /usr/local/sbin
+cat > /usr/local/sbin/kiosk-netconfig.sh <<'EOF_NET'
+# (treść: src/kiosk-netconfig.sh — wkleja build.sh)
+EOF_NET
+chmod +x /usr/local/sbin/kiosk-netconfig.sh
+
+echo "==> Watchdog IP (automatyczny restart przy utracie łączności)..."
+cat > /usr/local/sbin/ip-watchdog.sh <<'EOF_WATCHDOG'
+# (treść: src/ip-watchdog.sh — wkleja build.sh)
+EOF_WATCHDOG
+chmod +x /usr/local/sbin/ip-watchdog.sh
+
+cat > /etc/cron.d/ip-watchdog <<'EOF'
+*/5 * * * * root /usr/local/sbin/ip-watchdog.sh
+EOF
+
+cat > /usr/local/sbin/kiosk-firewall <<'EOF_FW'
+# (treść: src/kiosk-firewall — wkleja build.sh)
+EOF_FW
+chmod 0755 /usr/local/sbin/kiosk-firewall
+kq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+if [ "$KEEP" = 0 ] || [ ! -f /etc/kiosk-setup/firewall.conf ]; then
+    echo "ADMIN_IPS=$(kq "$(printf '%s' "$ADMIN_IPS" | tr -d ' ')")" > /etc/kiosk-setup/firewall.conf
+fi
+chmod 0644 /etc/kiosk-setup/firewall.conf
+
+if [ "$DO_FIREWALL" = "true" ]; then
+    echo "==> Firewall: do internetu tylko adres kiosku i serwery Ubuntu (sieć lokalna bez ograniczeń)..."
+    /usr/local/sbin/kiosk-firewall on
+    FIREWALL_SUMMARY="WŁĄCZONY — do internetu tylko adres kiosku i serwery Ubuntu; sieć lokalna bez ograniczeń (wyłączenie: sudo kiosk-firewall off)"
+    if [ -n "$ADMIN_IPS" ]; then
+        ADMIN_ACCESS_SUMMARY="OGRANICZONY wyłącznie do: $ADMIN_IPS"
+    else
+        ADMIN_ACCESS_SUMMARY="cała sieć lokalna (10/8, 172.16/12, 192.168/16)"
+    fi
+else
+    echo "==> Firewall kiosku wyłączony — internet bez ograniczeń."
+    /usr/local/sbin/kiosk-firewall off >/dev/null 2>&1 || true
+    FIREWALL_SUMMARY="wyłączony — internet bez ograniczeń (włączenie: sudo kiosk-firewall on)"
+    ADMIN_ACCESS_SUMMARY="bez zmian (domyślna polityka systemu)"
+fi
+
+echo "==> Ograniczanie zapisów na dysk/kartę SD (logi, tmp)..."
+
+mkdir -p /etc/systemd/journald.conf.d
+cat > /etc/systemd/journald.conf.d/kiosk-volatile.conf <<'EOF'
+[Journal]
+Storage=volatile
+RuntimeMaxUse=20M
+SystemMaxUse=0
+Compress=yes
+ForwardToSyslog=no
+EOF
+systemctl restart systemd-journald
+
+if systemctl list-unit-files | grep -q '^rsyslog.service'; then
+    systemctl disable --now rsyslog || true
+fi
+
+if ! grep -q '^tmpfs /tmp ' /etc/fstab; then
+    echo 'tmpfs /tmp tmpfs defaults,noatime,mode=1777,size=128M 0 0' >> /etc/fstab
+fi
+if ! grep -q '^tmpfs /var/log ' /etc/fstab; then
+    echo 'tmpfs /var/log tmpfs defaults,noatime,mode=0755,size=64M 0 0' >> /etc/fstab
+fi
+
+if [ -f /etc/logrotate.conf ]; then
+    sed -i 's/^weekly/daily/' /etc/logrotate.conf || true
+    if ! grep -q '^maxsize' /etc/logrotate.conf; then
+        echo 'maxsize 10M' >> /etc/logrotate.conf
+    fi
+fi
+
+echo "==> VNC do sesji Xorg (x11vnc)..."
+
+cat > /etc/systemd/system/x11vnc.service <<EOF
+[Unit]
+Description=x11vnc — zdalny podgląd sesji kiosku przez VNC
+After=display-manager.service
+
+[Service]
+Type=simple
+User=$KIOSK_USER
+Environment=DISPLAY=:0
+ExecStartPre=/bin/sh -c 'while [ ! -e /tmp/.X11-unix/X0 ]; do sleep 1; done'
+ExecStart=/usr/bin/x11vnc -display :0 -auth guess -forever -loop -noxdamage -repeat -rfbport 5900 -shared -passwd kiosk
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now x11vnc.service
+
+echo "==> Głosy Piper (synteza mowy: JARVIS, lektorka, …)..."
+cat > /usr/local/sbin/kiosk-voice <<'EOF_VOICE'
+# (treść: src/kiosk-voice — wkleja build.sh)
+EOF_VOICE
+chmod 0755 /usr/local/sbin/kiosk-voice
+[ -f /etc/kiosk-setup/voice.json ] || echo '{"default": "jarvis"}' > /etc/kiosk-setup/voice.json
+chmod 0644 /etc/kiosk-setup/voice.json
+if timeout 900 /usr/local/sbin/kiosk-voice install; then
+    VOICE_SUMMARY="głosy Piper pobrane ($(ls /var/lib/kiosk-voices/*.onnx 2>/dev/null | wc -l)), domyślny styl: $(python3 -c 'import json;print(json.load(open("/etc/kiosk-setup/voice.json"))["default"])' 2>/dev/null)"
+else
+    VOICE_SUMMARY="nie udało się pobrać wszystkich głosów Piper (brak internetu?) — mówi espeak; ponów: sudo kiosk-voice install"
+fi
+
+echo "==> Wyłączanie ekranu i komputera..."
+# Stara usługa z wersji <= 1.4
+systemctl disable kiosk-auto-shutdown.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/kiosk-auto-shutdown.service
+cat > /etc/systemd/system/kiosk-power.service <<'EOF'
+[Unit]
+Description=kecaj kiosk — automatyczne wyłączenie N minut po starcie (KIOSK_SHUTDOWN_MIN)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kiosk-power apply
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable kiosk-power.service >/dev/null 2>&1 || true
+
+echo "==> Aktualizacje kiosku (panel → System; automatycznie nocą z podanego adresu)..."
+mkdir -p /var/lib/kiosk-setup
+chmod 0700 /var/lib/kiosk-setup
+# Zapis przez plik tymczasowy i mv: kiosk-update może właśnie instalować ten pakiet.
+cat > /usr/local/sbin/kiosk-update.new <<'EOF_UPDATE'
+# (treść: src/kiosk-update — wkleja build.sh)
+EOF_UPDATE
+chmod 0755 /usr/local/sbin/kiosk-update.new
+mv -f /usr/local/sbin/kiosk-update.new /usr/local/sbin/kiosk-update
+cat > /etc/systemd/system/kiosk-update.service <<'EOF'
+[Unit]
+Description=kecaj kiosk — sprawdzenie i instalacja nowej wersji (ustawienia zostają)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/kiosk-update auto
+EOF
+cat > /etc/systemd/system/kiosk-update.timer <<'EOF'
+[Unit]
+Description=kecaj kiosk — nocne sprawdzanie aktualizacji
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=20min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+systemctl daemon-reload
+systemctl enable --now kiosk-update.timer >/dev/null 2>&1 || true
+
+echo "==> Zdjęcia, nagrania z kamer, asystent głosowy, HTTPS, jasność (DDC/CI)..."
+install -d -m 0755 /var/lib/kiosk-photos /var/lib/kiosk-clips
+cat > /usr/local/sbin/kiosk-satellite.new <<'EOF_SATELLITE'
+# (treść: src/kiosk-satellite — wkleja build.sh)
+EOF_SATELLITE
+chmod 0755 /usr/local/sbin/kiosk-satellite.new
+mv -f /usr/local/sbin/kiosk-satellite.new /usr/local/sbin/kiosk-satellite
+# Dysk tylko do odczytu (overlayroot) — włączanie: panel WWW → System albo sudo kiosk-ro on
+cat > /usr/local/sbin/kiosk-ro.new <<'EOF_RO'
+# (treść: src/kiosk-ro — wkleja build.sh)
+EOF_RO
+chmod 0755 /usr/local/sbin/kiosk-ro.new
+mv -f /usr/local/sbin/kiosk-ro.new /usr/local/sbin/kiosk-ro
+# Panel przez HTTPS (port 8443): certyfikat kiosku, ważny 10 lat. Własny certyfikat:
+# podmień /etc/kiosk-setup/tls/cert.pem i key.pem, potem: sudo systemctl restart kiosk-api
+install -d -m 0700 /etc/kiosk-setup/tls
+if [ ! -s /etc/kiosk-setup/tls/cert.pem ] || [ ! -s /etc/kiosk-setup/tls/key.pem ]; then
+    HN=$(hostname)
+    SAN="DNS:$HN,DNS:$HN.local,DNS:localhost,IP:127.0.0.1"
+    for ip in $(hostname -I 2>/dev/null); do case "$ip" in *:*) ;; *) SAN="$SAN,IP:$ip" ;; esac; done
+    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=$HN (kecaj kiosk)" \
+        -addext "subjectAltName=$SAN" -keyout /etc/kiosk-setup/tls/key.pem -out /etc/kiosk-setup/tls/cert.pem \
+        >/dev/null 2>&1 || echo "    UWAGA: nie udało się utworzyć certyfikatu HTTPS (openssl)." >&2
+    chmod 0600 /etc/kiosk-setup/tls/key.pem 2>/dev/null || true
+fi
+# Jasność przez DDC/CI (ddcutil) potrzebuje modułu i2c-dev.
+echo i2c-dev > /etc/modules-load.d/kiosk-i2c.conf
+modprobe i2c-dev 2>/dev/null || true
+/usr/local/sbin/kiosk-power apply >/dev/null 2>&1 || true
+if [ "$SHUTDOWN_MINUTES" -gt 0 ]; then
+    SHUTDOWN_SUMMARY="komputer wyłącza się $SHUTDOWN_MINUTES min po każdym starcie"
+else
+    SHUTDOWN_SUMMARY="nie"
+fi
+if [ "$SCREEN_OFF_MINUTES" -gt 0 ]; then
+    SCREEN_SUMMARY="po $SCREEN_OFF_MINUTES min bez dotyku"
+else
+    SCREEN_SUMMARY="nigdy"
+fi
+
+echo ""
+echo "==================================================================="
+echo "Gotowe. Podsumowanie:"
+if [ "$KIOSK_SESSION" = desktop ]; then
+    echo "  - Ekran: pulpit na monitorze głównym (autologin $KIOSK_USER), kiosk na drugim monitorze"
+else
+    echo "  - Użytkownik autologin: $KIOSK_USER (tty1, kiosk zawsze się uruchamia)"
+fi
+case "$KIOSK_MODE" in
+    web)  echo "  - Tryb: web (Chromium) — $KIOSK_URL" ;;
+    rtsp) echo "  - Tryb: rtsp — kamer: $(printf '%s' "$KIOSK_RTSP_URLS" | tr ',' ' ' | wc -w) (siatka automatyczna)" ;;
+    usb)  echo "  - Tryb: usb — $KIOSK_USB_DEVICE" ;;
+    mix)  echo "  - Tryb: mix — strona $KIOSK_URL (${KIOSK_WEB_PERCENT}% ekranu) + kamer: $(printf '%s' "$KIOSK_RTSP_URLS" | tr ',' ' ' | wc -w)" ;;
+esac
+echo "  - Zmiana trybu przez SSH: sudo kiosk-mode (menu) / sudo kiosk-mode status"
+echo "  - Panel WWW i API: http://$(hostname -I 2>/dev/null | awk '{print $1}'):8088/ (hasło/token: sudo kiosk-mode api-token)"
+echo "  - Logo: kecaj $([ "$KIOSK_MODE" = web ] && echo kiosk || echo stream)$([ -f /etc/kiosk-setup/logo-custom.png ] && echo ' (nadpisane własnym plikiem)') — splash i tło ekranu"
+echo "  - MOTD: wyłączony"
+echo "  - SSH: włączony (zdalna konfiguracja: sudo kiosk-netconfig.sh)"
+echo "  - Watchdog IP: restart po ~15 min braku łączności (co 5 min, /etc/cron.d/ip-watchdog)"
+echo "  - Firewall: $FIREWALL_SUMMARY"
+echo "  - Logi: journald -> RAM (max 20M), /tmp i /var/log -> tmpfs (po restarcie)"
+echo "  - VNC: port 5900, hasło domyślne 'kiosk' (ZMIEŃ JE — patrz niżej)"
+echo "  - Wygaszanie ekranu: $SCREEN_SUMMARY; wyłączenie komputera: $SHUTDOWN_SUMMARY"
+echo "  - MQTT: $(python3 -c 'import json;c=json.load(open("/etc/kiosk-setup/mqtt.json"));print("%s:%s, prefiks %s" % (c["host"], c["port"], c["prefix"]) if c.get("enabled") else "wyłączone (włącz w panelu WWW)")' 2>/dev/null)"
+echo "  - Dźwięk: MPD na porcie 6600 (Home Assistant: integracja MPD, hasło = token panelu)"
+echo "  - Mowa: $VOICE_SUMMARY"
+echo "  - Dostęp SSH/VNC/panel WWW: $ADMIN_ACCESS_SUMMARY"
+echo ""
+echo "UWAGA: firewall (jeśli włączony) ogranicza tylko ruch WYCHODZĄCY z tej"
+echo "maszyny (poza portami SSH/VNC, które mają własne, jawne reguły INPUT)."
+echo ""
+echo "ZMIEŃ HASŁO VNC (domyślne 'kiosk' nie jest bezpieczne):"
+echo "  x11vnc -storepasswd NOWE_HASLO /etc/x11vnc.pass"
+echo "  sudo sed -i 's|-passwd kiosk|-rfbauth /etc/x11vnc.pass|' /etc/systemd/system/x11vnc.service"
+echo "  sudo systemctl daemon-reload && sudo systemctl restart x11vnc"
+echo ""
+echo "Konfiguracja sieci/WiFi przez SSH:"
+echo "  sudo kiosk-netconfig.sh"
+echo ""
+echo "Zrestartuj serwer, aby zastosować wszystkie zmiany:"
+echo "  sudo reboot"
+echo ""
+echo "Aby zmienić ustawienia (użytkownik, tryb, URL/kamery, logo, firewall, auto-shutdown, dostęp SSH/VNC), uruchom:"
+echo "  sudo dpkg-reconfigure kiosk-setup"
+# Nowe nakładki i zegar od razu na ekranie (bez restartu X).
+pkill -HUP -f '^/bin/sh /usr/local/bin/kiosk-session$' 2>/dev/null || true
+if [ -x /usr/local/sbin/kiosk-ro ] && /usr/local/sbin/kiosk-ro is-active; then
+    echo ""
+    echo "UWAGA: dysk jest tylko do odczytu — ta instalacja jest tylko w pamięci RAM i zniknie"
+    echo "po restarcie. Instaluj tak:  sudo kiosk-update file /sciezka/kiosk-setup_X.deb"
+fi
+echo "==================================================================="
+
+db_stop
+
+exit 0

@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Dymek z komunikatem na środku ekranu kiosku (sterowany z kiosk-api).
+
+  kiosk-bubble '{"text":"...","title":"...","level":"info","seconds":10}'
+
+level: info | ok | warning | alert. seconds: 0 = do zamknięcia.
+Grafikę rysuje ImageMagick (czcionka DejaVu, ten sam wygląd na każdym
+systemie), Tk tylko ją wyświetla. Dotknięcie/kliknięcie zamyka dymek. Bez
+menedżera okien okno co chwilę wraca na wierzch, żeby nie przykryły go
+kamery ani strona.
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import tkinter as tk
+
+LEVELS = {
+    "info":    ("#4C9AFF", "i"),
+    "ok":      ("#4ADE80", "✓"),
+    "warning": ("#F2A900", "!"),
+    "alert":   ("#FF5A4E", "!"),
+}
+BG, INK, MUTED = "#0E1216", "#F3F5F7", "#C9D1D9"
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+
+def im_text(s):
+    # ImageMagick: '%' to sekwencje formatujące, '@' na początku czyta plik.
+    s = s.replace("%", "%%")
+    return "\\" + s if s.startswith("@") else s
+
+
+def render(msg, sw, sh, out):
+    text = str(msg.get("text", "")).strip()[:600]
+    title = str(msg.get("title", "")).strip()[:120]
+    accent, glyph = LEVELS.get(str(msg.get("level", "info")), LEVELS["info"])
+    width = int(min(sw * 0.56, 1100))
+    pad = int(sh * 0.035)
+    border = max(4, int(sh * 0.006))
+    badge = int(sh * 0.085)
+    wrap = width - badge - 3 * pad - 2 * border
+    pt_title, pt_text = int(sh * 0.040), int(sh * 0.029)
+    col = []
+    if title:
+        col += ["(", "-background", BG, "-gravity", "west", "-fill", INK, "-font", FONT_BOLD, "-pointsize", str(pt_title),
+                "-size", "%dx" % wrap, "caption:" + im_text(title), ")"]
+    if text:
+        if title:
+            col += ["(", "-size", "%dx%d" % (wrap, int(pad * 0.4)), "xc:" + BG, ")"]
+        col += ["(", "-background", BG, "-gravity", "west", "-fill", MUTED if title else INK, "-font", FONT, "-pointsize", str(pt_text),
+                "-size", "%dx" % wrap, "caption:" + im_text(text), ")"]
+    if not col:
+        col = ["(", "-size", "%dx1" % wrap, "xc:" + BG, ")"]
+    cmd = (["convert",
+            "(", "-size", "%dx%d" % (badge, badge), "xc:" + BG, "-fill", accent,
+            "-draw", "circle %d,%d %d,%d" % (badge // 2, badge // 2, badge // 2, 2),
+            "-fill", BG, "-font", FONT_BOLD, "-pointsize", str(int(badge * 0.55)), "-gravity", "center",
+            "-annotate", "+0+0", glyph, ")",
+            "(", "-size", "%dx1" % pad, "xc:" + BG, ")",
+            "("] + col + ["-background", BG, "-gravity", "west", "-append", ")",
+           "-background", BG, "-gravity", "center", "+append",
+           "-bordercolor", BG, "-border", str(pad),
+           "-bordercolor", accent, "-border", str(border),
+           "PNG24:" + out])
+    subprocess.run(cmd, check=True, timeout=20)
+
+
+def main():
+    try:
+        msg = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
+        if not isinstance(msg, dict):
+            msg = {"text": str(msg)}
+    except json.JSONDecodeError:
+        msg = {"text": sys.argv[1]}
+    seconds = int(msg.get("seconds", 10) or 0)
+
+    root = tk.Tk()
+    root.configure(cursor="none")
+    root.withdraw()
+    root.overrideredirect(True)
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    ox = oy = 0
+    # Środek monitora głównego (kiosk-display zapisuje obszary w /tmp/kiosk-areas).
+    try:
+        with open("/tmp/kiosk-areas") as f:
+            for line in f:
+                if line.startswith("MAIN_AREA="):
+                    g = line.split("=", 1)[1].strip().strip("'")
+                    wh, x, y = g.split("+")
+                    sw, sh = map(int, wh.split("x"))
+                    ox, oy = int(x), int(y)
+    except (OSError, ValueError):
+        pass
+    fd, png = tempfile.mkstemp(suffix=".png", prefix="kiosk-bubble-")
+    os.close(fd)
+    try:
+        render(msg, sw, sh, png)
+        img = tk.PhotoImage(file=png)
+    finally:
+        os.unlink(png)
+    w, h = img.width(), img.height()
+    label = tk.Label(root, image=img, borderwidth=0, highlightthickness=0, bg=BG)
+    label.pack()
+    root.geometry("%dx%d+%d+%d" % (w, h, ox + (sw - w) // 2, oy + (sh - h) // 2))
+    root.deiconify()
+
+    def close(_=None):
+        root.destroy()
+
+    def keep_on_top():
+        root.lift()
+        root.after(400, keep_on_top)
+
+    root.bind("<Button-1>", close)
+    label.bind("<Button-1>", close)
+    keep_on_top()
+    if seconds > 0:
+        root.after(seconds * 1000, close)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

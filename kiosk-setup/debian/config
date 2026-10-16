@@ -1,0 +1,135 @@
+#!/bin/sh
+set -e
+
+. /usr/share/debconf/confmodule
+
+# Obecne ustawienia z plików kiosku -> podpowiedzi w pytaniach (panel WWW i
+# kiosk-mode mogły je zmienić od ostatniej instalacji).
+prefill() {
+    [ -r /etc/kiosk-setup/kiosk.conf ] || return 0
+    (
+        . /etc/kiosk-setup/kiosk.conf >/dev/null 2>&1 || exit 0
+        [ -n "${KIOSK_USER:-}" ] && db_set kiosk-setup/username "$KIOSK_USER"
+        [ -n "${KIOSK_MODE:-}" ] && db_set kiosk-setup/mode "$KIOSK_MODE"
+        db_set kiosk-setup/url "${KIOSK_URL:-}"
+        db_set kiosk-setup/rtsp_urls "${KIOSK_RTSP_URLS:-}"
+        [ -n "${KIOSK_USB_DEVICE:-}" ] && db_set kiosk-setup/usb_device "$KIOSK_USB_DEVICE"
+        [ -n "${KIOSK_WEB_PERCENT:-}" ] && db_set kiosk-setup/web_percent "$KIOSK_WEB_PERCENT"
+        db_set kiosk-setup/screen_off_minutes "${KIOSK_SCREEN_OFF_MIN:-0}"
+        db_set kiosk-setup/shutdown_minutes "${KIOSK_SHUTDOWN_MIN:-0}"
+        true
+    ) || true
+    if [ -r /etc/kiosk-setup/session.conf ]; then
+        S=$(sed -n 's/^KIOSK_SESSION=//p' /etc/kiosk-setup/session.conf)
+        [ -n "$S" ] && db_set kiosk-setup/session "$S" || true
+    fi
+    if [ -r /etc/kiosk-setup/firewall.conf ]; then
+        A=$(sh -c '. /etc/kiosk-setup/firewall.conf >/dev/null 2>&1; printf "%s" "${ADMIN_IPS:-}"')
+        db_set kiosk-setup/admin_ips "$A" || true
+    fi
+    if command -v iptables >/dev/null 2>&1; then
+        if iptables -S OUTPUT 2>/dev/null | grep -q -- '--match-set kiosk_'; then
+            db_set kiosk-setup/confirm_firewall true || true
+        else
+            db_set kiosk-setup/confirm_firewall false || true
+        fi
+    fi
+    if [ -r /etc/kiosk-setup/mqtt.json ] && command -v python3 >/dev/null 2>&1; then
+        python3 - <<'EOF_PY' | while IFS='=' read -r k v; do db_set "kiosk-setup/$k" "$v" || true; done
+import json
+try:
+    c = json.load(open("/etc/kiosk-setup/mqtt.json"))
+except Exception:
+    c = {}
+print("mqtt_host=" + (c.get("host", "") if c.get("enabled") else ""))
+print("mqtt_port=%s" % c.get("port", 1883))
+print("mqtt_user=" + c.get("user", ""))
+print("mqtt_prefix=" + (c.get("prefix") or "kecaj/kiosk"))
+EOF_PY
+    fi
+    return 0
+}
+
+# Aktualizacja już skonfigurowanego kiosku: tylko pytanie, czy uruchomić kreator.
+# „Nie” = zostają obecne ustawienia; postinst podmienia same programy.
+if [ "${1:-}" = configure ] && [ -n "${2:-}" ] && [ -r /etc/kiosk-setup/kiosk.conf ] \
+   && [ "${DEBCONF_RECONFIGURE:-0}" != 1 ]; then
+    db_set kiosk-setup/run_wizard false || true
+    db_fset kiosk-setup/run_wizard seen false || true
+    db_input high kiosk-setup/run_wizard || true
+    db_go || true
+    db_get kiosk-setup/run_wizard || true
+    [ "$RET" = true ] || exit 0
+    for q in username session mode url rtsp_urls usb_device web_percent logo_path confirm_firewall \
+             shutdown_minutes screen_off_minutes mqtt_host mqtt_port mqtt_user mqtt_password mqtt_prefix admin_ips; do
+        db_fset "kiosk-setup/$q" seen false || true
+    done
+    prefill
+elif [ "${1:-}" = reconfigure ]; then
+    prefill
+fi
+
+db_input high kiosk-setup/username || true
+db_go
+
+# Pierwsze pytanie o ekran: przy nowej instalacji na komputerze z pulpitem
+# proponujemy „pulpit + kiosk”; przy aktualizacji pełnego kiosku — bez zmian.
+db_fget kiosk-setup/session seen || true
+if [ "$RET" != true ]; then
+    if [ -r /etc/kiosk-setup/session.conf ]; then
+        . /etc/kiosk-setup/session.conf
+        db_set kiosk-setup/session "${KIOSK_SESSION:-kiosk}" || true
+    elif [ -r /etc/X11/default-display-manager ] && [ ! -r /etc/kiosk-setup/kiosk.conf ]; then
+        db_set kiosk-setup/session desktop || true
+    fi
+fi
+db_input high kiosk-setup/session || true
+db_go
+
+db_input high kiosk-setup/mode || true
+db_go
+
+db_get kiosk-setup/mode
+case "$RET" in
+    rtsp) db_input high kiosk-setup/rtsp_urls || true ;;
+    usb)  db_input high kiosk-setup/usb_device || true ;;
+    mix)  db_input high kiosk-setup/url || true
+          db_input high kiosk-setup/rtsp_urls || true
+          db_input medium kiosk-setup/web_percent || true ;;
+    *)    db_input high kiosk-setup/url || true ;;
+esac
+db_go
+
+db_input medium kiosk-setup/logo_path || true
+db_go
+
+# Na komputerze z pulpitem blokada internetu przeszkadza — domyślnie „nie”.
+db_get kiosk-setup/session
+if [ "$RET" = desktop ]; then
+    db_fget kiosk-setup/confirm_firewall seen || true
+    [ "$RET" = true ] || db_set kiosk-setup/confirm_firewall false || true
+fi
+db_input high kiosk-setup/confirm_firewall || true
+db_go
+
+db_input medium kiosk-setup/shutdown_minutes || true
+db_go
+
+db_input medium kiosk-setup/screen_off_minutes || true
+db_go
+
+db_input high kiosk-setup/mqtt_host || true
+db_go
+db_get kiosk-setup/mqtt_host
+if [ -n "$RET" ]; then
+    db_input high kiosk-setup/mqtt_port || true
+    db_input high kiosk-setup/mqtt_user || true
+    db_input high kiosk-setup/mqtt_password || true
+    db_input medium kiosk-setup/mqtt_prefix || true
+    db_go
+fi
+
+db_input medium kiosk-setup/admin_ips || true
+db_go
+
+exit 0

@@ -1,0 +1,71 @@
+#!/bin/bash
+# Głosy Piper (lokalna synteza mowy) dla kiosku.
+#   sudo kiosk-voice list                  - zainstalowane głosy
+#   sudo kiosk-voice install               - głosy domyślne (darkman, gosia, alan)
+#   sudo kiosk-voice install NAZWA...      - wybrane, np. pl_PL-mc_speech-medium
+#   sudo kiosk-voice remove NAZWA
+# Lista głosów: https://huggingface.co/rhasspy/piper-voices (katalog v1.0.0)
+# Na czas pobierania firewall kiosku tymczasowo przepuszcza HTTPS.
+DIR=/var/lib/kiosk-voices
+BASE=https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0
+DEFAULT_VOICES="pl_PL-darkman-medium pl_PL-gosia-medium en_GB-alan-medium"
+NAME_RE='^[a-z]{2,3}_[A-Z]{2}-[a-z0-9_]+-(x_low|low|medium|high)$'
+
+[ "$EUID" -eq 0 ] || { echo "Uruchom jako root: sudo kiosk-voice $*" >&2; exit 1; }
+mkdir -p "$DIR"; chmod 0755 "$DIR"
+
+url_for() {
+    local n=$1 lr lang rest spk q
+    lr=${n%%-*}; lang=${lr%%_*}; rest=${n#*-}; spk=${rest%-*}; q=${rest##*-}
+    echo "$BASE/$lang/$lr/$spk/$q/$n"
+}
+
+FW_RULE=(OUTPUT -p tcp -m multiport --dports 80,443 -m comment --comment kiosk-voice-tmp -j ACCEPT)
+open_fw() {
+    command -v iptables >/dev/null || return 0
+    iptables -I "${FW_RULE[@]}" 2>/dev/null && FW_OPEN=1
+    trap close_fw EXIT
+}
+close_fw() { [ -n "${FW_OPEN:-}" ] && iptables -D "${FW_RULE[@]}" 2>/dev/null; FW_OPEN=; }
+
+install_voice() {
+    local n=$1 u
+    if ! [[ "$n" =~ $NAME_RE ]]; then echo "Nieprawidłowa nazwa głosu: $n" >&2; return 1; fi
+    if [ -s "$DIR/$n.onnx" ] && [ -s "$DIR/$n.onnx.json" ]; then echo "$n: już zainstalowany"; return 0; fi
+    u=$(url_for "$n")
+    echo "$n: pobieram (ok. 60 MB)..."
+    if curl -fL --retry 3 --connect-timeout 20 -sS -o "$DIR/$n.onnx.json.part" "$u.onnx.json" &&
+       curl -fL --retry 3 --connect-timeout 20 -sS -o "$DIR/$n.onnx.part" "$u.onnx"; then
+        mv "$DIR/$n.onnx.json.part" "$DIR/$n.onnx.json"
+        mv "$DIR/$n.onnx.part" "$DIR/$n.onnx"
+        chmod 0644 "$DIR/$n.onnx" "$DIR/$n.onnx.json"
+        echo "$n: gotowe"
+    else
+        rm -f "$DIR/$n.onnx.part" "$DIR/$n.onnx.json.part"
+        echo "$n: nie udało się pobrać ($u)" >&2
+        return 1
+    fi
+}
+
+case "${1:-list}" in
+    list)
+        found=0
+        for f in "$DIR"/*.onnx; do
+            [ -e "$f" ] || continue
+            found=1; echo "$(basename "$f" .onnx)  ($(du -h "$f" | cut -f1))"
+        done
+        [ "$found" = 1 ] || echo "Brak głosów Piper. Zainstaluj: sudo kiosk-voice install" ;;
+    install)
+        shift
+        [ $# -gt 0 ] || set -- $DEFAULT_VOICES
+        open_fw
+        rc=0
+        for n in "$@"; do install_voice "$n" || rc=1; done
+        close_fw
+        exit $rc ;;
+    remove)
+        [[ "${2:-}" =~ $NAME_RE ]] || { echo "Podaj nazwę głosu" >&2; exit 1; }
+        rm -f "$DIR/$2.onnx" "$DIR/$2.onnx.json" && echo "Usunięto $2" ;;
+    *)
+        sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

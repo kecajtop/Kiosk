@@ -1,0 +1,9 @@
+{
+  "package": "kiosk-setup",
+  "version": "1:1.0.1",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.1_amd64.deb",
+  "sha256": "13d7790b3f3c91e58fb87632aab71364e538c47884524ed5f45091497992f106",
+  "size": 22930174,
+  "date": "2026-10-16",
+  "notes": "Pierwsze wydanie kiosk-setup 1.0.1."
+}

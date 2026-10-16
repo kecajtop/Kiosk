@@ -1,0 +1,90 @@
+#!/bin/bash
+# Asystent głosowy: kiosk jako satelita Home Assistant Assist (protokół Wyoming).
+#   sudo kiosk-satellite install   - pobierz (pip, ok. 50 MB) i uruchom; HA wykryje „kecaj kiosk”
+#   sudo kiosk-satellite remove    - usuń
+#   sudo kiosk-satellite restart | status
+# Słowo wybudzające, rozpoznawanie mowy i odpowiedź robi Home Assistant (dodatki
+# openWakeWord, Whisper, Piper albo Home Assistant Cloud) — kiosk tylko słucha
+# mikrofonu i odtwarza odpowiedź. Potrzebny mikrofon (USB albo w kamerze/monitorze).
+set -u
+[ "$EUID" -eq 0 ] || { echo "Uruchom jako root: sudo kiosk-satellite ${1:-status}" >&2; exit 1; }
+DIR=/opt/kiosk-satellite
+UNIT=/etc/systemd/system/kiosk-satellite.service
+LOG=/var/log/kiosk-satellite-install.log
+NAME="kecaj kiosk"
+[ -r /etc/kiosk-setup/satellite.conf ] && . /etc/kiosk-setup/satellite.conf
+
+open_fw() {   # firewall kiosku: na czas instalacji dostęp do PyPI (pip)
+    FW_RULE=(OUTPUT 1 -p tcp -m multiport --dports 80,443 -j ACCEPT)
+    command -v iptables >/dev/null && iptables -I "${FW_RULE[@]}" 2>/dev/null && FW_OPEN=1
+}
+close_fw() { [ -n "${FW_OPEN:-}" ] && iptables -D OUTPUT -p tcp -m multiport --dports 80,443 -j ACCEPT 2>/dev/null; FW_OPEN=; }
+
+main() {
+case "${1:-status}" in
+    install)
+        exec > >(tee -a "$LOG") 2>&1
+        echo "===== $(date '+%F %T') instalacja asystenta głosowego ====="
+        if [ -x /usr/local/sbin/kiosk-ro ] && /usr/local/sbin/kiosk-ro is-active; then
+            echo "BŁĄD: dysk jest tylko do odczytu — instalacja przepadłaby po restarcie."
+            echo "Wyłącz tryb (panel → System → Dysk tylko do odczytu albo sudo kiosk-ro off), uruchom ponownie, zainstaluj i włącz tryb z powrotem."
+            exit 1
+        fi
+        if ! arecord -l 2>/dev/null | grep -q '^card'; then
+            echo "UWAGA: nie widzę mikrofonu (arecord -l). Instaluję, ale asystent nie usłyszy poleceń bez mikrofonu."
+        fi
+        command -v python3 >/dev/null || { echo "Brak python3"; exit 1; }
+        if ! python3 -m venv --help >/dev/null 2>&1; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv || { echo "Brak python3-venv"; exit 1; }
+        fi
+        open_fw
+        trap close_fw EXIT
+        rm -rf "$DIR.new"
+        python3 -m venv "$DIR.new" && "$DIR.new/bin/pip" install -q --upgrade pip && \
+            "$DIR.new/bin/pip" install -q wyoming-satellite || { echo "BŁĄD: pip nie zainstalował wyoming-satellite"; rm -rf "$DIR.new"; exit 1; }
+        close_fw
+        rm -rf "$DIR"; mv "$DIR.new" "$DIR"
+        # Krótkie dźwięki „słucham” i „gotowe”.
+        ffmpeg -v error -y -f lavfi -i "sine=f=880:d=0.12,afade=t=out:st=0.06:d=0.06" -ar 22050 -ac 1 "$DIR/awake.wav"
+        ffmpeg -v error -y -f lavfi -i "sine=f=660:d=0.12,afade=t=out:st=0.06:d=0.06" -ar 22050 -ac 1 "$DIR/done.wav"
+        cat > "$UNIT" <<EOF
+[Unit]
+Description=kecaj kiosk — asystent głosowy (satelita Home Assistant Assist)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+DynamicUser=yes
+SupplementaryGroups=audio
+ExecStart=$DIR/bin/python -m wyoming_satellite --name "$NAME" --uri tcp://0.0.0.0:10700 \\
+  --mic-command "arecord -q -D sysdefault -r 16000 -c 1 -f S16_LE -t raw" \\
+  --snd-command "aplay -q -D sysdefault -r 22050 -c 1 -f S16_LE -t raw" \\
+  --awake-wav $DIR/awake.wav --done-wav $DIR/done.wav
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+        systemctl enable --now kiosk-satellite.service
+        echo "Gotowe. W Home Assistant: Ustawienia → Urządzenia i usługi → Wykryto: Wyoming „$NAME”."
+        echo "Potrzebne w HA: openWakeWord (słowo np. hey_jarvis / ok_nabu), Whisper (mowa→tekst), Piper (tekst→mowa)." ;;
+    remove)
+        systemctl disable --now kiosk-satellite.service 2>/dev/null
+        rm -f "$UNIT"; rm -rf "$DIR"
+        systemctl daemon-reload
+        echo "Asystent głosowy usunięty." ;;
+    restart)
+        systemctl restart kiosk-satellite.service && echo "Uruchomiono ponownie." ;;
+    status)
+        if [ -x "$DIR/bin/python" ]; then
+            echo "Asystent głosowy: $(systemctl is-active kiosk-satellite) (port 10700)"
+        else
+            echo "Asystent głosowy: nie zainstalowany (sudo kiosk-satellite install)"
+        fi
+        arecord -l 2>/dev/null | grep '^card' || echo "Mikrofon: brak" ;;
+    *)  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
+}
+main "$@"; exit $?

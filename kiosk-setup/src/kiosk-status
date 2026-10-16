@@ -1,0 +1,324 @@
+#!/usr/bin/env python3
+"""Stan kiosku na ekranie: małe ikony połączeń i karta z postępem aktualizacji.
+
+  kiosk-status --area 1920x1080+0+0 --corner tl [--problems]
+
+Ikony (LAN, Wi-Fi, internet, Home Assistant, MQTT) czyta z
+/run/kiosk-netstatus.json (zapisuje kiosk-api co 15 s). Postęp aktualizacji
+czyta z /run/kiosk-update.json (zapisuje kiosk-update) i pokazuje go na środku
+ekranu. --corner off = tylko karta aktualizacji. --problems = ikony tylko wtedy,
+gdy coś nie działa. Obrazki rysuje ImageMagick, Tk je tylko wyświetla.
+"""
+import argparse
+import json
+import os
+import subprocess
+import tempfile
+import time
+import tkinter as tk
+
+BG, CARD, INK, MUTED, LINE = "#0E1216", "#151B21", "#F3F5F7", "#A3AEB9", "#26303A"
+AMBER, OK, BAD, DIM = "#F2A900", "#4ADE80", "#FF7A6B", "#4A5561"
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+NET = "/run/kiosk-netstatus.json"
+UPD = "/run/kiosk-update.json"
+NOWP = "/run/kiosk-nowplaying.json"          # co gra (zapisuje kiosk-api co 3 s)
+NOWP_ART = "/run/kiosk-nowplaying-art"       # okładka z Home Assistant (jeśli jest)
+
+# Ikony 24×24 (ścieżki SVG, rysowane obrysem).
+ICONS = {
+    "lan": ["M9 3h6v5H9z", "M3 16h6v5H3z", "M15 16h6v5h-6z", "M12 8v4", "M6 16v-4h12v4"],
+    "internet": ["M12 3a9 9 0 1 0 0.01 0", "M12 3c-3 3-3 15 0 18", "M12 3c3 3 3 15 0 18", "M3.5 9h17", "M3.5 15h17"],
+    "ha": ["M3 11.5 12 4l9 7.5", "M5.5 9.5V20h13V9.5", "M10 20v-5h4v5"],
+    "mqtt": ["M8.5 8.5a5 5 0 0 0 0 7", "M15.5 8.5a5 5 0 0 1 0 7", "M5.5 5.5a9.5 9.5 0 0 0 0 13",
+             "M18.5 5.5a9.5 9.5 0 0 1 0 13"],
+    "update": ["M12 4v11", "M7 10l5 5 5-5", "M5 20h14"],
+}
+WIFI_ARCS = ["M8.5 15.5a5 5 0 0 1 7 0", "M5.5 12.2a9.5 9.5 0 0 1 13 0", "M2.5 8.8a14 14 0 0 1 19 0"]
+ORDER = ("lan", "wifi", "internet", "ha", "mqtt")
+
+
+def read_json(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def esc(t):
+    return str(t).replace("\\", "\\\\").replace("'", "\\'").replace("%", "%%")
+
+
+def icon_mvg(name, item, x, y, scale, stroke):
+    """Polecenia MVG jednej ikony w (x, y), skala scale (ikona 24 px → 24*scale)."""
+    st = item.get("state", "none")
+    color = OK if st == "ok" else (AMBER if st == "warn" else BAD)
+    out = ["push graphic-context", "translate %.1f,%.1f" % (x, y), "scale %.3f,%.3f" % (scale, scale),
+           "fill none", "stroke-linecap round", "stroke-linejoin round", "stroke-width %.2f" % stroke]
+    if name == "wifi":
+        lvl = int(item.get("level", 3)) if st == "ok" or st == "warn" else 3
+        for i, p in enumerate(WIFI_ARCS):
+            out += ["stroke '%s'" % (color if (st == "bad" or i < max(lvl, 1)) else DIM), "path '%s'" % p]
+        out += ["stroke none", "fill '%s'" % color, "circle 12,19 12,20.6"]
+    else:
+        out.append("stroke '%s'" % color)
+        out += ["path '%s'" % p for p in ICONS[name]]
+        if name == "mqtt":
+            out += ["stroke none", "fill '%s'" % color, "circle 12,12 12,13.8"]
+    if st == "bad":   # przekreślenie
+        out += ["fill none", "stroke '%s'" % BG, "stroke-width %.2f" % (stroke * 2.6), "line 4,4 20,20",
+                "stroke '%s'" % BAD, "stroke-width %.2f" % stroke, "line 4,4 20,20"]
+    out.append("pop graphic-context")
+    return out
+
+
+def render_icons(items, px, out):
+    n = len(items)
+    pad, gap = max(6, px // 3), max(6, px // 2)
+    w, h = pad * 2 + n * px + (n - 1) * gap, pad * 2 + px
+    scale = px / 24.0
+    stroke = 1.9 if px >= 22 else 2.2
+    mvg = ["fill '%s'" % BG, "stroke '%s'" % LINE, "stroke-width 1",
+           "roundrectangle 0.5,0.5 %.1f,%.1f %d,%d" % (w - 1.5, h - 1.5, h // 2, h // 2)]
+    for i, (name, item) in enumerate(items):
+        mvg += icon_mvg(name, item, pad + i * (px + gap), pad, scale, stroke)
+    subprocess.run(["convert", "-size", "%dx%d" % (w, h), "xc:none", "-draw", "\n".join(mvg), "-background", BG,
+                    "-flatten", "PNG24:" + out], check=True, timeout=20)
+
+
+def render_card(u, width, out):
+    st = u.get("state")
+    pct = max(0, min(100, int(u.get("percent") or 0)))
+    color = BAD if st == "error" else (OK if st == "done" else AMBER)
+    title = {"done": "Kiosk zaktualizowany", "error": "Aktualizacja nie powiodła się"}.get(st, "Aktualizacja kiosku")
+    ver = (u.get("from") or "?") + "  →  " + (u.get("to") or "?") if u.get("to") else ""
+    step = u.get("step") or ""
+    note = {"done": "Ustawienia zostały bez zmian.",
+            "error": "Szczegóły: panel WWW → System → Aktualizacje i kopia."}.get(st, "Nie wyłączaj zasilania kiosku.")
+    pt = max(14, width // 34)
+    pad = pt
+    bar_w, bar_h = width - 2 * pad, max(8, pt // 2)
+    rows = ["(", "-background", CARD, "-fill", color, "-font", FONT_BOLD, "-pointsize", str(int(pt * 1.35)),
+            "label:" + esc(title), ")"]
+    if ver:
+        rows += ["(", "-background", CARD, "-fill", MUTED, "-font", FONT, "-pointsize", str(pt), "label:" + esc(ver), ")"]
+    rows += ["(", "-size", "%dx%d" % (bar_w, bar_h + pt), "xc:" + CARD, "-fill", LINE,
+             "-draw", "roundrectangle 0,%d %d,%d %d,%d" % (pt // 2, bar_w - 1, pt // 2 + bar_h, bar_h // 2, bar_h // 2)]
+    if pct > 0:
+        fw = max(bar_h, int((bar_w - 1) * pct / 100))
+        rows += ["-fill", color, "-draw", "roundrectangle 0,%d %d,%d %d,%d" % (pt // 2, fw, pt // 2 + bar_h, bar_h // 2, bar_h // 2)]
+    rows += [")"]
+    line = step + ("   %d%%" % pct if st not in ("done", "error") else "")
+    if line.strip():
+        rows += ["(", "-background", CARD, "-fill", INK, "-font", FONT, "-pointsize", str(pt),
+                 "-size", "%dx" % bar_w, "caption:" + esc(line[:160]), ")"]
+    rows += ["(", "-background", CARD, "-fill", MUTED, "-font", FONT, "-pointsize", str(int(pt * 0.85)),
+             "label:" + esc(note), ")"]
+    cmd = ["convert", "-respect-parentheses"] + rows + [
+        "-background", CARD, "-gravity", "north", "-splice", "0x%d" % (pt // 2), "-gravity", "west", "-append", "+repage",
+        "-gravity", "west", "-extent", "%dx" % bar_w,
+                                "-bordercolor", CARD, "-border", "%dx%d" % (pad, pad),
+                                "-bordercolor", color if st == "error" else LINE, "-border", "2", "PNG24:" + out]
+    subprocess.run(cmd, check=True, timeout=20)
+
+
+NOTE = ["M9 18V5l12-2v13", "M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0", "M21 16a3 3 0 1 1-6 0a3 3 0 1 1 6 0"]
+RADIO = ["M4 9h16v11H4z", "M7 9 17 4", "M8 13h4", "M8 16h4", "M16.5 14.5a1.5 1.5 0 1 1 -0.01 0"]
+
+
+def render_nowplaying(n, width, out):
+    """Karta „Teraz gra”: ikona (albo okładka), tytuł, źródło."""
+    h = max(40, int(width * 0.11))
+    pt = max(13, int(h * 0.30))
+    icon = os.path.join(os.path.dirname(out), "np-icon.png")
+    art = n.get("art") and os.path.exists(NOWP_ART)
+    if art:
+        subprocess.run(["convert", NOWP_ART + "[0]", "-resize", "%dx%d^" % (h, h), "-gravity", "center",
+                        "-extent", "%dx%d" % (h, h), "PNG24:" + icon], check=True, timeout=20)
+    else:
+        sc = h / 24.0 * 0.62
+        off = h * 0.19
+        mvg = ["fill none", "stroke '%s'" % AMBER, "stroke-width 1.8", "stroke-linecap round", "stroke-linejoin round",
+               "translate %.1f,%.1f" % (off, off), "scale %.3f,%.3f" % (sc, sc)]
+        mvg += ["path '%s'" % p for p in (RADIO if n.get("kind") == "radio" else NOTE)]
+        subprocess.run(["convert", "-size", "%dx%d" % (h, h), "xc:" + LINE, "-draw", "\n".join(mvg), "PNG24:" + icon],
+                       check=True, timeout=20)
+    line1 = n.get("title") or n.get("station") or "Muzyka"
+    if n.get("artist") and n.get("artist") not in line1:
+        line1 = n["artist"] + " — " + line1
+    line2 = " · ".join(x for x in (n.get("source"), n.get("station") if n.get("title") else "") if x)
+    tw = width - h - int(h * 0.6)
+    rows = ["(", icon, ")",
+            "(", "(", "-background", CARD, "-fill", INK, "-font", FONT_BOLD, "-pointsize", str(pt),
+            "-size", "%dx" % tw, "caption:" + esc(line1[:90]), "-trim", "+repage", ")",
+            "(", "-background", CARD, "-fill", MUTED, "-font", FONT, "-pointsize", str(int(pt * 0.8)),
+            "label:" + esc(line2[:90]), ")",
+            "-background", CARD, "-gravity", "west", "-append", "-gravity", "west", "-splice", "%dx0" % int(h * 0.3), ")"]
+    subprocess.run(["convert", "-respect-parentheses"] + rows +
+                   ["-background", CARD, "-gravity", "center", "+append", "+repage",
+                    "-bordercolor", CARD, "-border", "%dx%d" % (int(h * 0.18), int(h * 0.18)),
+                    "-bordercolor", LINE, "-border", "1", "PNG24:" + out], check=True, timeout=20)
+
+
+def card_visible(u):
+    if not isinstance(u, dict):
+        return False
+    age = time.time() - float(u.get("ts") or 0)
+    st = u.get("state")
+    if st in ("download", "install", "start"):
+        return age < 1800          # zawieszony ponad 30 min = nie pokazuj
+    if st == "done":
+        return age < 25
+    if st == "error":
+        return age < 180
+    return False
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--area", required=True, help="WxH+X+Y — monitor kiosku")
+    ap.add_argument("--corner", default="tl", choices=["tl", "tr", "bl", "br", "off"])
+    ap.add_argument("--problems", action="store_true", help="ikony tylko, gdy coś nie działa")
+    ap.add_argument("--nowplaying", default="bc", choices=["bc", "bl", "br", "tc", "off"],
+                    help="gdzie karta „Teraz gra” (radio, muzyka z Home Assistant)")
+    a = ap.parse_args()
+    wh, ox, oy = a.area.split("+", 1)[0], *map(int, a.area.split("+")[1:3])
+    sw, sh = map(int, wh.split("x"))
+    px = max(18, int(sh * 0.022))
+    margin = int(sh * 0.02)
+    tmp = tempfile.mkdtemp(prefix="kiosk-status-")
+
+    root = tk.Tk()
+    root.configure(cursor="none")
+    root.overrideredirect(True)
+    root.configure(bg=BG)
+    icons = tk.Label(root, borderwidth=0, highlightthickness=0, bg=BG)
+    icons.pack()
+    root.withdraw()
+    card = tk.Toplevel(root, cursor="none")
+    card.overrideredirect(True)
+    card.configure(bg=CARD)
+    card_lbl = tk.Label(card, borderwidth=0, highlightthickness=0, bg=CARD)
+    card_lbl.pack()
+    card.withdraw()
+    np_win = tk.Toplevel(root, cursor="none")
+    np_win.overrideredirect(True)
+    np_win.configure(bg=CARD)
+    np_lbl = tk.Label(np_win, borderwidth=0, highlightthickness=0, bg=CARD)
+    np_lbl.pack()
+    np_win.withdraw()
+    state = {"icons": None, "card": None, "img_i": None, "img_c": None, "net_t": 0, "icons_on": False, "card_on": False,
+             "np": None, "img_n": None, "np_on": False}
+
+    def place(win, w, h, corner):
+        x = ox + (margin if corner in ("tl", "bl") else sw - w - margin)
+        y = oy + (margin if corner in ("tl", "tr") else sh - h - margin)
+        win.geometry("%dx%d+%d+%d" % (w, h, x, y))
+
+    def update_icons():
+        net = read_json(NET)
+        items = []
+        if isinstance(net, dict) and time.time() - float(net.get("ts") or 0) < 120:
+            for k in ORDER:
+                it = net.get(k)
+                if isinstance(it, dict) and it.get("state") in ("ok", "warn", "bad"):
+                    if a.problems and it["state"] == "ok":
+                        continue
+                    items.append((k, it))
+        key = json.dumps(items, sort_keys=True)
+        if key == state["icons"]:
+            return
+        state["icons"] = key
+        if not items or a.corner == "off":
+            root.withdraw()
+            state["icons_on"] = False
+            return
+        try:
+            path = os.path.join(tmp, "i.png")
+            render_icons(items, px, path)
+            img = tk.PhotoImage(file=path)
+            state["img_i"] = img
+            icons.configure(image=img)
+            place(root, img.width(), img.height(), a.corner)
+            root.deiconify()
+            state["icons_on"] = True
+        except Exception as e:
+            print("ikony: %s" % e, flush=True)
+
+    def update_card():
+        u = read_json(UPD)
+        if not card_visible(u):
+            if state["card_on"]:
+                card.withdraw()
+                state["card_on"] = False
+                state["card"] = None
+            return
+        key = json.dumps({k: u.get(k) for k in ("state", "step", "percent", "from", "to")}, sort_keys=True)
+        if key != state["card"]:
+            state["card"] = key
+            try:
+                path = os.path.join(tmp, "c.png")
+                render_card(u, min(int(sw * 0.46), 860), path)
+                img = tk.PhotoImage(file=path)
+                state["img_c"] = img
+                card_lbl.configure(image=img)
+                w, h = img.width(), img.height()
+                card.geometry("%dx%d+%d+%d" % (w, h, ox + (sw - w) // 2, oy + (sh - h) // 2))
+                card.deiconify()
+                state["card_on"] = True
+            except Exception as e:
+                print("karta aktualizacji: %s" % e, flush=True)
+
+    def update_nowplaying():
+        n = read_json(NOWP)
+        show = a.nowplaying != "off" and isinstance(n, dict) and n.get("state") == "playing" and \
+            time.time() - float(n.get("ts") or 0) < 30
+        if not show:
+            if state["np_on"]:
+                np_win.withdraw()
+                state["np_on"] = False
+                state["np"] = None
+            return
+        key = json.dumps({k: n.get(k) for k in ("title", "artist", "station", "source", "kind", "art")}, sort_keys=True)
+        if key == state["np"]:
+            return
+        state["np"] = key
+        try:
+            path = os.path.join(tmp, "n.png")
+            render_nowplaying(n, min(int(sw * 0.42), 760), path)
+            img = tk.PhotoImage(file=path)
+            state["img_n"] = img
+            np_lbl.configure(image=img)
+            w, h = img.width(), img.height()
+            pos = a.nowplaying
+            x = ox + {"bl": margin, "br": sw - w - margin}.get(pos, (sw - w) // 2)
+            y = oy + (margin if pos == "tc" else sh - h - margin)
+            np_win.geometry("%dx%d+%d+%d" % (w, h, x, y))
+            np_win.deiconify()
+            state["np_on"] = True
+        except Exception as e:
+            print("teraz gra: %s" % e, flush=True)
+
+    def tick():
+        now = time.time()
+        if now - state["net_t"] >= 5:
+            state["net_t"] = now
+            update_icons()
+        update_card()
+        update_nowplaying()
+        if state["np_on"]:
+            np_win.lift()
+        if state["icons_on"]:
+            root.lift()
+        if state["card_on"]:
+            card.lift()
+        root.after(1000, tick)
+
+    tick()
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

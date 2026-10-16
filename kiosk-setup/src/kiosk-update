@@ -1,0 +1,242 @@
+#!/bin/bash
+# Aktualizacja pakietu kiosk-setup (ustawienia zostają — instalacja bez kreatora).
+#   sudo kiosk-update file /sciezka/kiosk-setup_X_amd64.deb   - zainstaluj ten plik
+#   sudo kiosk-update check                                    - pobierz z adresu z updates.conf, zainstaluj, jeśli nowszy
+#   sudo kiosk-update auto                                     - jak check, ale tylko gdy włączone automatyczne (timer nocą)
+#   sudo kiosk-update latest                                   - tylko pokaż, jaka wersja jest dostępna
+# Adres: panel WWW → System, albo /etc/kiosk-setup/updates.conf (UPDATE_URL=…). Może to być:
+#   plik .deb, plik update.json (np. z GitHuba) albo API wydań GitHub (…/releases/latest).
+set -u
+[ "$EUID" -eq 0 ] || { echo "Uruchom jako root: sudo kiosk-update ${1:-}" >&2; exit 1; }
+LOG=/var/log/kiosk-update.log
+DIR=/var/lib/kiosk-setup
+CONF=/etc/kiosk-setup/updates.conf
+UPDATE_URL=""; UPDATE_AUTO=no
+[ -r "$CONF" ] && . "$CONF"
+mkdir -p "$DIR"
+exec > >(tee -a "$LOG") 2>&1
+echo "===== $(date '+%Y-%m-%d %H:%M:%S') kiosk-update ${1:-} ====="
+
+installed() { dpkg-query -W -f='${Version}' kiosk-setup 2>/dev/null; }
+
+# Postęp na ekranie kiosku (kiosk-status czyta /run/kiosk-update.json).
+PROG=/run/kiosk-update.json
+FROM_V=""; TO_V=""; SHOW=yes
+progress() {   # progress STAN PROCENT "krok"
+    [ "$SHOW" = yes ] || [ "$1" = install ] || [ "$1" = done ] || [ "$1" = error ] || return 0
+    python3 -c 'import json, os, sys, time
+p = sys.argv[1]
+d = {"state": sys.argv[2], "percent": int(sys.argv[3]), "step": sys.argv[4], "from": sys.argv[5], "to": sys.argv[6], "ts": time.time()}
+with open(p + ".tmp", "w") as f:
+    json.dump(d, f, ensure_ascii=False)
+os.chmod(p + ".tmp", 0o644)
+os.replace(p + ".tmp", p)' "$PROG" "$1" "$2" "${3:-}" "$FROM_V" "$TO_V" 2>/dev/null || true
+}
+
+apt_install() {   # apt_install PLIK [polecenie-przed] — instalacja z postępem z kroków postinst ("==> ...")
+    local deb=$1 total n=0 line rc; shift
+    total=$(dpkg-deb --ctrl-tarfile "$deb" 2>/dev/null | tar -xO ./postinst 2>/dev/null | grep -c '^echo "==> ')
+    [ "${total:-0}" -gt 0 ] 2>/dev/null || total=20
+    "$@" env DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades \
+        -o Dpkg::Options::=--force-confold "$APT_DEB" 2>&1 | while IFS= read -r line; do
+        printf '%s\n' "$line"
+        case "$line" in
+            "==> "*) n=$((n + 1)); [ $n -gt $total ] && n=$total
+                     line=${line#==> }; progress install $((PSTART + (PEND - PSTART) * n / total)) "Instalacja: ${line%...}" ;;
+            *Unpacking*|*Rozpakowywanie*) progress install "$PSTART" "Rozpakowywanie pakietu…" ;;
+        esac
+    done
+    rc=${PIPESTATUS[0]}
+    return "$rc"
+}
+
+install_deb() {
+    local deb=$1 pkg ver cur
+    pkg=$(dpkg-deb -f "$deb" Package 2>/dev/null)
+    ver=$(dpkg-deb -f "$deb" Version 2>/dev/null)
+    [ "$pkg" = kiosk-setup ] || { echo "BŁĄD: $deb to nie jest pakiet kiosk-setup"; return 1; }
+    cur=$(installed)
+    echo "Zainstalowana: ${cur:-brak}, w pliku: $ver"
+    if [ "${2:-}" = only-newer ] && [ -n "$cur" ] && ! dpkg --compare-versions "$ver" gt "$cur"; then
+        echo "Brak nowszej wersji — nic do zrobienia."
+        progress idle 0 ""
+        return 0
+    fi
+    FROM_V=${cur:-brak}; TO_V=$ver
+    progress install 25 "Przygotowanie instalacji…"
+    PSTART=28; PEND=97
+    if [ -x /usr/local/sbin/kiosk-ro ] && /usr/local/sbin/kiosk-ro is-active; then
+        # Dysk tylko do odczytu: najpierw instalacja na dysku (zostanie po restarcie),
+        # potem w bieżącym systemie (działa od razu).
+        echo "Dysk tylko do odczytu — instaluję $ver także na dysku..."
+        /usr/local/sbin/kiosk-ro save >/dev/null 2>&1 || true
+        install -D -m 0644 "$deb" "$DIR/kiosk-setup-ro.deb"
+        /usr/local/sbin/kiosk-ro save "$DIR/kiosk-setup-ro.deb" || return 1
+        rm -f "$DIR/kiosk-setup-ro.deb"
+        progress install 26 "Instalacja na dysku (tryb tylko do odczytu)…"
+        PSTART=28; PEND=60
+        if ! APT_DEB=/var/lib/kiosk-setup/kiosk-setup-ro.deb apt_install "$deb" /usr/local/sbin/kiosk-ro run; then
+            echo "BŁĄD instalacji na dysku — wersja po restarcie: ${cur:-brak}"
+            progress error 60 "Błąd instalacji na dysku"
+            return 1
+        fi
+        PSTART=62; PEND=97
+    fi
+    echo "Instaluję $ver (ustawienia zostają)..."
+    # Bez pytań: debconf zostawia obecną konfigurację (pytanie o kreator = „nie”).
+    if APT_DEB=$deb apt_install "$deb"; then
+        echo "Gotowe: kiosk-setup $(installed)"
+        progress done 100 ""
+    else
+        echo "BŁĄD instalacji — szczegóły powyżej. Poprzednia wersja: ${cur:-brak}"
+        progress error "$PEND" "Błąd instalacji (dziennik: /var/log/kiosk-update.log)"
+        return 1
+    fi
+}
+
+# Adres z updates.conf → wersja, adres .deb i suma SHA-256 (gdy znane).
+# update.json: {"version": "1:1.0.1", "url": "https://…/kiosk-setup_1.0.1_amd64.deb", "sha256": "…"}
+# API GitHub: …/releases/latest albo …/releases — plik kiosk-setup_*_amd64.deb z wydania.
+REL_VER=""; REL_URL=""; REL_SHA=""; REL_NOTES=""
+resolve() {
+    local out
+    REL_VER=""; REL_URL=""; REL_SHA=""; REL_NOTES=""
+    [ -n "$UPDATE_URL" ] || { echo "Brak adresu aktualizacji (panel WWW → System)." >&2; return 1; }
+    out=$(python3 - "$UPDATE_URL" <<'EOF'
+import json, re, sys, urllib.request
+url = sys.argv[1]
+def emit(ver, deb, sha="", notes=""):
+    print("\x1f".join([ver or "", deb, sha or "", " ".join(str(notes or "").split())[:300]]))
+    sys.exit(0)
+if re.search(r"\.deb(\?.*)?$", url):
+    emit("", url)
+req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json, application/json;q=0.9, */*;q=0.1",
+                                           "User-Agent": "kiosk-update"})
+try:
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = r.read(2_000_001)
+except Exception as e:
+    sys.exit("BŁĄD: %s — %s" % (url, getattr(e, "reason", None) or e))
+try:
+    j = json.loads(data.decode("utf-8"))
+except Exception:
+    emit("", url)          # to nie JSON — adres prowadzi wprost do pakietu
+def from_release(rel):
+    for a in rel.get("assets", []):
+        m = re.match(r"^kiosk-setup_(.+)_amd64\.deb$", a.get("name", ""))
+        if m:
+            d = a.get("digest") or ""
+            emit(m.group(1), a["browser_download_url"], d[7:] if d.startswith("sha256:") else "",
+                 rel.get("name") or rel.get("tag_name"))
+    return False
+if isinstance(j, list):
+    for rel in j:
+        if not rel.get("draft") and not rel.get("prerelease"):
+            from_release(rel)
+    sys.exit("brak wydania z plikiem kiosk-setup_*_amd64.deb")
+if "assets" in j:
+    from_release(j)
+    sys.exit("w wydaniu %s nie ma pliku kiosk-setup_*_amd64.deb" % j.get("tag_name", "?"))
+if j.get("url"):
+    emit(str(j.get("version", "")), j["url"], j.get("sha256", ""), j.get("notes", ""))
+sys.exit("nieznany format JSON (oczekiwane: version, url, sha256)")
+EOF
+) || { echo "BŁĄD: nie udało się odczytać $UPDATE_URL" >&2; return 1; }
+    IFS=$'\x1f' read -r REL_VER REL_URL REL_SHA REL_NOTES <<<"$out"
+    [ -n "$REL_URL" ] || return 1
+    return 0
+}
+
+# Czy dostępna wersja jest nowsza od zainstalowanej? (bez wersji — nie wiadomo, trzeba pobrać)
+newer_available() {
+    local cur ver=$REL_VER
+    cur=$(installed)
+    [ -n "$ver" ] && [ -n "$cur" ] || return 0
+    # Wersja z nazwy pliku bez epoki („1.0.1”) — przyjmij epokę zainstalowanej („1:”).
+    case "$ver" in *:*) ;; *) case "$cur" in *:*) ver="${cur%%:*}:$ver" ;; esac ;; esac
+    REL_VER=$ver
+    dpkg --compare-versions "$ver" gt "$cur"
+}
+
+download() {
+    # Komunikaty na stderr (trafiają do dziennika), na stdout tylko ścieżka pliku.
+    [ -n "$REL_URL" ] || { echo "Brak adresu pakietu." >&2; return 1; }
+    local out="$DIR/kiosk-setup-download.deb"
+    echo "Pobieram $REL_URL ..." >&2
+    progress download 1 "Pobieranie aktualizacji${REL_VER:+ ${REL_VER#*:}}…"
+    if ! python3 - "$REL_URL" "$out.part" "$PROG" "$SHOW" <<'EOF'
+import json, os, sys, time, urllib.request
+url, out, prog, show = sys.argv[1:5]
+def mb(n):
+    return ("%.1f" % (n / 1048576)).replace(".", ",")
+last = 0
+with urllib.request.urlopen(url, timeout=60) as r, open(out, "wb") as f:
+    total = int(r.headers.get("Content-Length") or 0)
+    done = 0
+    while True:
+        b = r.read(1 << 18)
+        if not b:
+            break
+        f.write(b)
+        done += len(b)
+        if show == "yes" and time.time() - last > 0.7:
+            last = time.time()
+            pct = int(24 * done / total) if total else 5
+            step = "Pobieranie %s z %s MB" % (mb(done), mb(total)) if total else "Pobieranie %s MB" % mb(done)
+            with open(prog + ".tmp", "w") as p:
+                json.dump({"state": "download", "percent": max(1, pct), "step": step, "from": "", "to": "",
+                           "ts": time.time()}, p, ensure_ascii=False)
+            os.chmod(prog + ".tmp", 0o644)
+            os.replace(prog + ".tmp", prog)
+EOF
+    then
+        echo "BŁĄD pobierania (adres, sieć, firewall?)" >&2
+        [ "$SHOW" = yes ] && progress error 0 "Nie udało się pobrać aktualizacji (adres, sieć, firewall?)"
+        rm -f "$out.part"
+        return 1
+    fi
+    if [ -n "$REL_SHA" ] && [ "$(sha256sum "$out.part" | cut -d' ' -f1)" != "$REL_SHA" ]; then
+        echo "BŁĄD: suma SHA-256 pobranego pliku się nie zgadza — plik odrzucony" >&2
+        progress error 0 "Pobrany plik jest uszkodzony (suma SHA-256)"
+        rm -f "$out.part"
+        return 1
+    fi
+    mv "$out.part" "$out"
+    echo "$out"
+}
+
+fetch_and_install() {
+    resolve || { [ "$SHOW" = yes ] && progress error 0 "Nie udało się sprawdzić aktualizacji (adres, sieć, firewall?)"; return 1; }
+    echo "Zainstalowana: $(installed), dostępna: ${REL_VER:-?} (${REL_URL})"
+    [ -n "$REL_NOTES" ] && echo "Opis: $REL_NOTES"
+    if ! newer_available; then
+        echo "Brak nowszej wersji — nic do zrobienia."
+        progress idle 0 ""
+        return 0
+    fi
+    local f
+    f=$(download | tail -n 1) && [ -f "$f" ] && install_deb "$f" only-newer
+}
+
+# Całość w funkcji wywołanej w jednej linii: bash wczytuje ją przed wykonaniem,
+# więc podmiana tego pliku przez instalowany pakiet nie przeszkadza.
+main() {
+case "${1:-}" in
+    file)  [ -f "${2:-}" ] || { echo "Podaj plik .deb"; exit 1; }
+           install_deb "$2" ;;
+    check) fetch_and_install ;;
+    latest) SHOW=no; resolve || exit 1
+           if [ -z "$REL_VER" ]; then n="wersja nieznana — sprawdzi się po pobraniu pliku"
+           elif newer_available; then n="nowsza — do instalacji"; else n="nie nowsza"; fi
+           echo "Zainstalowana: $(installed)"; echo "Dostępna: ${REL_VER:-?} ($n)"; echo "Plik: $REL_URL"
+           [ -n "$REL_NOTES" ] && echo "Opis: $REL_NOTES"; exit 0 ;;
+    auto)  SHOW=no   # nocne sprawdzanie: karta dopiero, gdy jest nowsza wersja
+           if [ "$UPDATE_AUTO" = yes ] && [ -n "$UPDATE_URL" ]; then
+               fetch_and_install
+           else
+               echo "Automatyczne aktualizacje wyłączone."
+           fi ;;
+    *)     sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
+}
+main "$@"; exit $?

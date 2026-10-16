@@ -1,0 +1,48 @@
+#!/bin/bash
+# Logo przy uruchamianiu komputera (Plymouth) albo zwykłe komunikaty startowe.
+#   sudo kiosk-bootlogo status
+#   sudo kiosk-bootlogo on     - logo kecaj, cichy start
+#   sudo kiosk-bootlogo off    - bez logo: widać komunikaty startu systemu (na stałe)
+#   sudo kiosk-bootlogo once   - bez logo tylko przy NASTĘPNYM uruchomieniu, potem logo wraca
+[ "$EUID" -eq 0 ] || { echo "Uruchom jako root: sudo kiosk-bootlogo ${1:-status}" >&2; exit 1; }
+CONF=/etc/kiosk-setup/boot.conf
+ONCE=/etc/kiosk-setup/bootlogo-once
+GRUB_FILE=/etc/default/grub
+LOGO_CMDLINE="quiet splash loglevel=0 rd.systemd.show_status=false rd.udev.log_level=0 vt.global_cursor_default=0"
+TEXT_CMDLINE="nosplash"
+
+KIOSK_BOOTLOGO=on
+[ -r "$CONF" ] && . "$CONF"
+
+set_grub() {   # set_grub on|off
+    local line
+    if [ "$1" = on ]; then line=$LOGO_CMDLINE; else line=$TEXT_CMDLINE; fi
+    [ -f "$GRUB_FILE" ] || { echo "Brak $GRUB_FILE (system bez GRUB-a?) — nic nie zmieniam." >&2; return 1; }
+    if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' "$GRUB_FILE"; then
+        sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"$line\"|" "$GRUB_FILE"
+    else
+        echo "GRUB_CMDLINE_LINUX_DEFAULT=\"$line\"" >> "$GRUB_FILE"
+    fi
+    update-grub >/dev/null 2>&1 || { echo "update-grub nie powiodło się — sprawdź: sudo update-grub" >&2; return 1; }
+}
+
+save() { mkdir -p /etc/kiosk-setup; echo "KIOSK_BOOTLOGO=$1" > "$CONF"; chmod 0644 "$CONF"; }
+
+case "${1:-status}" in
+    status)
+        if [ -e "$ONCE" ]; then echo "Logo przy starcie: wyłączone tylko przy następnym uruchomieniu (potem wraca)"
+        elif [ "$KIOSK_BOOTLOGO" = off ]; then echo "Logo przy starcie: wyłączone (widać komunikaty startu)"
+        else echo "Logo przy starcie: włączone"; fi ;;
+    on)
+        rm -f "$ONCE"; save on; set_grub on && echo "Logo przy starcie włączone (od następnego uruchomienia)." ;;
+    off)
+        rm -f "$ONCE"; save off; set_grub off && echo "Logo przy starcie wyłączone — przy uruchamianiu widać komunikaty systemu." ;;
+    once)
+        save on; touch "$ONCE"
+        set_grub off && echo "Przy następnym uruchomieniu bez logo (widać komunikaty), potem logo wraca samo." ;;
+    restore)
+        # Wywoływane przy starcie (kiosk-bootlogo.service): po jednorazowym starcie bez logo.
+        if [ -e "$ONCE" ]; then rm -f "$ONCE"; set_grub on; fi ;;
+    *)
+        sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

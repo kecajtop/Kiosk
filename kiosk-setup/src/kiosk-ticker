@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Pasek informacyjny na dole ekranu kiosku (przewijany tekst).
+
+  kiosk-ticker --geometry 1920x54+0+1026 --speed 3
+
+Tekst składa kiosk-api do /run/kiosk-ticker.txt (własne teksty, encje Home
+Assistant, pogoda, komunikat z MQTT ticker/set). Pasek rysuje ImageMagick
+(czcionka DejaVu) raz po każdej zmianie tekstu; Tk tylko przesuwa obraz.
+"""
+import argparse
+import os
+import subprocess
+import tempfile
+import time
+import tkinter as tk
+
+BG, INK, ACCENT, LINE = "#0E1216", "#F3F5F7", "#F2A900", "#26303A"
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+TEXT_FILE = "/run/kiosk-ticker.txt"
+GAP = 160          # odstęp między końcem a kolejnym początkiem tekstu (px)
+FRAME_MS = 30
+
+
+def read_text():
+    try:
+        with open(TEXT_FILE) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def render(text, h, out):
+    pt = max(12, int(h * 0.48))
+    color = ACCENT if text.startswith("⚠") else INK
+    subprocess.run(["convert", "-background", BG, "-fill", color, "-font", FONT, "-pointsize", str(pt),
+                    "label:" + text.replace("%", "%%"), "-gravity", "center", "-background", BG,
+                    "-extent", "x%d" % h, "PNG24:" + out], check=True, timeout=20)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--geometry", required=True, help="WxH+X+Y")
+    ap.add_argument("--speed", type=int, default=3, help="1-10 (px na klatkę)")
+    a = ap.parse_args()
+    wh, x, y = a.geometry.split("+", 1)[0], *map(int, a.geometry.split("+")[1:3])
+    w, h = map(int, wh.split("x"))
+    speed = max(1, min(10, a.speed))
+
+    root = tk.Tk()
+    root.configure(cursor="none")
+    root.overrideredirect(True)
+    root.geometry("%dx%d+%d+%d" % (w, h, x, y))
+    root.configure(bg=BG)
+    cv = tk.Canvas(root, width=w, height=h, bg=BG, highlightthickness=0, borderwidth=0)
+    cv.pack()
+    cv.create_line(0, 0, w, 0, fill=LINE, width=2)
+    tmpdir = tempfile.mkdtemp(prefix="kiosk-ticker-")
+    state = {"text": None, "img": None, "iw": 0, "items": [], "checked": 0}
+
+    def load():
+        text = read_text()
+        if text == state["text"]:
+            return
+        state["text"] = text
+        for it in state["items"]:
+            cv.delete(it)
+        state["items"] = []
+        if not text:
+            return
+        path = os.path.join(tmpdir, "t.png")
+        try:
+            render(text, h - 2, path)
+            img = tk.PhotoImage(file=path)
+        except Exception as e:
+            print("pasek: %s" % e, flush=True)
+            return
+        state["img"], state["iw"] = img, img.width()
+        # Dwie kopie obok siebie: płynne zawijanie bez przerwy.
+        state["items"] = [cv.create_image(w, 2, image=img, anchor="nw"),
+                          cv.create_image(w + img.width() + GAP, 2, image=img, anchor="nw")]
+
+    def tick():
+        now = time.time()
+        if now - state["checked"] > 2:
+            state["checked"] = now
+            load()
+        span = state["iw"] + GAP
+        for it in state["items"]:
+            cv.move(it, -speed, 0)
+            if cv.coords(it)[0] < -state["iw"]:
+                cv.move(it, 2 * span, 0)
+        root.after(FRAME_MS, tick)
+
+    def on_top():
+        root.lift()
+        root.after(3000, on_top)
+
+    load()
+    tick()
+    on_top()
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

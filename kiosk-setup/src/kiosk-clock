@@ -1,0 +1,1076 @@
+#!/usr/bin/env python3
+"""Zegar na ekranie kiosku.
+
+  kiosk-clock --corner tr --size m          nakładka w rogu (tl, tr, bl, br)
+  kiosk-clock --geometry 720x450+720+450    kafelek w podanym polu siatki
+  kiosk-clock --preview plik.png [--style flip]  sam obrazek (podgląd w panelu WWW)
+
+Wygląd (/etc/kiosk-setup/clock.json, panel → Ekran): classic, flip (klapki),
+analog (wskazówki), volt (woltomierze), seg7 (wyświetlacz 7-segmentowy),
+matrix (matryca LED z kropek), lcd1602 / lcd2004 (wyświetlacz znakowy LCD z dużymi
+cyframi; podświetlenie lcd_color: green, blue, amber) oraz animowane: snake (wąż), platform (platformówka
+z robotem), c64 (ekran 8-bitowego komputera), bsod (niebieski ekran).
+Zmiana działa w ciągu kilku sekund, bez przeładowania.
+
+Godzina HH:MM, data po polsku i (jeśli włączona w kiosk-api) pogoda. Grafikę rysuje ImageMagick (czcionka
+DejaVu, ten sam wygląd na każdym systemie) raz na minutę; Tk ją tylko
+wyświetla. Nakładka co chwilę wraca na wierzch, żeby nie przykryły jej
+kamery ani strona.
+"""
+import argparse
+import json
+import os
+import subprocess
+import tempfile
+import time
+import math
+
+BG, INK, MUTED, LINE, ACCENT = "#0E1216", "#F3F5F7", "#A3AEB9", "#26303A", "#F2A900"
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+DAYS = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"]
+MONTHS = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca",
+          "sierpnia", "września", "października", "listopada", "grudnia"]
+SIZES = {"s": 0.050, "m": 0.075, "l": 0.110}
+WEATHER_CACHE = "/run/kiosk-weather.json"  # zapisuje kiosk-api co 10 min
+STYLE_FILE = "/etc/kiosk-setup/clock.json"
+STYLES = ("classic", "flip", "analog", "volt", "seg7", "matrix", "snake", "platform", "c64", "bsod", "lcd1602", "lcd2004")
+ICON_COLORS = {"sunny": "#F2A900", "partlycloudy": "#F2A900", "lightning": "#F2A900", "lightning-rainy": "#F2A900",
+               "rainy": "#4C9AFF", "pouring": "#4C9AFF", "hail": "#4C9AFF", "clear-night": "#C9D1D9",
+               "snowy": "#E6F0FF", "snowy-rainy": "#E6F0FF"}
+
+
+def read_weather():
+    try:
+        with open(WEATHER_CACHE) as f:
+            w = json.load(f)
+        return w if isinstance(w, dict) and w.get("text") else None
+    except Exception:
+        return None
+
+
+def read_style():
+    try:
+        with open(STYLE_FILE) as f:
+            st = json.load(f).get("style")
+        return st if st in STYLES else "classic"
+    except Exception:
+        return "classic"
+
+
+# ---------------------------------------------------------------- wyglądy zegara
+
+SEG = {"0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc", "5": "afgcd", "6": "afgedc",
+       "7": "abc", "8": "abcdefg", "9": "abcdfg"}
+DOTS = {"0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+        "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+        "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+        "3": ["11111", "00010", "00100", "00010", "00001", "10001", "01110"],
+        "4": ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+        "5": ["11111", "10000", "11110", "00001", "00001", "10001", "01110"],
+        "6": ["00110", "01000", "10000", "11110", "10001", "10001", "01110"],
+        "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+        "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+        "9": ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
+        ":": ["0", "0", "1", "0", "1", "0", "0"]}
+
+
+def _png(cmd):
+    subprocess.run(cmd, check=True, timeout=20)
+
+
+SEG_ON, SEG_OFF = "#FF5A30", "#170E0D"
+
+
+def seg7_shapes(t, H, colon_on=True):
+    """Kształty wyświetlacza 7-segmentowego: [(punkty, kolor)], szerokość, wysokość.
+    HH:MM wysokości H, sekundy o połowę mniejsze, pochylenie jak w prawdziwych wyświetlaczach."""
+    shapes = []
+    pad = H * 0.08
+
+    def digit(ch, x, y, h):
+        w, T = h * 0.56, max(2.0, h * 0.12)
+        h2, ym, y1 = T / 2.0, y + h / 2.0, y + h
+
+        def hs(x0, x1, yc):
+            return [(x0 + h2, yc), (x0 + T, yc - h2), (x1 - T, yc - h2), (x1 - h2, yc), (x1 - T, yc + h2), (x0 + T, yc + h2)]
+
+        def vs(xc, ya, yb):
+            return [(xc, ya + h2), (xc + h2, ya + T), (xc + h2, yb - T), (xc, yb - h2), (xc - h2, yb - T), (xc - h2, ya + T)]
+        segs = {"a": hs(x, x + w, y + h2), "g": hs(x, x + w, ym), "d": hs(x, x + w, y1 - h2),
+                "f": vs(x + h2, y, ym), "b": vs(x + w - h2, y, ym), "e": vs(x + h2, ym, y1), "c": vs(x + w - h2, ym, y1)}
+        for k in "abcdefg":
+            shapes.append((segs[k], SEG_ON if k in SEG[ch] else SEG_OFF))
+        return w
+
+    x, y, gap = pad, pad, H * 0.16
+    for ch in time.strftime("%H", t):
+        x += digit(ch, x, y, H) + gap
+    r = max(2.0, H * 0.12) * 0.55
+    cx = x + H * 0.04
+    for yy in (y + H * 0.32, y + H * 0.68):
+        shapes.append(([(cx - r, yy - r), (cx + r, yy - r), (cx + r, yy + r), (cx - r, yy + r)],
+                       SEG_ON if colon_on else SEG_OFF))
+    x = cx + r + gap
+    for ch in time.strftime("%M", t):
+        x += digit(ch, x, y, H) + gap
+    hs_ = H * 0.5
+    x += H * 0.06
+    for ch in time.strftime("%S", t):
+        x += digit(ch, x, y + H - hs_, hs_) + gap * 0.5
+    k = 0.10
+    shapes = [([(px + (y + H - py) * k, py) for px, py in pts], c) for pts, c in shapes]
+    return shapes, x + pad + H * k, H + 2 * pad
+
+
+def draw_seg7(t, H, out):
+    shapes, W, Ht = seg7_shapes(t, H)
+    mvg = ["stroke none"]
+    for pts, c in shapes:
+        mvg += ["fill '%s'" % c, "polygon " + " ".join("%.1f,%.1f" % p for p in pts)]
+    _png(["convert", "-size", "%dx%d" % (int(W), int(Ht)), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
+
+
+def draw_matrix(t, H, out):
+    on, off = "#FFB000", "#1A170F"
+    text = time.strftime("%H:%M", t)
+    cols = []
+    for i, ch in enumerate(text):
+        rows = DOTS[ch]
+        for c in range(len(rows[0])):
+            cols.append([r[c] == "1" for r in rows])
+        if i < len(text) - 1:
+            cols.append([False] * 7)
+    cols = [[False] * 7] + cols + [[False] * 7]
+    p = H / 7.0
+    r = p * 0.36
+    W, Ht = int(len(cols) * p), int(7 * p)
+    mvg = ["stroke none"]
+    for ci, col in enumerate(cols):
+        for ri, lit in enumerate(col):
+            cx, cy = ci * p + p / 2, ri * p + p / 2
+            mvg += ["fill '%s'" % (on if lit else off), "circle %.1f,%.1f %.1f,%.1f" % (cx, cy, cx + r, cy)]
+    pad = int(p * 0.6)
+    _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG, "-draw", "\n".join(mvg),
+          "-bordercolor", BG, "-border", "%dx%d" % (pad, pad), "PNG24:" + out])
+
+
+def draw_flip(t, H, out):
+    card, card2, ink = "#1E252C", "#252D35", "#F3F5F7"
+    cw, ch = int(H * 1.5), int(H * 1.25)
+    r = int(H * 0.09)
+    gap = int(H * 0.14)
+    parts = []
+    for txt in (time.strftime("%H", t), time.strftime("%M", t)):
+        parts += ["(", "-size", "%dx%d" % (cw, ch), "xc:none",
+                  "-fill", card2, "-draw", "roundrectangle 0,0 %d,%d %d,%d" % (cw - 1, ch - 1, r, r),
+                  "-fill", card, "-draw", "roundrectangle 0,0 %d,%d %d,%d" % (cw - 1, ch // 2, r, r),
+                  "-font", FONT_BOLD, "-pointsize", str(int(H * 0.82)), "-fill", ink, "-gravity", "center",
+                  "-annotate", "+0+%d" % int(H * 0.02), txt,
+                  "-stroke", BG, "-strokewidth", str(max(2, H // 40)), "-draw", "line 0,%d %d,%d" % (ch // 2, cw, ch // 2),
+                  "-stroke", "none", "-fill", BG,
+                  "-draw", "rectangle 0,%d %d,%d" % (ch // 2 - H // 14, H // 30, ch // 2 + H // 14),
+                  "-draw", "rectangle %d,%d %d,%d" % (cw - H // 30, ch // 2 - H // 14, cw, ch // 2 + H // 14),
+                  ")"]
+    spacer = ["(", "-size", "%dx%d" % (gap, ch), "xc:" + BG, ")"]
+    _png(["convert", "-respect-parentheses", "-background", BG] + parts[:len(parts) // 2] + spacer +
+         parts[len(parts) // 2:] + ["-background", BG, "+append", "+repage", "-flatten", "PNG24:" + out])
+
+
+def _pt(cx, cy, r, deg):
+    a = math.radians(deg)
+    return cx + r * math.sin(a), cy - r * math.cos(a)
+
+
+def draw_analog(t, H, out):
+    S = int(H * 1.6)
+    c = S / 2.0
+    R = S * 0.46
+    mvg = ["fill '#151B21'", "stroke '#26303A'", "stroke-width %.1f" % max(2, S / 120),
+           "circle %.1f,%.1f %.1f,%.1f" % (c, c, c + R, c), "stroke-linecap round"]
+    for i in range(60):
+        big = i % 5 == 0
+        x0, y0 = _pt(c, c, R * (0.80 if big else 0.88), i * 6)
+        x1, y1 = _pt(c, c, R * 0.93, i * 6)
+        mvg += ["stroke '%s'" % (INK if big else "#4A5561"), "stroke-width %.1f" % (S / 60 if big else S / 200),
+                "line %.1f,%.1f %.1f,%.1f" % (x0, y0, x1, y1)]
+    h, m, sec = t.tm_hour % 12, t.tm_min, t.tm_sec
+    for deg, length, width, color in (((h + m / 60.0) * 30, 0.52, S / 28, INK), ((m + sec / 60.0) * 6, 0.78, S / 45, INK)):
+        x1, y1 = _pt(c, c, R * length, deg)
+        x0, y0 = _pt(c, c, R * 0.12, deg + 180)
+        mvg += ["stroke '%s'" % color, "stroke-width %.1f" % width, "line %.1f,%.1f %.1f,%.1f" % (x0, y0, x1, y1)]
+    # Sekundnik: cienka czerwona wskazówka z przeciwwagą.
+    x1, y1 = _pt(c, c, R * 0.86, sec * 6)
+    x0, y0 = _pt(c, c, R * 0.22, sec * 6 + 180)
+    mvg += ["stroke '#FF4D2E'", "stroke-width %.1f" % max(1.5, S / 160), "line %.1f,%.1f %.1f,%.1f" % (x0, y0, x1, y1)]
+    mvg += ["stroke none", "fill '%s'" % ACCENT, "circle %.1f,%.1f %.1f,%.1f" % (c, c, c + S / 30, c)]
+    _png(["convert", "-size", "%dx%d" % (S, S), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
+
+
+VOLT_METERS = ((24, ["0", "6", "12", "18", "24"], "GODZ."), (60, ["0", "10", "20", "30", "40", "50", "60"], "MIN."),
+               (60, ["0", "10", "20", "30", "40", "50", "60"], "SEK."))
+
+
+def volt_values(now):
+    t = time.localtime(now)
+    sec = t.tm_sec + (now % 1)
+    return (t.tm_hour + t.tm_min / 60.0 + sec / 3600.0, t.tm_min + sec / 60.0, sec)
+
+
+def volt_geometry(W, Hm):
+    """Środek obrotu i długość wskazówki (wspólne dla obrazka i animacji)."""
+    return W / 2.0, Hm * 0.88, Hm * 0.60 * 1.04
+
+
+def _meter(value, vmax, labels, title, W, Hm, needle=True):
+    """MVG jednego woltomierza (tarcza kremowa, skala łukiem, czerwona wskazówka)."""
+    face, ink, red = "#EDE6D3", "#1B1B1B", "#C8281E"
+    cx, cy = W / 2.0, Hm * 0.88
+    R = Hm * 0.60
+    mvg = ["stroke '#3A3F45'", "stroke-width %.1f" % max(3, W / 60), "fill '#0B0F13'",
+           "roundrectangle 1,1 %d,%d %d,%d" % (W - 2, Hm - 2, W // 18, W // 18),
+           "stroke none", "fill '%s'" % face,
+           "roundrectangle %d,%d %d,%d %d,%d" % (W // 22, W // 22, W - W // 22, Hm - W // 22, W // 30, W // 30),
+           "fill none", "stroke '%s'" % ink, "stroke-width %.1f" % max(1.5, W / 220),
+           "path 'M %.1f,%.1f A %.1f,%.1f 0 0 1 %.1f,%.1f'" % (_pt(cx, cy, R, -45) + (R, R) + _pt(cx, cy, R, 45))]
+    steps = len(labels) - 1
+    minor = 5 if vmax == 60 else 4
+    for i in range(steps * minor + 1):
+        deg = -45 + 90.0 * i / (steps * minor)
+        big = i % minor == 0
+        x0, y0 = _pt(cx, cy, R, deg)
+        x1, y1 = _pt(cx, cy, R * (1.10 if big else 1.05), deg)
+        mvg += ["stroke-width %.1f" % (max(2, W / 120) if big else max(1, W / 260)), "line %.1f,%.1f %.1f,%.1f" % (x0, y0, x1, y1)]
+    mvg += ["stroke none", "fill '%s'" % ink, "font '%s'" % FONT, "font-size %d" % max(9, int(W / 15))]
+    for i, lab in enumerate(labels):
+        deg = -45 + 90.0 * i / steps
+        x, y = _pt(cx, cy, R * 1.17, deg)
+        mvg += ["text %.1f,%.1f '%s'" % (x - len(lab) * W / 60.0, y + W / 50.0, lab)]
+    # Podpis w lewym dolnym rogu tarczy — poza drogą wskazówki.
+    mvg += ["font '%s'" % FONT_BOLD, "font-size %d" % max(8, int(W / 17)),
+            "text %.1f,%.1f '%s'" % (W * 0.10, Hm - W / 11.0, title)]
+    if not needle:
+        return mvg
+    deg = -45 + 90.0 * min(value, vmax) / vmax
+    x1, y1 = _pt(cx, cy, R * 1.04, deg)
+    mvg += ["stroke '%s'" % red, "stroke-width %.1f" % max(2, W / 110), "stroke-linecap round",
+            "line %.1f,%.1f %.1f,%.1f" % (cx, cy, x1, y1), "stroke none", "fill '#2A2A2A'",
+            "circle %.1f,%.1f %.1f,%.1f" % (cx, cy, cx + W / 28.0, cy)]
+    return mvg
+
+
+def draw_volt(t, H, out, needles=True, now=None):
+    W, Hm = int(H * 1.6), int(H * 1.07)
+    gap = int(H * 0.14)
+    vals = volt_values(now if now is not None else time.mktime(t))
+    files = []
+    for i, ((vmax, labels, title), val) in enumerate(zip(VOLT_METERS, vals)):
+        f = out + ".m%d.png" % i
+        _png(["convert", "-size", "%dx%d" % (W, Hm), "xc:" + BG,
+              "-draw", "\n".join(_meter(val, vmax, labels, title, W, Hm, needles)), "PNG24:" + f])
+        files.append(f)
+    try:
+        cmd = ["convert", files[0]]
+        for f in files[1:]:
+            cmd += ["-size", "%dx%d" % (gap, Hm), "xc:" + BG, f]
+        _png(cmd + ["+append", "PNG24:" + out])
+    finally:
+        for f in files:
+            os.unlink(f)
+    return W, Hm, gap
+
+
+DRAW = {"flip": draw_flip, "analog": draw_analog, "volt": draw_volt, "seg7": draw_seg7, "matrix": draw_matrix}
+
+
+# ---------------------------------------------------------------- zegary animowane (Tk Canvas)
+# snake (wąż na ekranie LCD), platform (platformówka z robotem), c64 (ekran 8-bitowego
+# komputera), bsod (niebieski ekran). Rysowane w Tk co klatkę; podgląd w panelu: ImageMagick.
+
+ANIM = ("snake", "platform", "c64", "bsod", "seg7", "volt", "analog", "lcd1602", "lcd2004")
+MONO_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+if not os.path.exists(MONO_BOLD):
+    MONO_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+ASPECT = {"snake": (33, 15), "platform": (112, 64), "c64": (40, 25), "bsod": (16, 10), "seg7": (16, 6), "volt": (16, 7), "analog": (10, 9), "lcd1602": (105, 27), "lcd2004": (125, 41)}
+
+# Robot (własna postać) 10×11 pikseli: . = przezroczysty.
+HERO = ["....R.....", "....R.....", "..WWWWWW..", ".WWWWWWWW.", ".WBWWWWBW.", ".WWWWWWWW.",
+        "..WWWWWW..", ".OOOOOOOO.", ".OOOOOOOO.", "..O....O..", ".KK....KK."]
+HERO_C = {"R": "#FF4D2E", "W": "#E8EEF2", "B": "#0E1216", "O": "#F2A900", "K": "#3A4652"}
+
+
+def font_rects(text, x0, y0, scale, color, gap=1):
+    """Prostokąty pikselowej czcionki 5×7 (cyfry i dwukropek)."""
+    out, x = [], x0
+    for ch in text:
+        rows = DOTS.get(ch)
+        if not rows:
+            x += 3 * scale
+            continue
+        for ry, row in enumerate(rows):
+            for rx, bit in enumerate(row):
+                if bit == "1":
+                    out.append((x + rx * scale, y0 + ry * scale, scale, scale, color))
+        x += (len(rows[0]) + gap) * scale
+    return out
+
+
+def text_width(text, scale, gap=1):
+    return sum(((len(DOTS[c][0]) + gap) if c in DOTS else 3) * scale for c in text) - gap * scale
+
+
+# --- wąż
+SNK = {"bg": "#0B140E", "grid": "#122017", "digit": "#7BD88F", "snake": "#3DDC84", "head": "#C8FAD6",
+       "apple": "#FF4D2E"}
+
+
+class Snake:
+    W, H = ASPECT["snake"]
+
+    def __init__(self):
+        import random
+        self.rnd = random.Random()
+        ring = [(x, 1) for x in range(1, self.W - 1)] + [(self.W - 2, y) for y in range(2, self.H - 1)] + \
+               [(x, self.H - 2) for x in range(self.W - 3, 0, -1)] + [(1, y) for y in range(self.H - 3, 1, -1)]
+        self.ring = ring
+        self.pos = 0
+        self.length = 6
+        self.apple = self.rnd.randrange(len(ring))
+
+    def step(self):
+        self.pos = (self.pos + 1) % len(self.ring)
+        if self.pos == self.apple:
+            self.length += 3
+            if self.length > 40:
+                self.length = 6
+            self.apple = (self.pos + self.rnd.randrange(12, len(self.ring) - 4)) % len(self.ring)
+
+    def rects(self, t):
+        out = []
+        txt = time.strftime("%H:%M", t)
+        tw = text_width(txt, 1)
+        out += font_rects(txt, (self.W - tw) // 2, (self.H - 7) // 2, 1, SNK["digit"])
+        ax, ay = self.ring[self.apple]
+        out.append((ax, ay, 1, 1, SNK["apple"]))
+        for i in range(self.length):
+            x, y = self.ring[(self.pos - i) % len(self.ring)]
+            out.append((x, y, 1, 1, SNK["head"] if i == 0 else SNK["snake"]))
+        return out
+
+    def background(self):
+        return [(x, y, 1, 1, SNK["grid"]) for x in range(self.W) for y in range(self.H)]
+
+
+# --- platformówka
+PLT = {"sky": "#0E1622", "star": "#3B4B63", "brick": "#7A3E1E", "brick2": "#5C2D15", "mortar": "#2A160B",
+       "block": "#2E7D8C", "block_hi": "#4FB3C2", "block_lo": "#1B4E58", "digit": "#F3F5F7"}
+
+
+class Platform:
+    W, H = ASPECT["platform"]
+    GROUND = 56
+    BW, BH, BY = 16, 20, 12
+
+    def __init__(self):
+        import random
+        self.rnd = random.Random()
+        xs, x = [], 9
+        for i in range(4):
+            xs.append(x)
+            x += self.BW + (12 if i == 1 else 4)
+        self.bx = xs
+        self.colon_x = xs[1] + self.BW + 4
+        self.shown = None
+        self.queue = []
+        self.hx, self.hy, self.vy = 4.0, 0.0, 0.0
+        self.face = 1
+        self.target = 40.0
+        self.bump = [0, 0, 0, 0]
+        self.hit_done = False
+        self.idle_t = time.time() + 3
+
+    def digits(self, t):
+        return time.strftime("%H%M", t)
+
+    def update(self, t):
+        d = self.digits(t)
+        if self.shown is None:
+            self.shown = list(d)
+        changed = [i for i in range(4) if self.shown[i] != d[i] and i not in self.queue]
+        for i in sorted(changed, reverse=True):     # od minut: najczęściej zmienia się ostatnia cyfra
+            self.queue.append(i)
+        if self.queue:
+            self.target = self.bx[self.queue[0]] + self.BW / 2.0 - 5
+        elif time.time() > self.idle_t:
+            self.target = float(self.rnd.randrange(2, self.W - 12))
+            self.idle_t = time.time() + self.rnd.uniform(3, 8)
+        on_ground = self.hy >= 0 and self.vy == 0
+        if on_ground:
+            dx = self.target - self.hx
+            if abs(dx) > 0.6:
+                self.face = 1 if dx > 0 else -1
+                self.hx += 0.6 * self.face
+            elif self.queue:
+                self.vy, self.hit_done = -3.6, False
+            elif self.rnd.random() < 0.004:
+                self.vy, self.hit_done = -2.2, True
+        else:
+            self.hy += self.vy
+            self.vy += 0.22
+            head = self.GROUND - 11 + self.hy
+            if self.queue and not self.hit_done and self.vy < 0 and head <= self.BY + self.BH:
+                i = self.queue.pop(0)
+                self.shown[i] = d[i]
+                self.bump[i] = 6
+                self.hit_done = True
+                self.vy = 0.8
+            if self.hy >= 0:
+                self.hy, self.vy = 0.0, 0.0
+        self.bump = [max(0, b - 1) for b in self.bump]
+
+    def background(self):
+        out = []
+        for i in range(26):
+            out.append(((i * 37) % self.W, (i * 23) % (self.GROUND - 30), 1, 1, PLT["star"]))
+        for y in range(self.GROUND, self.H, 4):
+            off = 0 if (y // 4) % 2 == 0 else 4
+            out.append((0, y, self.W, 4, PLT["mortar"]))
+            for x in range(-off, self.W, 8):
+                out.append((x, y, 7, 3, PLT["brick"] if (x // 8) % 3 else PLT["brick2"]))
+        return out
+
+    def blocks(self):
+        out = []
+        for i, x in enumerate(self.bx):
+            y = self.BY - (2 if self.bump[i] > 2 else (1 if self.bump[i] else 0))
+            out += [(x, y, self.BW, self.BH, PLT["block_lo"]), (x, y, self.BW - 1, self.BH - 1, PLT["block_hi"]),
+                    (x + 1, y + 1, self.BW - 2, self.BH - 2, PLT["block"])]
+            for cx, cy in ((1, 1), (self.BW - 3, 1), (1, self.BH - 3), (self.BW - 3, self.BH - 3)):
+                out.append((x + cx + 0.5, y + cy + 0.5, 1, 1, PLT["block_lo"]))
+            out += font_rects(self.shown[i] if self.shown else "0", x + 3, y + 3, 2, PLT["digit"])
+        for cy in (self.BY + 6, self.BY + 13):
+            out.append((self.colon_x, cy, 2, 2, PLT["digit"]))
+        return out
+
+    def hero(self):
+        out = []
+        top = self.GROUND - 11 + int(round(self.hy))
+        left = int(round(self.hx))
+        for ry, row in enumerate(HERO):
+            for rx, ch in enumerate(row):
+                if ch != ".":
+                    x = rx if self.face > 0 else len(row) - 1 - rx
+                    out.append((left + x, top + ry, 1, 1, HERO_C[ch]))
+        return out
+
+
+# --- ekran 8-bitowego komputera
+C64 = {"border": "#7869C4", "screen": "#3E31A2", "ink": "#7869C4"}
+
+
+def c64_lines(t, blink):
+    return ["", "    **** KIOSK 64 ZEGAR V2 ****", "", " " + date_text(t).upper(), "",
+            "READY.", "PRINT TIME$", " " + time.strftime("%H:%M:%S", t), "", "READY.", "█" if blink else ""]
+
+
+# --- niebieski ekran
+BSOD = {"bg": "#0078D7", "ink": "#FFFFFF"}
+
+
+def bsod_texts(t):
+    pct = int(t.tm_sec * 100 / 60)
+    return [(":(", 0.15, 1.0), ("Kiosk napotkał nową minutę i musi ją wyświetlić.", 0.052, 0.4),
+            ("Ukończono: %d%%" % pct, 0.052, 0.4),
+            (time.strftime("%H:%M", t), 0.19, 1.0), (date_text(t), 0.052, 0.4)]
+
+
+def preview_anim(style, t, out, width=360):
+    """Statyczny kadr do podglądu w panelu (ImageMagick)."""
+    if style in ("seg7", "volt", "analog"):
+        render(out, t, 64, 18, None, None, style)
+        return
+    if style in ("lcd1602", "lcd2004"):
+        draw_lcd(style, t, width, out)
+        return
+    aw, ah = ASPECT[style]
+    if style in ("snake", "platform"):
+        sc = max(1, width // aw)
+        if style == "snake":
+            g = Snake()
+            g.length = 12
+            g.pos = 20
+            g.apple = 30
+            rects = g.background() + g.rects(t)
+            bg = SNK["bg"]
+        else:
+            g = Platform()
+            g.shown = list(g.digits(t))
+            g.hx, g.hy = g.bx[3] + 3, -9
+            rects = g.background() + g.blocks() + g.hero()
+            bg = PLT["sky"]
+        mvg = ["stroke none"]
+        for x, y, w, h, c in rects:
+            gap = 1 if style == "snake" and sc >= 4 else 0
+            mvg += ["fill '%s'" % c, "rectangle %d,%d %d,%d" % (x * sc, y * sc, (x + w) * sc - 1 - gap, (y + h) * sc - 1 - gap)]
+        _png(["convert", "-size", "%dx%d" % (aw * sc, ah * sc), "xc:" + bg, "-draw", "\n".join(mvg), "PNG24:" + out])
+        return
+    W, H = width, int(width * ah / aw)
+    if style == "c64":
+        b = int(W * 0.06)
+        fs = max(8, int((W - 2 * b) / 40 * 1.75))
+        mvg = ["fill '%s'" % C64["screen"], "rectangle %d,%d %d,%d" % (b, b, W - b, H - b),
+               "fill '%s'" % C64["ink"], "font '%s'" % MONO_BOLD, "font-size %d" % fs]
+        for i, ln in enumerate(c64_lines(t, True)):
+            if ln:
+                mvg.append("text %d,%d '%s'" % (b + 4, b + (i + 1) * fs * 1.12, ln.replace("'", "")))
+        _png(["convert", "-size", "%dx%d" % (W, H), "xc:" + C64["border"], "-draw", "\n".join(mvg), "PNG24:" + out])
+        return
+    mvg = ["fill '%s'" % BSOD["ink"]]
+    y = H * 0.04
+    for txt, size, _ in bsod_texts(t):
+        fs = max(8, int(H * size))
+        mvg += ["font '%s'" % (FONT_BOLD if size > 0.12 else FONT), "font-size %d" % fs,
+                "text %d,%d '%s'" % (W * 0.08, y + fs, txt.replace("'", ""))]
+        y += fs * 1.25
+    _png(["convert", "-size", "%dx%d" % (W, H), "xc:" + BSOD["bg"], "-draw", "\n".join(mvg), "PNG24:" + out])
+
+
+# ---------------------------------------------------------------- wyświetlacz znakowy LCD 1602 / 2004
+# Każdy znak to matryca 5×8 kropek; duże cyfry składane z kilku pól znaku (jak własne
+# znaki w sterowniku HD44780). Wzory pól i czcionki — własne.
+
+LCD_COLORS = {"green": ("#9CC21F", "#1B2808", "#8DB21A"), "blue": ("#1C43D2", "#E6EEFF", "#2550DE"),
+              "amber": ("#1A1307", "#FFB300", "#2A1F0A")}   # tło, kropka zapalona, kropka zgaszona
+LCD_PANEL = {"green": "#2E3A12", "blue": "#0D1A4A", "amber": "#0B0904"}
+
+# Pola dużych cyfr (wiersze 8 kropek, 1 = cały wiersz pola zapalony).
+LCD_ROWS = {"F": "11111111", "T": "11100000", "B": "00000111", "TB": "11100111", "M": "00011000",
+            "MU": "11111000", "ML": "00011111", "_": "00000000"}
+BIG2 = {"0": ("F T F", "F B F"), "1": ("T F _", "B F B"), "2": ("TB TB F", "F B B"), "3": ("TB TB F", "B B F"),
+        "4": ("F B F", "_ _ F"), "5": ("F TB TB", "B B F"), "6": ("F TB TB", "F B F"), "7": ("T T F", "_ _ F"),
+        "8": ("F TB F", "F B F"), "9": ("F TB F", "B B F")}
+BIG3 = {"0": ("F T F", "F _ F", "F B F"), "1": ("T F _", "_ F _", "B F B"), "2": ("T T F", "ML M MU", "F B B"),
+        "3": ("T T F", "M M F", "B B F"), "4": ("F _ F", "MU M F", "_ _ F"), "5": ("F T T", "MU M ML", "B B F"),
+        "6": ("F T T", "F M ML", "F B F"), "7": ("T T F", "_ _ F", "_ _ F"), "8": ("F T F", "F M F", "F B F"),
+        "9": ("F T F", "MU M F", "B B F")}
+# Mała czcionka 5×7 (wielkie litery, cyfry, znaki) dla zwykłych pól tekstu.
+LCD_FONT = {
+    "A": "01110 10001 10001 11111 10001 10001 10001", "B": "11110 10001 10001 11110 10001 10001 11110",
+    "C": "01110 10001 10000 10000 10000 10001 01110", "D": "11110 10001 10001 10001 10001 10001 11110",
+    "E": "11111 10000 10000 11110 10000 10000 11111", "F": "11111 10000 10000 11110 10000 10000 10000",
+    "G": "01110 10001 10000 10111 10001 10001 01111", "H": "10001 10001 10001 11111 10001 10001 10001",
+    "I": "01110 00100 00100 00100 00100 00100 01110", "J": "00111 00010 00010 00010 00010 10010 01100",
+    "K": "10001 10010 10100 11000 10100 10010 10001", "L": "10000 10000 10000 10000 10000 10000 11111",
+    "M": "10001 11011 10101 10101 10001 10001 10001", "N": "10001 10001 11001 10101 10011 10001 10001",
+    "O": "01110 10001 10001 10001 10001 10001 01110", "P": "11110 10001 10001 11110 10000 10000 10000",
+    "R": "11110 10001 10001 11110 10100 10010 10001", "S": "01111 10000 10000 01110 00001 00001 11110",
+    "T": "11111 00100 00100 00100 00100 00100 00100", "U": "10001 10001 10001 10001 10001 10001 01110",
+    "W": "10001 10001 10001 10101 10101 10101 01010", "Z": "11111 00001 00010 00100 01000 10000 11111",
+    "Y": "10001 10001 01010 00100 00100 00100 00100", ".": "00000 00000 00000 00000 00000 01100 01100",
+    ":": "00000 01100 01100 00000 01100 01100 00000", "-": "00000 00000 00000 11111 00000 00000 00000",
+    "°": "01100 10010 10010 01100 00000 00000 00000", " ": "00000 00000 00000 00000 00000 00000 00000"}
+for _d, _rows in DOTS.items():
+    if _d.isdigit():
+        LCD_FONT[_d] = " ".join(_rows)
+LCD_DAYS = ["PON", "WTO", "SRO", "CZW", "PIA", "SOB", "NIE"]
+
+
+def read_lcd_color():
+    try:
+        with open(STYLE_FILE) as f:
+            c = json.load(f).get("lcd_color")
+        return c if c in LCD_COLORS else "green"
+    except Exception:
+        return "green"
+
+
+def lcd_cells(style, t, colon_on=True, weather=None):
+    """Zawartość wyświetlacza: lista wierszy, każdy to lista pól; pole = 8 wierszy po 5 kropek ('0'/'1')."""
+    cols, rows = (16, 2) if style == "lcd1602" else (20, 4)
+    blank = ["00000"] * 8
+    grid = [[blank for _ in range(cols)] for _ in range(rows)]
+
+    def put_big(ch, col, table):
+        for r, line in enumerate(table[ch]):
+            for c, key in enumerate(line.split()):
+                grid[r][col + c] = [LCD_ROWS[key][i] * 5 for i in range(8)]
+
+    def put_colon(col, height):
+        dot = "01110"
+        on = colon_on
+        if height == 2:
+            grid[0][col] = ["00000"] * 4 + [dot if on else "00000"] * 3 + ["00000"]
+            grid[1][col] = ["00000"] + [dot if on else "00000"] * 3 + ["00000"] * 4
+        else:
+            d = dot if on else "00000"
+            grid[1][col] = ["00000", d, d, "00000", "00000", d, d, "00000"]
+
+    def put_text(text, row, col):
+        for i, ch in enumerate(text):
+            if 0 <= col + i < cols:
+                pat = LCD_FONT.get(ch.upper(), LCD_FONT[" "]).split()
+                grid[row][col + i] = pat + ["00000"]
+
+    hh, mm, ss = time.strftime("%H", t), time.strftime("%M", t), time.strftime("%S", t)
+    if style == "lcd1602":
+        put_big(hh[0], 0, BIG2)
+        put_big(hh[1], 3, BIG2)
+        put_colon(6, 2)
+        put_big(mm[0], 7, BIG2)
+        put_big(mm[1], 10, BIG2)
+        put_text(LCD_DAYS[t.tm_wday][:2], 0, 14)
+        put_text(ss, 1, 14)
+    else:
+        for i, (ch, col) in enumerate(zip(hh + mm + ss, (0, 3, 7, 10, 14, 17))):
+            put_big(ch, col, BIG3)
+        put_colon(6, 3)
+        put_colon(13, 3)
+        temp = ("%d°C" % round(weather["temp"])) if weather and weather.get("temp") is not None else ""
+        line = "%s %02d.%02d.%d" % (LCD_DAYS[t.tm_wday], t.tm_mday, t.tm_mon, t.tm_year)
+        line = (line + " " * 20)[:20 - len(temp)] + temp if temp else line
+        put_text(line[:20], 3, 0)
+    return grid
+
+
+def lcd_geometry(style, W, H):
+    """Rozmiar kropki i położenie matrycy w polu W×H (z ramką modułu)."""
+    cols, rows = (16, 2) if style == "lcd1602" else (20, 4)
+    dots_w, dots_h = cols * 6 - 1, rows * 9 - 1
+    p = max(2.0, min(W * 0.90 / (dots_w + 6), H * 0.90 / (dots_h + 6)))
+    mw, mh = (dots_w + 6) * p, (dots_h + 6) * p
+    x0, y0 = (W - mw) / 2.0, (H - mh) / 2.0
+    return cols, rows, p, x0, y0, mw, mh
+
+
+def lcd_dots(grid, p, x0, y0):
+    """[(x, y, rozmiar, zapalona)] — kropki matrycy."""
+    out = []
+    s = p * 0.86
+    for r, row in enumerate(grid):
+        for c, cell in enumerate(row):
+            for dy in range(8):
+                line = cell[dy]
+                for dx in range(5):
+                    x = x0 + (3 + c * 6 + dx) * p
+                    y = y0 + (3 + r * 9 + dy) * p
+                    out.append((x, y, s, line[dx] == "1"))
+    return out
+
+
+def _raster_png(W, H, rects, out, bg):
+    """Prosta bitmapa z prostokątów (bez długiej listy poleceń dla ImageMagick)."""
+    def rgb(c):
+        return bytes(int(c[i:i + 2], 16) for i in (1, 3, 5))
+    buf = bytearray(rgb(bg) * (W * H))
+    for x0, y0, x1, y1, col in rects:
+        x0, y0, x1, y1 = max(0, int(round(x0))), max(0, int(round(y0))), min(W, int(round(x1))), min(H, int(round(y1)))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        line = rgb(col) * (x1 - x0)
+        for y in range(y0, y1):
+            i = (y * W + x0) * 3
+            buf[i:i + len(line)] = line
+    subprocess.run(["convert", "ppm:-", "PNG24:" + out], input=b"P6 %d %d 255\n" % (W, H) + bytes(buf),
+                   check=True, timeout=20)
+
+
+def draw_lcd(style, t, W, out, color=None):
+    color = color or read_lcd_color()
+    bg, on, off = LCD_COLORS[color]
+    H = int(W * (0.32 if style == "lcd1602" else 0.42))
+    cols, rows, p, x0, y0, mw, mh = lcd_geometry(style, W, H)
+    rects = [(x0 - p * 2, y0 - p * 2, x0 + mw + p * 2, y0 + mh + p * 2, LCD_PANEL[color]), (x0, y0, x0 + mw, y0 + mh, bg)]
+    rects += [(x, y, x + sz, y + sz, on if lit else off)
+              for x, y, sz, lit in lcd_dots(lcd_cells(style, t, True, read_weather()), p, x0, y0)]
+    _raster_png(W, H, rects, out, BG)
+
+
+def lcd_lit(grid):
+    return [line[dx] == "1" for row in grid for cell in row for line in cell[:8] for dx in range(5)]
+
+
+def run_anim(tk, parent, root, style, W, H, place, alive):
+    """Animowany zegar na Canvas W×H; place(w, h) ustawia okno. Wraca, gdy zmieni się styl."""
+    cv = tk.Canvas(parent, width=W, height=H, highlightthickness=0, borderwidth=0, cursor="none")
+
+    def later(ms, fn):      # kolejna klatka tylko, dopóki ten wygląd jest na ekranie
+        root.after(ms, lambda: fn() if alive() else None)
+    cv.pack()
+    place(W, H)
+    aw, ah = ASPECT[style]
+
+    def draw(rects, tag, sc, ox=0, oy=0, gap=0):
+        cv.delete(tag)
+        for x, y, w, h, c in rects:
+            cv.create_rectangle(ox + x * sc, oy + y * sc, ox + (x + w) * sc - gap, oy + (y + h) * sc - gap,
+                                fill=c, outline="", tags=tag)
+
+    if style in ("snake", "platform"):
+        sc = max(1, min(W // aw, H // ah))
+        ox, oy = (W - aw * sc) // 2, (H - ah * sc) // 2
+        if style == "snake":
+            g = Snake()
+            cv.configure(bg=SNK["bg"])
+            gap = 1 if sc >= 4 else 0
+            draw(g.background(), "bg", sc, ox, oy, gap)
+
+            def frame():
+                g.step()
+                draw(g.rects(time.localtime()), "fg", sc, ox, oy, gap)
+                later(140, frame)
+        else:
+            g = Platform()
+            cv.configure(bg=PLT["sky"])
+            draw(g.background(), "bg", sc, ox, oy)
+            last = {"b": None, "h": None}
+
+            def frame():
+                g.update(time.localtime())
+                bk = (tuple(g.shown), tuple(g.bump))
+                if bk != last["b"]:
+                    last["b"] = bk
+                    draw(g.blocks(), "blk", sc, ox, oy)
+                hk = (int(round(g.hx)), int(round(g.hy)), g.face)
+                if hk != last["h"]:
+                    last["h"] = hk
+                    draw(g.hero(), "hero", sc, ox, oy)
+                later(33, frame)
+        frame()
+    elif style in ("seg7", "volt", "analog"):
+        cv.configure(bg=BG)
+        info_h = int(H * (0.30 if H < W * 0.7 else 0.24))
+        pt_date = max(10, int(min(H * 0.065, W * 0.035)))
+        info = {"key": None, "img": None, "item": None}
+        tmpd = tempfile.mkdtemp(prefix="kiosk-clock-")
+
+        def draw_info():
+            t = time.localtime()
+            w = read_weather()
+            key = (t.tm_yday, json.dumps(w, sort_keys=True))
+            if key == info["key"]:
+                return
+            info["key"] = key
+            path = os.path.join(tmpd, "info.png")
+            try:
+                render_info(path, t, pt_date, w)
+                info["img"] = tk.PhotoImage(file=path)
+                if info["item"] is None:
+                    info["item"] = cv.create_image(W // 2, H - info_h, anchor="n", image=info["img"])
+                else:
+                    cv.itemconfigure(info["item"], image=info["img"])
+            except Exception as e:
+                print("data/pogoda: %s" % e, flush=True)
+
+        avail_w, avail_h = W * 0.94, H - info_h - H * 0.06
+        if style == "analog":
+            # Tarcza ze wskazówkami rysowana co sekundę (ImageMagick — gładkie krawędzie).
+            Hd = int(min(avail_w, avail_h) / 1.6)
+            face = {"sec": None, "img": None, "item": None}
+            fpath = os.path.join(tmpd, "analog.png")
+
+            def frame():
+                t = time.localtime()
+                if t.tm_sec != face["sec"]:
+                    face["sec"] = t.tm_sec
+                    try:
+                        draw_analog(t, Hd, fpath)
+                        face["img"] = tk.PhotoImage(file=fpath)
+                        if face["item"] is None:
+                            face["item"] = cv.create_image(W // 2, (H - info_h) // 2, image=face["img"])
+                        else:
+                            cv.itemconfigure(face["item"], image=face["img"])
+                    except Exception as e:
+                        print("zegar analogowy: %s" % e, flush=True)
+                    draw_info()
+                later(100, frame)
+        elif style == "seg7":
+            _, uw, uh = seg7_shapes(time.localtime(), 100.0)
+            Hd = min(avail_w / uw, avail_h / uh) * 100.0
+            _, sw_, sh_ = seg7_shapes(time.localtime(), Hd)
+            ox, oy = (W - sw_) / 2.0, (H - info_h - sh_) / 2.0
+            polys = [cv.create_polygon(*[c for p in pts for c in (ox + p[0], oy + p[1])], fill=col, outline="")
+                     for pts, col in seg7_shapes(time.localtime(), Hd)[0]]
+
+            def frame():
+                now = time.time()
+                shapes = seg7_shapes(time.localtime(now), Hd, colon_on=(now % 1) < 0.5)[0]
+                for it, (_, col) in zip(polys, shapes):
+                    cv.itemconfigure(it, fill=col)
+                draw_info()
+                later(100, frame)
+        else:
+            # Tarcze rysuje ImageMagick raz (bez wskazówek), wskazówki Tk co 0,1 s — płynny ruch.
+            Hd = min(avail_w / (3 * 1.6 + 2 * 0.14), avail_h / 1.07)
+            path = os.path.join(tmpd, "faces.png")
+            mw, mh, gap = draw_volt(time.localtime(), int(Hd), path, needles=False)
+            faces = tk.PhotoImage(file=path)
+            fw, fh = faces.width(), faces.height()
+            ox, oy = (W - fw) // 2, (H - info_h - fh) // 2
+            cv.create_image(ox, oy, anchor="nw", image=faces)
+            cv.faces = faces
+            pcx, pcy, plen = volt_geometry(mw, mh)
+            nw = max(2, int(mw / 110))
+            needles, caps = [], []
+            for i in range(3):
+                bx = ox + i * (mw + gap)
+                needles.append((cv.create_line(0, 0, 1, 1, fill="#C8281E", width=nw, capstyle="round"), bx + pcx, oy + pcy))
+                rr = mw / 28.0
+                caps.append(cv.create_oval(bx + pcx - rr, oy + pcy - rr, bx + pcx + rr, oy + pcy + rr, fill="#2A2A2A", outline=""))
+
+            def frame():
+                for (it, cx, cy), (vmax, _, _), val in zip(needles, VOLT_METERS, volt_values(time.time())):
+                    x1, y1 = _pt(cx, cy, plen, -45 + 90.0 * min(val, vmax) / vmax)
+                    cv.coords(it, cx, cy, x1, y1)
+                for c in caps:
+                    cv.tag_raise(c)
+                draw_info()
+                later(100, frame)
+        frame()
+    elif style in ("lcd1602", "lcd2004"):
+        color = read_lcd_color()
+        bg, on, off = LCD_COLORS[color]
+        cv.configure(bg=BG)
+        cols, rows, p, x0, y0, mw, mh = lcd_geometry(style, W, H)
+        cv.create_rectangle(x0 - p * 2, y0 - p * 2, x0 + mw + p * 2, y0 + mh + p * 2, fill=LCD_PANEL[color], outline="")
+        cv.create_rectangle(x0, y0, x0 + mw, y0 + mh, fill=bg, outline="")
+        lw = {"w": read_weather(), "t": time.time()}
+        dots = lcd_dots(lcd_cells(style, time.localtime(), True, lw["w"]), p, x0, y0)
+        items = [cv.create_rectangle(x, y, x + sz, y + sz, fill=on if lit else off, outline="") for x, y, sz, lit in dots]
+        shown = [lit for _, _, _, lit in dots]
+
+        def frame():
+            now = time.time()
+            if now - lw["t"] > 60:
+                lw["w"], lw["t"] = read_weather(), now
+            new = lcd_lit(lcd_cells(style, time.localtime(now), (now % 1) < 0.5, lw["w"]))
+            for i, lit in enumerate(new):
+                if lit != shown[i]:
+                    shown[i] = lit
+                    cv.itemconfigure(items[i], fill=on if lit else off)
+            later(100, frame)
+        frame()
+    elif style == "c64":
+        b = int(min(W, H) * 0.07)
+        cv.configure(bg=C64["border"])
+        cv.create_rectangle(b, b, W - b, H - b, fill=C64["screen"], outline="")
+        lines = len(c64_lines(time.localtime(), True))
+        fs = max(8, int(min((W - 2 * b) / 40 * 1.6, (H - 2 * b) / (lines + 1) / 1.25)))
+        font = ("DejaVu Sans Mono", -fs, "bold")
+        items = [cv.create_text(b + fs // 2, b + fs * 0.6 + i * fs * 1.22, anchor="nw", text="", fill=C64["ink"], font=font)
+                 for i in range(lines)]
+
+        def frame():
+            now = time.time()
+            for it, ln in zip(items, c64_lines(time.localtime(now), int(now * 2) % 2 == 0)):
+                cv.itemconfigure(it, text=ln)
+            later(250, frame)
+        frame()
+    else:  # bsod
+        cv.configure(bg=BSOD["bg"])
+        texts = bsod_texts(time.localtime())
+        x0, top = W * 0.08, H * 0.07
+        items, gaps = [], []
+        for txt, size, _ in texts:
+            fs = max(8, int(H * size))
+            items.append(cv.create_text(x0, top, anchor="nw", text=txt, fill=BSOD["ink"], width=W * 0.84,
+                                        font=("DejaVu Sans", -fs, "bold" if size > 0.12 else "normal")))
+            gaps.append(int(fs * 0.35))
+
+        def layout():
+            # Każdy napis pod poprzednim, wg jego rzeczywistej wysokości (dłuższe zdanie
+            # zawija się do dwóch linii i nie może nachodzić na następne).
+            y = top
+            for it, g in zip(items, gaps):
+                cv.coords(it, x0, y)
+                bb = cv.bbox(it)
+                y = (bb[3] if bb else y) + g
+
+        def frame():
+            for it, (txt, _, _) in zip(items, bsod_texts(time.localtime())):
+                cv.itemconfigure(it, text=txt)
+            layout()
+            later(1000, frame)
+        frame()
+
+
+
+def date_text(t):
+    return "%s, %d %s" % (DAYS[t.tm_wday], t.tm_mday, MONTHS[t.tm_mon - 1])
+
+
+def render_info(out, t, pt_date, weather):
+    """Sama data i pogoda (pod zegarem animowanym)."""
+    core = ["(", "-background", BG, "-fill", MUTED, "-font", FONT, "-pointsize", str(pt_date), "label:" + date_text(t), ")"]
+    if weather:
+        pt_w = int(pt_date * 1.15)
+        temp = ("%d°C  " % round(weather["temp"])) if weather.get("temp") is not None else ""
+        core += ["(", "-size", "1x%d" % max(4, pt_date // 3), "xc:" + BG, "+size", ")",
+                 "(", "(", "-background", BG, "-fill", ICON_COLORS.get(weather.get("condition"), INK), "-font", FONT,
+                 "-pointsize", str(int(pt_w * 1.2)), "label:" + weather.get("icon", "").replace("%", "%%") + " ", ")",
+                 "(", "-background", BG, "-fill", INK, "-font", FONT_BOLD, "-pointsize", str(pt_w),
+                 "label:" + temp.replace("%", "%%"), ")",
+                 "(", "-background", BG, "-fill", MUTED, "-font", FONT, "-pointsize", str(pt_w),
+                 "label:" + weather.get("text", "").replace("%", "%%"), ")",
+                 "-background", BG, "-gravity", "center", "+append", ")"]
+    _png(["convert", "-respect-parentheses"] + core + ["-background", BG, "-gravity", "center", "-append", "+repage",
+                                                      "PNG24:" + out])
+
+
+def render(out, t, pt_time, pt_date, box=None, weather=None, style="classic"):
+    """Obraz zegara. box=(w,h) -> kafelek wypełniający pole, inaczej zwarta karta."""
+    hhmm = time.strftime("%H:%M", t)
+    timg = None
+    if style in DRAW:
+        timg = out + ".t.png"
+        try:
+            DRAW[style](t, int(pt_time * 0.95), timg)
+        except Exception as e:
+            print("zegar %s: %s — klasyczny" % (style, e), flush=True)
+            timg = None
+    first = ["(", timg, ")", "(", "-size", "1x%d" % max(4, pt_date // 2), "xc:" + BG, ")"] if timg else \
+        ["(", "-background", BG, "-fill", INK, "-font", FONT_BOLD, "-pointsize", str(pt_time), "label:" + hhmm, ")"]
+    core = first + [
+            "(", "-background", BG, "-fill", MUTED, "-font", FONT, "-pointsize", str(pt_date),
+            "label:" + date_text(t), ")"]
+    if weather:
+        pt_w = int(pt_date * 1.15)
+        temp = ("%d°C  " % round(weather["temp"])) if weather.get("temp") is not None else ""
+        icon_color = ICON_COLORS.get(weather.get("condition"), INK)
+        core += ["(", "-size", "1x%d" % max(4, pt_date // 3), "xc:" + BG, "+size", ")",
+                 "(", "(", "-background", BG, "-fill", icon_color, "-font", FONT, "-pointsize", str(int(pt_w * 1.2)),
+                 "label:" + weather.get("icon", "").replace("%", "%%") + " ", ")",
+                 "(", "-background", BG, "-fill", INK, "-font", FONT_BOLD, "-pointsize", str(pt_w),
+                 "label:" + temp.replace("%", "%%"), ")",
+                 "(", "-background", BG, "-fill", MUTED, "-font", FONT, "-pointsize", str(pt_w),
+                 "label:" + weather.get("text", "").replace("%", "%%"), ")",
+                 "-background", BG, "-gravity", "center", "+append", ")"]
+    core += ["-background", BG, "-gravity", "center", "-append"]
+    if box:
+        w, h = box
+        cmd = ["convert", "("] + core + ["-resize", "%dx%d>" % (int(w * 0.92), int(h * 0.92)), ")",
+               "-size", "%dx%d" % (w, h), "xc:" + BG, "+swap",
+               "-gravity", "center", "-composite",
+               "-fill", "none", "-stroke", LINE, "-strokewidth", "2",
+               "-draw", "rectangle 1,1 %d,%d" % (w - 2, h - 2), "PNG24:" + out]
+    else:
+        pad = max(8, pt_time // 4)
+        cmd = ["convert"] + core + ["-bordercolor", BG, "-border", "%dx%d" % (pad * 2, pad),
+                                    "-bordercolor", LINE, "-border", "2", "PNG24:" + out]
+    try:
+        subprocess.run(["convert", "-respect-parentheses"] + cmd[1:], check=True, timeout=20)
+    finally:
+        if timg and os.path.exists(timg):
+            os.unlink(timg)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--corner", default="tr", choices=["tl", "tr", "bl", "br"])
+    ap.add_argument("--size", default="m", choices=list(SIZES))
+    ap.add_argument("--geometry", help="WxH+X+Y — kafelek w polu siatki")
+    ap.add_argument("--area", help="WxH+X+Y — monitor, w którego rogu stoi nakładka")
+    ap.add_argument("--preview", help="zapisz sam obrazek do pliku PNG i zakończ")
+    ap.add_argument("--style", choices=STYLES, help="wygląd (domyślnie z clock.json)")
+    a = ap.parse_args()
+    if a.preview:
+        st = a.style or read_style()
+        if st in ANIM:
+            preview_anim(st, time.localtime(), a.preview)
+        else:
+            render(a.preview, time.localtime(), 64, 18, None, None, st)
+        return
+    import tkinter as tk
+
+    root = tk.Tk()
+    root.configure(cursor="none")   # bez kursora myszy na ekranie kiosku
+    root.overrideredirect(True)
+    root.configure(bg=BG)
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    ox = oy = 0
+    if a.area:
+        try:
+            awh, ox, oy = a.area.split("+")[0], int(a.area.split("+")[1]), int(a.area.split("+")[2])
+            sw, sh = map(int, awh.split("x"))
+        except (ValueError, IndexError):
+            ox = oy = 0
+    box = None
+    if a.geometry:
+        wh, x, y = a.geometry.split("+", 1)[0], *map(int, a.geometry.split("+")[1:3])
+        w, h = map(int, wh.split("x"))
+        box = (w, h)
+        pt_time = int(min(w * 0.26, h * 0.34))
+        pt_date = max(12, int(pt_time * 0.22))
+    else:
+        pt_time = int(sh * SIZES[a.size])
+        pt_date = max(12, int(pt_time * 0.33))
+    margin = int(sh * 0.025)
+    holder = tk.Frame(root, bg=BG, highlightthickness=0, borderwidth=0, cursor="none")
+    holder.pack()
+    state = {"gen": 0, "style": None, "img": None, "minute": None}
+
+    def place(w, h):
+        if box:
+            root.geometry("%dx%d+%d+%d" % (w, h, x, y))
+        else:
+            gx = ox + (margin if a.corner in ("tl", "bl") else sw - w - margin)
+            gy = oy + (margin if a.corner in ("tl", "tr") else sh - h - margin)
+            root.geometry("%dx%d+%d+%d" % (w, h, gx, gy))
+
+    def weather_key():
+        try:
+            return os.stat(WEATHER_CACHE).st_mtime
+        except OSError:
+            return None
+
+    def start(style):
+        """Nowy wygląd w tym samym oknie — okno nie znika, więc nie widać logo pod spodem."""
+        state["gen"] += 1
+        gen = state["gen"]
+        alive = lambda: state["gen"] == gen
+        for w in holder.winfo_children():
+            w.destroy()
+        state["minute"] = None
+        if style in ANIM:
+            aw, ah = ASPECT[style]
+            cw, chh = box if box else (int(pt_time * 4.6), int(pt_time * 4.6 * ah / aw))
+            run_anim(tk, holder, root, style, cw, chh, place, alive)
+            return
+        label = tk.Label(holder, borderwidth=0, highlightthickness=0, bg=BG)
+        label.pack()
+
+        def tick():
+            if not alive():
+                return
+            t = time.localtime()
+            key = (t.tm_year, t.tm_yday, t.tm_hour, t.tm_min, weather_key())
+            if key != state["minute"]:
+                fd, png = tempfile.mkstemp(suffix=".png", prefix="kiosk-clock-")
+                os.close(fd)
+                try:
+                    render(png, t, pt_time, pt_date, box, read_weather(), style)
+                    img = tk.PhotoImage(file=png)
+                finally:
+                    os.unlink(png)
+                label.configure(image=img)
+                state["img"], state["minute"] = img, key
+                place(img.width(), img.height())
+            root.after(1000, tick)
+        tick()
+
+    def watch():
+        st = a.style or read_style()
+        if st.startswith("lcd"):
+            st += ":" + read_lcd_color()     # zmiana podświetlenia LCD = nowy wygląd
+        if st != state["style"]:
+            state["style"] = st
+            start(st.split(":")[0])
+        if not box:
+            root.lift()     # nakładka w rogu nad kamerami/stroną; pełny ekran nie przykrywa ikon stanu
+        root.after(1000, watch)
+
+    watch()
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

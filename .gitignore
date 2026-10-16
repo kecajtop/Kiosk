@@ -1,0 +1,5 @@
+kiosk-setup/build/
+kiosk-setup/dist/
+kiosk-setup/piper/
+__pycache__/
+*.pyc

@@ -1,0 +1,100 @@
+#!/bin/bash
+# Ekran i zasilanie kiosku.
+#   kiosk-power screen on|off|status   - włącz/wyłącz monitor (DPMS)
+#   kiosk-power apply                  - zaplanuj wyłączenie wg KIOSK_SHUTDOWN_MIN (minuty od startu)
+#   kiosk-power shutdown N             - wyłącz komputer za N minut (0 = teraz)
+#   kiosk-power cancel                 - anuluj zaplanowane wyłączenie
+#   kiosk-power status                 - stan ekranu i zaplanowanego wyłączenia
+CONF=/etc/kiosk-setup/kiosk.conf
+KIOSK_USER=""
+KIOSK_SHUTDOWN_MIN=0
+[ -r "$CONF" ] && . "$CONF"
+AUTO_MARK=/run/kiosk-shutdown-auto
+KIOSK_SESSION=kiosk
+[ -r /etc/kiosk-setup/session.conf ] && . /etc/kiosk-setup/session.conf
+# Pulpit + kiosk: wyłączamy tylko monitor kiosku (xrandr), nie cały ekran.
+OFF_MARK=/run/kiosk-screen-off
+
+[ "$EUID" -eq 0 ] || { echo "Uruchom jako root." >&2; exit 1; }
+
+# Polecenie w sesji X użytkownika kiosku.
+xrun() {
+    [ -n "$KIOSK_USER" ] || return 1
+    local home
+    home=$(getent passwd "$KIOSK_USER" | cut -d: -f6)
+    timeout 5 runuser -u "$KIOSK_USER" -- env DISPLAY=:0 XAUTHORITY="$home/.Xauthority" "$@"
+}
+
+screen_status() {
+    local q
+    if [ "$KIOSK_SESSION" = desktop ]; then [ -e "$OFF_MARK" ] && echo off || echo on; return; fi
+    q=$(xrun xset q 2>/dev/null) || { echo unknown; return; }
+    case "$q" in
+        *"Monitor is On"*) echo on ;;
+        *"Monitor is Off"*|*"Monitor is in Standby"*|*"Monitor is in Suspend"*) echo off ;;
+        *) echo unknown ;;
+    esac
+}
+
+scheduled() {
+    # systemd zapisuje zaplanowane wyłączenie w /run/systemd/shutdown/scheduled (USEC=...)
+    local f=/run/systemd/shutdown/scheduled usec
+    [ -r "$f" ] || return 0
+    usec=$(sed -n 's/^USEC=//p' "$f")
+    [ -n "$usec" ] && date -d "@$((usec / 1000000))" '+%Y-%m-%d %H:%M'
+}
+
+case "${1:-status}" in
+    screen)
+        if [ "$KIOSK_SESSION" = desktop ]; then
+            case "${2:-status}" in
+                on)     if [ -e "$OFF_MARK" ]; then rm -f "$OFF_MARK"; pkill -HUP -f '^/bin/sh /usr/local/bin/kiosk-session$'; fi; echo on ;;
+                off)    if [ ! -e "$OFF_MARK" ]; then touch "$OFF_MARK"; pkill -HUP -f '^/bin/sh /usr/local/bin/kiosk-session$'; fi; echo off ;;
+                status) screen_status ;;
+                *)      echo "kiosk-power screen on|off|status" >&2; exit 1 ;;
+            esac
+            exit 0
+        fi
+        case "${2:-status}" in
+            on)     xrun xset dpms force on && xrun xset s reset && echo on ;;
+            off)    xrun xset +dpms && xrun xset dpms force off && echo off ;;
+            status) screen_status ;;
+            *)      echo "kiosk-power screen on|off|status" >&2; exit 1 ;;
+        esac ;;
+    apply)
+        N=$KIOSK_SHUTDOWN_MIN
+        case "$N" in ''|*[!0-9]*) N=0 ;; esac
+        if [ "$N" -gt 0 ]; then
+            UP=$(( $(cut -d. -f1 /proc/uptime) / 60 ))
+            REM=$(( N - UP )); [ "$REM" -lt 1 ] && REM=1
+            shutdown -h "+$REM" "Kiosk: automatyczne wyłączenie $N min po starcie" >/dev/null 2>&1
+            touch "$AUTO_MARK"
+            S=$(scheduled); echo "Wyłączenie za $REM min${S:+ ($S)}"
+        elif [ -e "$AUTO_MARK" ]; then
+            shutdown -c >/dev/null 2>&1
+            rm -f "$AUTO_MARK"
+            echo "Automatyczne wyłączenie anulowane"
+        else
+            echo "Automatyczne wyłączenie: nie"
+        fi ;;
+    shutdown)
+        N=${2:-}
+        case "$N" in ''|*[!0-9]*) echo "Podaj liczbę minut (0 = teraz)" >&2; exit 1 ;; esac
+        rm -f "$AUTO_MARK"
+        if [ "$N" -eq 0 ]; then
+            echo "Wyłączam teraz"
+            ( sleep 2; shutdown -h now ) >/dev/null 2>&1 &
+        else
+            shutdown -h "+$N" "Kiosk: wyłączenie zaplanowane zdalnie" >/dev/null 2>&1
+            S=$(scheduled); echo "Wyłączenie za $N min${S:+ ($S)}"
+        fi ;;
+    cancel)
+        shutdown -c >/dev/null 2>&1
+        rm -f "$AUTO_MARK"
+        echo "Zaplanowane wyłączenie anulowane" ;;
+    status)
+        echo "Ekran: $(screen_status)"
+        S=$(scheduled); echo "Zaplanowane wyłączenie: ${S:-brak}" ;;
+    *)
+        sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

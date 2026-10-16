@@ -1,0 +1,89 @@
+#!/bin/bash
+set -e
+
+if [ "$1" = remove ] || [ "$1" = purge ]; then
+    # Bez kiosku nie zostawiamy blokady internetu.
+    [ -x /usr/local/sbin/kiosk-firewall ] && /usr/local/sbin/kiosk-firewall off || true
+    # Przywróć pulpit, jeśli jest menedżer logowania (oba tryby ekranu).
+    KU=""
+    [ -r /etc/kiosk-setup/kiosk.conf ] && KU=$(sh -c '. /etc/kiosk-setup/kiosk.conf >/dev/null 2>&1; printf "%s" "${KIOSK_USER:-}"')
+    rm -f /etc/lightdm/lightdm.conf.d/50-kiosk-setup.conf /etc/sddm.conf.d/50-kiosk-setup.conf
+    rm -f /etc/systemd/system/getty@tty1.service.d/override.conf
+    rmdir --ignore-fail-on-non-empty /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
+    if [ -n "$KU" ] && id "$KU" >/dev/null 2>&1; then
+        KH=$(getent passwd "$KU" | cut -d: -f6)
+        rm -f "$KH/.config/autostart/kiosk-setup.desktop"
+        if [ -f "$KH/.bash_profile" ] && grep -q 'startx -- -quiet' "$KH/.bash_profile"; then
+            rm -f "$KH/.bash_profile"
+            [ -f "$KH/.bash_profile.przed-kioskiem" ] && mv "$KH/.bash_profile.przed-kioskiem" "$KH/.bash_profile"
+        fi
+        [ -f /etc/gdm3/custom.conf ] && sed -i "/^AutomaticLoginEnable=true$/d;/^AutomaticLogin=$KU$/d" /etc/gdm3/custom.conf
+    fi
+    if [ -r /etc/X11/default-display-manager ]; then
+        systemctl set-default graphical.target 2>/dev/null || true
+        echo "Przywrócono ekran logowania pulpitu (po restarcie komputera)."
+    fi
+    systemctl daemon-reload 2>/dev/null || true
+fi
+
+case "$1" in
+    purge)
+        rm -f /etc/cron.hourly/refresh-kiosk-firewall
+        rm -f /etc/cron.d/ip-watchdog
+        rm -f /usr/local/sbin/refresh-kiosk-firewall.sh
+        rm -f /usr/local/sbin/ip-watchdog.sh
+        rm -f /usr/local/sbin/kiosk-netconfig.sh
+        rm -f /usr/local/sbin/kiosk-mode /usr/local/sbin/kiosk-session-mode /usr/local/sbin/kiosk-firewall /usr/local/sbin/kiosk-bootlogo
+        systemctl disable kiosk-bootlogo.service 2>/dev/null || true
+        systemctl disable --now kiosk-dlna.service 2>/dev/null || true
+        systemctl disable --now kiosk-update.timer 2>/dev/null || true
+        rm -f /etc/systemd/system/kiosk-update.timer /etc/systemd/system/kiosk-update.service
+        rm -f /usr/local/sbin/kiosk-update /usr/local/bin/kiosk-ticker /usr/local/bin/kiosk-agenda
+        [ -x /usr/local/sbin/kiosk-satellite ] && /usr/local/sbin/kiosk-satellite remove >/dev/null 2>&1 || true
+        rm -f /usr/local/sbin/kiosk-satellite /usr/local/sbin/kiosk-ro /usr/local/bin/kiosk-status /run/kiosk-netstatus.json /run/kiosk-update.json /run/kiosk-nowplaying.json /run/kiosk-nowplaying-art /etc/modules-load.d/kiosk-i2c.conf
+        rm -f /run/kiosk-agenda.json /run/kiosk-brightness
+        echo "UWAGA: zdjęcia (/var/lib/kiosk-photos) i nagrania z kamer (/var/lib/kiosk-clips) NIE zostały usunięte."
+        rm -rf /var/lib/kiosk-setup
+        rm -f /run/kiosk-alert.conf /run/kiosk-ticker.txt /var/log/kiosk-update.log
+        rm -f /etc/systemd/system/kiosk-dlna.service
+        rm -f /etc/systemd/system/kiosk-bootlogo.service
+        systemctl disable --now kiosk-api.service 2>/dev/null || true
+        rm -f /etc/systemd/system/kiosk-api.service /usr/local/sbin/kiosk-api
+        systemctl disable --now kiosk-mpd.service 2>/dev/null || true
+        rm -f /etc/systemd/system/kiosk-mpd.service
+        rm -rf /var/lib/kiosk-mpd
+        systemctl disable kiosk-power.service 2>/dev/null || true
+        rm -f /etc/systemd/system/kiosk-power.service /usr/local/sbin/kiosk-power
+        rm -f /usr/local/bin/kiosk-layout /usr/local/bin/kiosk-bubble /usr/local/bin/kiosk-clock /usr/local/bin/kiosk-display
+        rm -f /usr/local/sbin/kiosk-voice
+        rm -rf /var/lib/kiosk-voices
+        rm -f /run/kiosk-weather.json
+        rm -f /usr/local/bin/kiosk-session
+        rm -rf /etc/kiosk-setup
+        rm -f /run/ip-watchdog.fails
+        rm -rf /usr/share/plymouth/themes/mylogo
+        rm -f /etc/systemd/system/getty@tty1.service.d/override.conf
+        rmdir --ignore-fail-on-non-empty /etc/systemd/system/getty@tty1.service.d 2>/dev/null || true
+
+        systemctl disable --now x11vnc.service 2>/dev/null || true
+        rm -f /etc/systemd/system/x11vnc.service
+
+        systemctl disable kiosk-auto-shutdown.service 2>/dev/null || true
+        rm -f /etc/systemd/system/kiosk-auto-shutdown.service
+
+        rm -f /etc/systemd/journald.conf.d/kiosk-volatile.conf
+        sed -i '/^tmpfs \/tmp /d; /^tmpfs \/var\/log /d' /etc/fstab 2>/dev/null || true
+
+        systemctl daemon-reload || true
+        systemctl restart systemd-journald || true
+
+        # Przywróć domyślny motyw Plymouth, jeśli nadal wskazuje na usunięty mylogo.
+        if update-alternatives --display default.plymouth 2>/dev/null | grep -q mylogo; then
+            update-alternatives --remove default.plymouth /usr/share/plymouth/themes/mylogo/mylogo.plymouth 2>/dev/null || true
+        fi
+
+        db_purge 2>/dev/null || true
+        ;;
+esac
+
+exit 0

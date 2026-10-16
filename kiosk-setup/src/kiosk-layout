@@ -1,0 +1,228 @@
+#!/bin/sh
+# Zawartość ekranu kiosku: strona WWW (Chromium), kamery RTSP w siatce,
+# kamera USB albo mix (strona po lewej + kamery po prawej).
+# Uruchamiana przez kiosk-session we własnej grupie procesów, żeby zmiana
+# trybu mogła podmienić zawartość bez restartu X. Czysty POSIX sh.
+# Obszar ekranu: monitor główny z /tmp/kiosk-areas (kiosk-display); na drugim
+# monitorze ten sam skrypt działa z KIOSK_CONF=second.conf i KIOSK_AREA.
+CONF=${KIOSK_CONF:-/etc/kiosk-setup/kiosk.conf}
+# Alarm (kamera/widok na chwilę, z HA/MQTT/API) zastępuje treść głównego ekranu.
+ALERT=""
+if [ -z "${KIOSK_SECONDARY:-}" ] && [ -r /run/kiosk-alert.conf ]; then CONF=/run/kiosk-alert.conf; ALERT=1; fi
+echo "kiosk-layout start: $(date) ${KIOSK_SECONDARY:+(drugi monitor)}${ALERT:+ ALARM}"
+
+KIOSK_MODE=web
+KIOSK_WEB_PERCENT=50
+KIOSK_CLOCK=off
+KIOSK_CLOCK_POS=tr
+KIOSK_CLOCK_SIZE=m
+[ -r "$CONF" ] && . "$CONF"
+case "$KIOSK_CLOCK" in off|corner|tile) ;; *) KIOSK_CLOCK=off ;; esac
+case "$KIOSK_CLOCK_POS" in tl|tr|bl|br) ;; *) KIOSK_CLOCK_POS=tr ;; esac
+case "$KIOSK_CLOCK_SIZE" in s|m|l) ;; *) KIOSK_CLOCK_SIZE=m ;; esac
+# Kafelek ma sens tylko w siatce kamer; w trybach web/usb zegar idzie w róg.
+if [ "$KIOSK_CLOCK" = "tile" ] && [ "$KIOSK_MODE" != "rtsp" ] && [ "$KIOSK_MODE" != "mix" ]; then
+    KIOSK_CLOCK=corner
+fi
+
+MPV_OPTS="--no-border --no-osc --no-input-default-bindings --cursor-autohide=always --profile=low-latency --no-cache --untimed --no-audio --hwdec=auto --framedrop=vo --video-latency-hacks=yes --keep-open=no --stop-screensaver=no"
+# Dodatkowe opcje mpv z konfiguracji, np. KIOSK_MPV_EXTRA='--vo=x11'
+# (obraz widoczny w VNC kosztem większego użycia CPU).
+MPV_OPTS="$MPV_OPTS ${KIOSK_MPV_EXTRA:-}"
+CHROME_OPTS="--no-first-run --no-default-browser-check --noerrdialogs --disable-session-crashed-bubble --disable-infobars --check-for-update-interval=31536000"
+
+MAIN_AREA=""; SECOND_AREA=""; SCREEN_OFF=""
+[ -r /tmp/kiosk-areas ] && . /tmp/kiosk-areas
+AREA=${KIOSK_AREA:-$MAIN_AREA}
+case "$AREA" in
+    *x*+*+*) ;;
+    *)  if [ "${KIOSK_SESSION:-kiosk}" = desktop ]; then
+            # Pulpit + kiosk: nigdy nie zasłaniamy pulpitu — czekamy na drugi monitor.
+            if [ -n "$SCREEN_OFF" ]; then echo "Ekran kiosku wyłączony — czekam na włączenie"
+            else echo "Brak drugiego monitora — czekam na podłączenie"; fi
+            exec sleep 2147483647
+        fi
+        RES=$(xrandr --current 2>/dev/null | awk '/\*/ {print $1; exit}'); AREA="${RES:-1920x1080}+0+0" ;;
+esac
+# AREA = SZERxWYS+X+Y
+W=${AREA%%x*}; rest=${AREA#*x}; H=${rest%%+*}; rest=${rest#*+}; AX=${rest%%+*}; AY=${rest#*+}
+case "$W$H$AX$AY" in *[!0-9]*|"") W=1920; H=1080; AX=0; AY=0 ;; esac
+
+# Pasek informacyjny na dole ekranu: treść kiosku kończy się nad nim.
+KIOSK_TICKER=off; KIOSK_TICKER_SIZE=m; KIOSK_TICKER_SPEED=3
+[ -r /etc/kiosk-setup/ticker.conf ] && . /etc/kiosk-setup/ticker.conf
+if [ -z "${KIOSK_SECONDARY:-}" ] && [ "$KIOSK_TICKER" = on ]; then
+    case "$KIOSK_TICKER_SIZE" in s) TH=40 ;; l) TH=72 ;; *) TH=54 ;; esac
+    H=$((H - TH))
+    (
+        while true; do
+            python3 /usr/local/bin/kiosk-ticker --geometry "${W}x${TH}+${AX}+$((AY + H))" --speed "$KIOSK_TICKER_SPEED"
+            echo "Pasek zamknięty, ponawiam za 3 s"
+            sleep 3
+        done
+    ) &
+fi
+echo "Obszar ${W}x${H}+${AX}+${AY}, tryb $KIOSK_MODE"
+# Osobny profil Chromium: dla drugiego monitora (inaczej otworzy kartę w
+# pierwszym) i w trybie z pulpitem (Twój własny Chromium na pulpicie nie
+# może trafić do okna kiosku). Chromium ze snapa widzi tylko ~/snap/chromium.
+profile_dir() {
+    if [ -x /snap/bin/chromium ]; then echo "$HOME/snap/chromium/common/$1"; else echo "$HOME/.config/$1"; fi
+}
+CHROME_PROFILE=""
+if [ -n "${KIOSK_SECONDARY:-}" ]; then
+    CHROME_PROFILE="--user-data-dir=$(profile_dir chromium-kiosk-2)"
+elif [ "${KIOSK_SESSION:-kiosk}" = desktop ]; then
+    CHROME_PROFILE="--user-data-dir=$(profile_dir chromium-kiosk)"
+fi
+# Z menedżerem okien (pulpit): okna kiosku bez ramek i z rozpoznawalną nazwą.
+[ "${KIOSK_SESSION:-kiosk}" = desktop ] && MPV_OPTS="$MPV_OPTS --x11-name=kiosk-setup --title=kiosk"
+
+# Strona WWW w zadanym prostokącie (bez menedżera okien X przyjmuje
+# pozycję i rozmiar wprost). Restart po zamknięciu/awarii.
+web_area() {
+    wx=$1; wy=$2; ww=$3; wh=$4
+    (
+        while true; do
+            chromium-browser $CHROME_OPTS $CHROME_PROFILE --app="$KIOSK_URL" \
+                --window-position="$wx,$wy" --window-size="$ww,$wh"
+            echo "Chromium zamknięty, ponawiam za 3 s"
+            sleep 3
+        done
+    ) &
+}
+
+# Zegar: nakładka w rogu albo kafelek w podanym polu. Restart po awarii.
+clock() {
+    (
+        while true; do
+            python3 /usr/local/bin/kiosk-clock "$@"
+            echo "Zegar zamknięty, ponawiam za 3 s"
+            sleep 3
+        done
+    ) &
+}
+
+# Kamery RTSP w siatce wewnątrz prostokąta (x0 y0 szer wys).
+# Przy KIOSK_CLOCK=tile ostatnie pole siatki zajmuje zegar.
+cam_grid() {
+    gx=$1; gy=$2; gw=$3; gh=$4
+    set -- $(printf '%s' "$KIOSK_RTSP_URLS" | tr ',' ' ')
+    cams=$#
+    n=$cams
+    [ "$KIOSK_CLOCK" = "tile" ] && n=$((n + 1))
+    if [ "$cams" -eq 0 ] && [ "$KIOSK_CLOCK" != "tile" ]; then
+        echo "Brak adresów RTSP — w tym miejscu zostaje logo."
+        return
+    fi
+    cols=1
+    while [ $((cols * cols)) -lt "$n" ]; do cols=$((cols + 1)); done
+    rows=$(( (n + cols - 1) / cols ))
+    # Wąski, wysoki obszar (np. pas obok strony): kamery jedna pod drugą.
+    if [ "$gw" -lt "$gh" ] && [ "$n" -le 3 ]; then cols=1; rows=$n; fi
+    cw=$((gw / cols)); ch=$((gh / rows))
+    echo "Kamer: $cams, pól: $n, siatka ${cols}x${rows} w obszarze ${gw}x${gh}+${gx}+${gy}"
+    i=0
+    for url in "$@"; do
+        x=$(( gx + (i % cols) * cw )); y=$(( gy + (i / cols) * ch ))
+        geom="--geometry=${cw}x${ch}+${x}+${y}"
+        num=$((i + 1))
+        (
+            while true; do
+                mpv $MPV_OPTS --rtsp-transport=tcp --demuxer-lavf-o-add=fflags=+nobuffer "$geom" "$url"
+                echo "Kamera $num rozłączona, ponawiam za 3 s"
+                sleep 3
+            done
+        ) &
+        i=$((i + 1))
+    done
+    if [ "$KIOSK_CLOCK" = "tile" ]; then
+        x=$(( gx + (i % cols) * cw )); y=$(( gy + (i / cols) * ch ))
+        clock --geometry "${cw}x${ch}+${x}+${y}"
+    fi
+}
+
+if [ "$KIOSK_CLOCK" = "corner" ] && [ "$KIOSK_MODE" != clock ] && [ "$KIOSK_MODE" != photos ]; then
+    clock --corner "$KIOSK_CLOCK_POS" --size "$KIOSK_CLOCK_SIZE" --area "${W}x${H}+${AX}+${AY}"
+fi
+
+# Drugi monitor z osobnym widokiem (tryb „osobna treść” w zakładce Monitory).
+if [ -z "${KIOSK_SECONDARY:-}" ] && [ -n "$SECOND_AREA" ] && [ -r /etc/kiosk-setup/second.conf ]; then
+    KIOSK_SECONDARY=1 KIOSK_AREA="$SECOND_AREA" KIOSK_CONF=/etc/kiosk-setup/second.conf sh "$0" &
+fi
+
+# Kalendarz z Home Assistant w rogu (kiosk-api zapisuje /run/kiosk-agenda.json).
+KIOSK_AGENDA=off
+[ -r /etc/kiosk-setup/overlay.conf ] && . /etc/kiosk-setup/overlay.conf
+if [ -z "${KIOSK_SECONDARY:-}" ] && [ -z "$ALERT" ] && [ "$KIOSK_AGENDA" != off ] && [ "$KIOSK_MODE" != photos ]; then
+    (
+        while true; do
+            python3 /usr/local/bin/kiosk-agenda --corner "$KIOSK_AGENDA" --area "${W}x${H}+${AX}+${AY}"
+            sleep 5
+        done
+    ) &
+fi
+
+# Ikony połączeń (LAN, Wi-Fi, internet, HA, MQTT) i postęp aktualizacji na ekranie.
+KIOSK_STATUS_ICONS=${KIOSK_STATUS_ICONS:-tl}; KIOSK_STATUS_PROBLEMS=${KIOSK_STATUS_PROBLEMS:-no}
+if [ -z "${KIOSK_SECONDARY:-}" ]; then
+    (
+        set -- --corner "$KIOSK_STATUS_ICONS" --nowplaying "${KIOSK_NOWPLAYING:-bc}" --area "${W}x${H}+${AX}+${AY}"
+        [ "$KIOSK_STATUS_PROBLEMS" = yes ] && set -- "$@" --problems
+        while true; do
+            python3 /usr/local/bin/kiosk-status "$@"
+            sleep 5
+        done
+    ) &
+fi
+
+case "$KIOSK_MODE" in
+rtsp)
+    cam_grid "$AX" "$AY" "$W" "$H"
+    ;;
+clock)
+    # Tryb nocny: sam duży zegar.
+    clock --geometry "${W}x${H}+${AX}+${AY}"
+    ;;
+photos)
+    # Wygaszacz: zdjęcia z /var/lib/kiosk-photos (panel → Automatyka → Zdjęcia).
+    while true; do
+        feh --borderless --hide-pointer --geometry "${W}x${H}+${AX}+${AY}" --zoom fill --image-bg black \
+            --randomize --slideshow-delay "${KIOSK_PHOTO_SECONDS:-12}" --reload 120 /var/lib/kiosk-photos
+        echo "Pokaz zdjęć zamknięty, ponawiam za 5 s"
+        sleep 5
+    done
+    ;;
+mix)
+    P=$KIOSK_WEB_PERCENT
+    case "$P" in ''|*[!0-9]*) P=50 ;; esac
+    [ "$P" -lt 10 ] && P=10
+    [ "$P" -gt 90 ] && P=90
+    WW=$(( W * P / 100 ))
+    web_area "$AX" "$AY" "$WW" "$H"
+    cam_grid $(( AX + WW )) "$AY" $(( W - WW )) "$H"
+    ;;
+usb)
+    DEV=${KIOSK_USB_DEVICE:-/dev/video0}
+    while true; do
+        if [ -e "$DEV" ]; then
+            mpv $MPV_OPTS --geometry="${W}x${H}+${AX}+${AY}" "av://v4l2:$DEV"
+        else
+            echo "Brak $DEV — czekam na kamerę USB"
+        fi
+        sleep 3
+    done
+    ;;
+*)
+    # --kiosk otwiera pełny ekran na monitorze, na którym leży okno.
+    while true; do
+        chromium-browser $CHROME_OPTS $CHROME_PROFILE --kiosk --window-position="$AX,$AY" \
+            --window-size="$W,$H" "$KIOSK_URL"
+        sleep 3
+    done
+    ;;
+esac
+
+wait
+# Nic do wyświetlenia (np. brak kamer) — zostaje logo w tle.
+exec sleep 2147483647

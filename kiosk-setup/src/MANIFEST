@@ -1,0 +1,21 @@
+# znacznik heredoc w debian/postinst -> plik w src/
+EOF_SESSION kiosk-session
+EOF_LAYOUT kiosk-layout
+EOF_DISPLAY kiosk-display
+EOF_BUBBLE kiosk-bubble
+EOF_CLOCK kiosk-clock
+EOF_TICKER kiosk-ticker
+EOF_AGENDA kiosk-agenda
+EOF_STATUS kiosk-status
+EOF_POWER kiosk-power
+EOF_MODE kiosk-mode
+EOF_API kiosk-api
+EOF_SESSMODE kiosk-session-mode
+EOF_BOOTLOGO kiosk-bootlogo
+EOF_NET kiosk-netconfig.sh
+EOF_WATCHDOG ip-watchdog.sh
+EOF_FW kiosk-firewall
+EOF_VOICE kiosk-voice
+EOF_UPDATE kiosk-update
+EOF_SATELLITE kiosk-satellite
+EOF_RO kiosk-ro

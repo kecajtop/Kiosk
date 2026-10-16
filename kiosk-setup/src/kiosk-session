@@ -1,0 +1,149 @@
+#!/bin/sh
+# Sesja X kiosku. Ustawia ekran i tło z logo, uruchamia kiosk-layout we
+# własnej grupie procesów i na SIGHUP (wysyła go kiosk-mode po zmianie
+# trybu/zawartości) podmienia samą zawartość — bez restartu X, więc
+# przełączenie trwa 1-2 s. Czysty POSIX sh.
+#
+# Pełny kiosk (KIOSK_SESSION=kiosk): uruchamiana z ~/.xinitrc (startx na tty1).
+# Pulpit + kiosk (KIOSK_SESSION=desktop): uruchamiana z autostartu XFCE;
+# nie rusza pulpitu (tło, wygaszacz, monitor główny), kiosk zajmuje drugi
+# monitor i sam się dopasowuje po podłączeniu/odłączeniu monitora.
+CONF=/etc/kiosk-setup/kiosk.conf
+KIOSK_SESSION=kiosk
+[ -r /etc/kiosk-setup/session.conf ] && . /etc/kiosk-setup/session.conf
+[ "$KIOSK_SESSION" = desktop ] || KIOSK_SESSION=kiosk
+export KIOSK_SESSION
+
+PIDF="/tmp/kiosk-session-$(id -u).pid"
+if [ "$KIOSK_SESSION" = desktop ] && [ -r "$PIDF" ]; then
+    # Jedna sesja kiosku naraz (autostart + ręczny restart).
+    old=$(cat "$PIDF" 2>/dev/null)
+    if [ -n "$old" ] && [ "$old" != "$$" ] && grep -q kiosk-session "/proc/$old/cmdline" 2>/dev/null; then
+        echo "kiosk-session już działa (PID $old)" >&2
+        exit 0
+    fi
+fi
+echo $$ > "$PIDF"
+
+exec > "$HOME/.kiosk-session.log" 2>&1 < /dev/null
+echo "kiosk-session start: $(date) (tryb: $KIOSK_SESSION)"
+
+RELOAD=0
+LPID=""
+WPID=""
+trap 'RELOAD=1' HUP
+trap '[ -n "$LPID" ] && kill -TERM "-$LPID" 2>/dev/null; [ -n "$WPID" ] && kill "$WPID" 2>/dev/null; rm -f "$PIDF"; exit 0' TERM INT
+
+SIG="/tmp/kiosk-xsig-$(id -u)"
+FRAME="/tmp/kiosk-frame-$(id -u).png"
+FROZEN=0
+
+# Przy przełączaniu stron/widoków: zamiast logo zostaje ostatni kadr starej
+# zawartości, aż pojawi się nowa (logo tylko przy starcie kiosku).
+logo_path() {
+    L=/usr/share/kiosk-setup/logo-stream.png
+    [ "$KIOSK_MODE" = "web" ] && L=/usr/share/kiosk-setup/logo-kiosk.png
+    [ -r /etc/kiosk-setup/logo-custom.png ] && L=/etc/kiosk-setup/logo-custom.png
+    echo "$L"
+}
+freeze_frame() {
+    FROZEN=0
+    command -v import >/dev/null || return 0
+    if [ "$KIOSK_SESSION" = kiosk ]; then
+        import -silent -window root "$FRAME" 2>/dev/null || return 0
+        feh --no-fehbg --no-xinerama --image-bg black --bg-center "$FRAME" 2>/dev/null && FROZEN=1
+    else
+        # Pulpit + kiosk: okno z kadrem tylko na monitorze kiosku (tło pulpitu bez zmian).
+        MAIN_AREA=""
+        [ -r /tmp/kiosk-areas ] && . /tmp/kiosk-areas
+        case "$MAIN_AREA" in *x*+*+*) ;; *) return 0 ;; esac
+        import -silent -window root -crop "$MAIN_AREA" +repage "$FRAME" 2>/dev/null || return 0
+        feh -x --no-menus -g "$MAIN_AREA" --title kiosk-frame "$FRAME" >/dev/null 2>&1 &
+        FP=$!
+        ( sleep 8; kill "$FP" 2>/dev/null ) &
+        FROZEN=1
+    fi
+}
+xsig() { xrandr --query 2>/dev/null | grep -w connected; }
+
+if [ "$KIOSK_SESSION" = desktop ]; then
+    # Strażnik monitorów: zmiana podłączonych monitorów albo ich układu
+    # (np. w ustawieniach ekranu XFCE) -> przeładowanie kiosku.
+    SPID=$$
+    (
+        while sleep 5; do
+            kill -0 "$SPID" 2>/dev/null || exit 0
+            [ -r "$SIG" ] || continue
+            if [ "$(xsig)" != "$(cat "$SIG")" ]; then
+                echo "Zmiana monitorów — przeładowanie"
+                kill -HUP "$SPID"
+                sleep 5
+            fi
+        done
+    ) &
+    WPID=$!
+else
+    xsetroot -solid black 2>/dev/null
+    # Bez kursora myszy na ekranie kiosku (Chromium pokaże swój, gdy ruszysz myszą).
+    printf '#define b_width 1\n#define b_height 1\nstatic unsigned char b_bits[] = { 0x00 };\n' > /tmp/kiosk-blank.xbm
+    xsetroot -cursor /tmp/kiosk-blank.xbm /tmp/kiosk-blank.xbm 2>/dev/null
+fi
+
+while true; do
+    RELOAD=0
+    KIOSK_MODE=web
+    KIOSK_SCREEN_OFF_MIN=0
+    [ -r "$CONF" ] && . "$CONF"
+
+    if ! xset q >/dev/null 2>&1; then
+        echo "Brak serwera X (wylogowanie?) — koniec: $(date)"
+        [ -n "$WPID" ] && kill "$WPID" 2>/dev/null
+        rm -f "$PIDF"
+        exit 0
+    fi
+
+    if [ "$KIOSK_SESSION" = kiosk ]; then
+        # Ekran: bez wygaszacza; DPMS zawsze włączone (żeby działało wyłączanie
+        # na żądanie), automatyczne wyłączenie po KIOSK_SCREEN_OFF_MIN minutach
+        # bez dotyku/myszy/klawiatury (0 = nigdy).
+        M=$KIOSK_SCREEN_OFF_MIN
+        case "$M" in ''|*[!0-9]*) M=0 ;; esac
+        xset s off 2>/dev/null
+        xset s noblank 2>/dev/null
+        xset +dpms 2>/dev/null
+        xset dpms 0 0 $((M * 60)) 2>/dev/null
+        xset dpms force on 2>/dev/null
+    fi
+
+    # Monitory: wyjście, rozdzielczość, obrót, lustro / drugi ekran (zakładka Monitory).
+    /usr/local/bin/kiosk-display || echo "kiosk-display: błąd"
+    xsig > "$SIG"
+
+    if [ "$KIOSK_SESSION" = kiosk ]; then
+        LOGO=$(logo_path)
+        if [ "$FROZEN" = 1 ]; then
+            # Kadr zostaje pod nową zawartością; po chwili wraca zwykłe tło
+            # (żeby np. niedziałająca kamera nie pokazywała starego obrazu).
+            ( sleep 8; feh --no-fehbg --image-bg black --bg-center "$LOGO" 2>/dev/null; rm -f "$FRAME" ) &
+        else
+            feh --no-fehbg --image-bg black --bg-center "$LOGO" 2>/dev/null
+        fi
+    fi
+    FROZEN=0
+
+    # setsid: nowa grupa procesów (PID = PGID), żeby dało się zabić całą
+    # zawartość (pętle, mpv, chromium) jednym kill.
+    setsid /usr/local/bin/kiosk-layout &
+    LPID=$!
+    wait "$LPID"
+    if [ "$RELOAD" = 1 ]; then
+        echo "Przeładowanie zawartości: $(date)"
+        freeze_frame
+        kill -TERM "-$LPID" 2>/dev/null
+        sleep 1
+        kill -KILL "-$LPID" 2>/dev/null
+    else
+        echo "kiosk-layout zakończył się, ponawiam za 3 s"
+        sleep 3
+    fi
+done

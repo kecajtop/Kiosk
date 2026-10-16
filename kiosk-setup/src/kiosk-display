@@ -1,0 +1,139 @@
+#!/bin/sh
+# Ustawia monitory kiosku (xrandr) wg /etc/kiosk-setup/displays.conf i zapisuje
+# obszary ekranu do /tmp/kiosk-areas (czytają je kiosk-layout, zegar i dymek).
+# Uruchamiane w sesji X przez kiosk-session przy starcie i każdym przeładowaniu.
+#   DISPLAY_MAIN         auto | nazwa wyjścia (np. DP-1)
+#   DISPLAY_MAIN_MODE    auto | 1920x1080
+#   DISPLAY_ROTATE       normal | left | right | inverted
+#   DISPLAY_OTHERS       off | mirror | extend   (pozostałe podłączone monitory)
+#   DISPLAY_SECOND       auto | nazwa wyjścia    (dla extend: drugi ekran)
+#   DISPLAY_SECOND_MODE  auto | 1280x1024
+#
+# Tryb „pulpit + kiosk” (KIOSK_SESSION=desktop w session.conf): pulpit (XFCE)
+# zostaje na monitorze głównym (primary) bez zmian, a kiosk zajmuje drugie
+# wyjście: DISPLAY_MAIN (auto = pierwszy podłączony monitor poza głównym)
+# z DISPLAY_MAIN_MODE i DISPLAY_ROTATE. Bez drugiego monitora kiosk czeka.
+# Czysty POSIX sh.
+CONF=/etc/kiosk-setup/displays.conf
+KIOSK_SESSION=kiosk
+[ -r /etc/kiosk-setup/session.conf ] && . /etc/kiosk-setup/session.conf
+# Jasność programowa (monitor bez DDC/CI) — ustawia kiosk-api: panel, tryb nocny, HA.
+BRIGHT=""
+[ -r /run/kiosk-brightness ] && BRIGHT=$(head -c 8 /run/kiosk-brightness | tr -cd '0-9.')
+AREAS=/tmp/kiosk-areas
+DISPLAY_MAIN=auto; DISPLAY_MAIN_MODE=auto; DISPLAY_ROTATE=normal
+DISPLAY_OTHERS=off; DISPLAY_SECOND=auto; DISPLAY_SECOND_MODE=auto
+[ -r "$CONF" ] && . "$CONF"
+
+connected=$(xrandr --query 2>/dev/null | awk '$2 == "connected" {print $1}')
+if [ -z "$connected" ]; then
+    echo "kiosk-display: xrandr nie widzi monitorów" >&2
+    : > "$AREAS"
+    exit 0
+fi
+has() { printf '%s\n' "$connected" | grep -qx "$1"; }
+geom() { xrandr --query | awk -v o="$1" '$1 == o && $2 == "connected" { for (i = 3; i <= NF; i++) if ($i ~ /^[0-9]+x[0-9]+\+[0-9]+\+[0-9]+$/) { print $i; exit } }'; }
+case "$DISPLAY_ROTATE" in normal|left|right|inverted) ;; *) DISPLAY_ROTATE=normal ;; esac
+
+if [ "$KIOSK_SESSION" = desktop ]; then
+    desk=$(xrandr --query | awk '$2 == "connected" && $3 == "primary" {print $1; exit}')
+    [ -n "$desk" ] || desk=$(printf '%s\n' "$connected" | head -n 1)
+    kiosk=""
+    if [ "$DISPLAY_MAIN" != auto ] && [ "$DISPLAY_MAIN" != "$desk" ] && has "$DISPLAY_MAIN"; then
+        kiosk=$DISPLAY_MAIN
+    else
+        kiosk=$(printf '%s\n' "$connected" | grep -vx "$desk" | head -n 1)
+    fi
+    if [ -z "$kiosk" ]; then
+        echo "kiosk-display: pulpit na $desk, brak drugiego monitora — kiosk czeka"
+        printf "DESKTOP_OUTPUT='%s'\nMAIN_OUTPUT=''\nMAIN_AREA=''\n" "$desk" > "$AREAS.tmp" && mv "$AREAS.tmp" "$AREAS"
+        exit 0
+    fi
+    if [ -e /run/kiosk-screen-off ]; then
+        # Wyłączenie ekranu kiosku na żądanie: samo wyjście kiosku, pulpit działa dalej.
+        xrandr --output "$kiosk" --off
+        printf "DESKTOP_OUTPUT='%s'\nMAIN_OUTPUT='%s'\nMAIN_AREA=''\nSCREEN_OFF=1\n" "$desk" "$kiosk" > "$AREAS.tmp" && mv "$AREAS.tmp" "$AREAS"
+        echo "kiosk-display: ekran kiosku ($kiosk) wyłączony"
+        exit 0
+    fi
+    cur=$(geom "$kiosk"); dg=$(geom "$desk")
+    set -- --output "$kiosk" --rotate "$DISPLAY_ROTATE"
+    [ -n "$BRIGHT" ] && set -- "$@" --brightness "$BRIGHT"
+    if [ "$DISPLAY_MAIN_MODE" != auto ] && [ -n "$DISPLAY_MAIN_MODE" ]; then
+        set -- "$@" --mode "$DISPLAY_MAIN_MODE"
+    elif [ -z "$cur" ]; then
+        set -- "$@" --auto
+    fi
+    # Wyłączony albo w lustrze z pulpitem (ta sama pozycja) -> obok pulpitu.
+    if [ -z "$cur" ] || [ "${cur#*+}" = "${dg#*+}" ]; then
+        set -- "$@" --right-of "$desk"
+    fi
+    echo "kiosk-display: pulpit na $desk, kiosk: xrandr $*"
+    xrandr "$@" || { echo "kiosk-display: ustawienia odrzucone, próbuję automatycznych" >&2
+                     xrandr --output "$kiosk" --auto --right-of "$desk" >/dev/null 2>&1; }
+    sleep 1
+    {
+        echo "DESKTOP_OUTPUT='$desk'"
+        echo "MAIN_OUTPUT='$kiosk'"
+        echo "MAIN_AREA='$(geom "$kiosk")'"
+    } > "$AREAS.tmp" && mv "$AREAS.tmp" "$AREAS"
+    chmod 0644 "$AREAS" 2>/dev/null
+    cat "$AREAS"
+    exit 0
+fi
+
+main=""
+if [ "$DISPLAY_MAIN" != auto ] && has "$DISPLAY_MAIN"; then
+    main=$DISPLAY_MAIN
+else
+    main=$(xrandr --query | awk '$2 == "connected" && $3 == "primary" {print $1; exit}')
+    [ -n "$main" ] || main=$(printf '%s\n' "$connected" | head -n 1)
+fi
+mode_args() { if [ "$1" = auto ] || [ -z "$1" ]; then echo "--auto"; else echo "--mode $1"; fi; }
+
+second=""
+if [ "$DISPLAY_OTHERS" = extend ]; then
+    if [ "$DISPLAY_SECOND" != auto ] && [ "$DISPLAY_SECOND" != "$main" ] && has "$DISPLAY_SECOND"; then
+        second=$DISPLAY_SECOND
+    else
+        second=$(printf '%s\n' "$connected" | grep -vx "$main" | head -n 1)
+    fi
+fi
+
+# Jedno polecenie xrandr dla wszystkich wyjść (bez migania pośrednich stanów).
+set -- --output "$main" --primary $(mode_args "$DISPLAY_MAIN_MODE") --rotate "$DISPLAY_ROTATE" --pos 0x0
+[ -n "$BRIGHT" ] && set -- "$@" --brightness "$BRIGHT"
+for o in $connected; do
+    [ "$o" = "$main" ] && continue
+    case "$DISPLAY_OTHERS" in
+        mirror) set -- "$@" --output "$o" --auto --same-as "$main" ;;
+        extend) if [ "$o" = "$second" ]; then
+                    set -- "$@" --output "$o" $(mode_args "$DISPLAY_SECOND_MODE") --rotate normal --right-of "$main"
+                else
+                    set -- "$@" --output "$o" --off
+                fi ;;
+        *)      set -- "$@" --output "$o" --off ;;
+    esac
+done
+# Odłączone wyjścia wyłączamy, żeby nie zostawiały pustej przestrzeni ekranu.
+for o in $(xrandr --query | awk '$2 == "disconnected" {print $1}'); do
+    set -- "$@" --output "$o" --off
+done
+echo "kiosk-display: xrandr $*"
+if ! xrandr "$@"; then
+    # Np. niewspierana rozdzielczość — wracamy do ustawień automatycznych.
+    echo "kiosk-display: ustawienia odrzucone, próbuję automatycznych" >&2
+    xrandr --output "$main" --primary --auto --rotate normal --pos 0x0 >/dev/null 2>&1
+fi
+sleep 1
+
+{
+    echo "MAIN_OUTPUT='$main'"
+    echo "MAIN_AREA='$(geom "$main")'"
+    if [ -n "$second" ]; then
+        echo "SECOND_OUTPUT='$second'"
+        echo "SECOND_AREA='$(geom "$second")'"
+    fi
+} > "$AREAS.tmp" && mv "$AREAS.tmp" "$AREAS"
+chmod 0644 "$AREAS" 2>/dev/null
+cat "$AREAS"

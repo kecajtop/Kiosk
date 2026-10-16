@@ -1,0 +1,185 @@
+#!/bin/bash
+# System plików tylko do odczytu (overlayroot): dysk się nie zmienia, wszystkie
+# zapisy trafiają do RAM i znikają po restarcie. Zmiana ustawień kiosku
+# (panel WWW, MQTT, Home Assistant) jest zapisywana na dysk: dysk na chwilę
+# przechodzi w zapis (rw), plik jest kopiowany i dysk wraca do odczytu (ro).
+#   sudo kiosk-ro status            - stan
+#   sudo kiosk-ro on                - włącz (od następnego uruchomienia)
+#   sudo kiosk-ro off               - wyłącz (od następnego uruchomienia)
+#   sudo kiosk-ro save [ŚCIEŻKA…]   - zapisz na dysk zmiany (domyślnie ustawienia kiosku)
+#   sudo kiosk-ro run POLECENIE…    - uruchom polecenie na dysku (np. apt upgrade)
+# Po zmianach w terminalu (kiosk-mode, edycja plików) wpisz: sudo kiosk-ro save
+set -u
+LOWER=/media/root-ro
+CONF=/etc/overlayroot.conf
+LOCAL_CONF=/etc/overlayroot.local.conf
+RO_CONF=/etc/kiosk-setup/ro.conf
+LOCK=/run/kiosk-ro.lock
+# Co zapisywać domyślnie: ustawienia kiosku i pliki, które zmienia panel.
+DEFAULT_PATHS="/etc/kiosk-setup /etc/hostname /etc/hosts /etc/lightdm /etc/iptables /etc/systemd/system/kiosk-satellite.service /var/lib/kiosk-photos /var/lib/kiosk-voices /var/lib/kiosk-setup"
+EXTRA_PATHS=""
+KEEP_CLIPS=no
+[ -r "$RO_CONF" ] && . "$RO_CONF"
+
+[ "$EUID" -eq 0 ] || { echo "Uruchom jako root: sudo kiosk-ro ${1:-status}" >&2; exit 1; }
+
+active() { [ "$(findmnt -n -o FSTYPE / 2>/dev/null)" = overlay ] && mountpoint -q "$LOWER"; }
+configured() {   # wartość overlayroot= z dysku (gdy aktywne: z warstwy dolnej)
+    local f=$CONF
+    active && f=$LOWER$CONF
+    [ -r "$f" ] || { echo ""; return; }
+    sed -n 's/^[[:space:]]*overlayroot="\{0,1\}\([^"]*\)"\{0,1\}.*/\1/p' "$f" | tail -n 1
+}
+
+# Dysk na chwilę w trybie zapisu; zawsze wraca do odczytu (także po błędzie).
+RW_DONE=""
+rw_begin() {
+    exec 9>"$LOCK"; flock -w 60 9 || { echo "Inny zapis trwa — spróbuj za chwilę." >&2; exit 1; }
+    mount -o remount,rw "$LOWER" || { echo "BŁĄD: nie mogę przełączyć dysku w zapis." >&2; exit 1; }
+    RW_DONE=1
+    trap rw_end EXIT INT TERM
+}
+rw_end() {
+    [ -n "$RW_DONE" ] || return 0
+    sync
+    mount -o remount,ro "$LOWER" 2>/dev/null || { sleep 1; sync; mount -o remount,ro "$LOWER"; }
+    RW_DONE=""
+}
+
+sync_path() {   # skopiuj plik/katalog z bieżącego systemu na dysk (usunięte też usuń)
+    python3 - "$1" "$LOWER" <<'EOF'
+import os, shutil, sys
+src, lower = sys.argv[1].rstrip("/") or "/", sys.argv[2]
+dst = lower + src
+def copy_meta(s, d):
+    st = os.lstat(s)
+    os.lchown(d, st.st_uid, st.st_gid)
+    if not os.path.islink(d):
+        os.chmod(d, st.st_mode & 0o7777)
+def sync(s, d):
+    if os.path.islink(s):
+        if os.path.lexists(d) and (not os.path.islink(d) or os.readlink(d) != os.readlink(s)):
+            shutil.rmtree(d) if os.path.isdir(d) and not os.path.islink(d) else os.remove(d)
+        if not os.path.lexists(d):
+            os.symlink(os.readlink(s), d)
+        return
+    if os.path.isdir(s):
+        if os.path.lexists(d) and not os.path.isdir(d):
+            os.remove(d)
+        os.makedirs(d, exist_ok=True)
+        names = set(os.listdir(s))
+        for n in os.listdir(d):
+            if n not in names:
+                p = os.path.join(d, n)
+                shutil.rmtree(p) if os.path.isdir(p) and not os.path.islink(p) else os.remove(p)
+        for n in names:
+            sync(os.path.join(s, n), os.path.join(d, n))
+        copy_meta(s, d)
+        return
+    if not os.path.isfile(s):
+        return   # gniazda, urządzenia — pomijamy
+    if os.path.isdir(d) and not os.path.islink(d):
+        shutil.rmtree(d)
+    try:
+        a, b = os.stat(s), os.stat(d)
+        if a.st_size == b.st_size and int(a.st_mtime) == int(b.st_mtime):
+            copy_meta(s, d)
+            return
+    except FileNotFoundError:
+        pass
+    tmp = d + ".kiosk-ro-tmp"
+    shutil.copy2(s, tmp)
+    copy_meta(s, tmp)
+    os.replace(tmp, d)
+if not os.path.lexists(src):
+    if os.path.lexists(dst):   # usunięte w systemie = usuń z dysku
+        shutil.rmtree(dst) if os.path.isdir(dst) and not os.path.islink(dst) else os.remove(dst)
+    sys.exit(0)
+os.makedirs(os.path.dirname(dst), exist_ok=True)
+sync(src, dst)
+EOF
+}
+
+save() {
+    local p n=0 paths=("$@")
+    if ! active; then echo "Dysk jest w zwykłym trybie zapisu — nie trzeba nic zapisywać."; return 0; fi
+    if [ ${#paths[@]} -eq 0 ]; then
+        # shellcheck disable=SC2206
+        paths=($DEFAULT_PATHS $EXTRA_PATHS)
+        [ "$KEEP_CLIPS" = yes ] && paths+=(/var/lib/kiosk-clips)
+    fi
+    rw_begin
+    for p in "${paths[@]}"; do
+        case "$p" in /*) ;; *) echo "Pomijam (nie ścieżka bezwzględna): $p"; continue ;; esac
+        case "$p" in /proc*|/sys*|/dev*|/run*|/tmp*|/media/root-*) echo "Pomijam: $p"; continue ;; esac
+        if sync_path "$p"; then n=$((n+1)); else echo "BŁĄD zapisu: $p" >&2; fi
+    done
+    rw_end
+    echo "Zapisano na dysk: $n (dysk z powrotem tylko do odczytu)."
+}
+
+set_conf() {   # set_conf WARTOŚĆ — w pliku konfiguracji overlayroot na dysku
+    local f=$1 val=$2
+    if [ -f "$f" ] && grep -q '^[[:space:]]*overlayroot=' "$f"; then
+        sed -i "s|^[[:space:]]*overlayroot=.*|overlayroot=\"$val\"|" "$f"
+    else
+        echo "overlayroot=\"$val\"" >> "$f"
+    fi
+}
+
+main() {
+case "${1:-status}" in
+    status)
+        local c; c=$(configured)
+        if active; then
+            echo "Tylko do odczytu: WŁĄCZONE (zapisy w RAM, znikają po restarcie)"
+            df -h /media/root-rw 2>/dev/null | awk 'NR==2 {print "Zajęte w RAM: " $3 " z " $2}'
+            [ -n "$c" ] || echo "Po następnym uruchomieniu: WYŁĄCZONE"
+        else
+            echo "Tylko do odczytu: wyłączone (zwykły zapis na dysk)"
+            [ -n "$c" ] && echo "Po następnym uruchomieniu: WŁĄCZONE"
+        fi
+        command -v overlayroot-chroot >/dev/null || echo "Pakiet overlayroot: nie zainstalowany (zainstaluje się przy włączeniu)" ;;
+    on)
+        if ! command -v overlayroot-chroot >/dev/null; then
+            active && { echo "BŁĄD: brak pakietu overlayroot."; exit 1; }
+            echo "Instaluję pakiet overlayroot..."
+            DEBIAN_FRONTEND=noninteractive apt-get install -y overlayroot || { echo "BŁĄD: apt nie zainstalował overlayroot (internet? firewall?)"; exit 1; }
+        fi
+        if active; then
+            rw_begin; set_conf "$LOWER$CONF" "tmpfs:recurse=0"; rw_end
+            echo "Tylko do odczytu jest już włączone."
+        else
+            set_conf "$CONF" "tmpfs:recurse=0"
+            [ -f "$LOCAL_CONF" ] && set_conf "$LOCAL_CONF" "tmpfs:recurse=0"
+            echo "Włączone od następnego uruchomienia: sudo reboot"
+            echo "Ustawienia zmieniane w panelu WWW zapisują się na dysk same."
+        fi ;;
+    off)
+        if active; then
+            rw_begin; set_conf "$LOWER$CONF" ""; [ -f "$LOWER$LOCAL_CONF" ] && set_conf "$LOWER$LOCAL_CONF" ""; rw_end
+            echo "Wyłączone od następnego uruchomienia: sudo reboot"
+            echo "UWAGA: zmiany zrobione teraz poza ustawieniami kiosku przepadną przy restarcie."
+        else
+            [ -f "$CONF" ] && set_conf "$CONF" ""
+            [ -f "$LOCAL_CONF" ] && set_conf "$LOCAL_CONF" ""
+            echo "Tylko do odczytu: wyłączone."
+        fi ;;
+    save)
+        shift; save "$@" ;;
+    run)
+        shift
+        [ $# -gt 0 ] || { echo "Podaj polecenie, np.: sudo kiosk-ro run apt-get upgrade"; exit 1; }
+        if active; then
+            overlayroot-chroot "$@"; rc=$?
+            echo "Zmiana zapisana na dysku — zadziała po ponownym uruchomieniu (sudo reboot)."
+            exit $rc
+        else
+            "$@"
+        fi ;;
+    is-active)
+        active ;;
+    *)  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac
+}
+main "$@"; exit $?

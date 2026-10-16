@@ -1,0 +1,392 @@
+#!/bin/bash
+# Sterowanie kioskiem przez SSH.
+#   sudo kiosk-mode                      - menu (treść, ekran, logowanie, firewall, stan)
+#   sudo kiosk-mode firewall on|off|status - blokada internetu
+#   sudo kiosk-mode autologin yes|no     - pulpit + kiosk: automatyczne logowanie do pulpitu
+#   sudo kiosk-mode desktop cinnamon|xfce|plasma|auto - który pulpit (LightDM)
+#   sudo kiosk-mode debug                - raport diagnostyczny (usługi, ekran, sieć, kamery, dzienniki)
+#   sudo kiosk-mode mqtt-detect          - znajdź broker MQTT (Home Assistant) w sieci
+#   sudo kiosk-mode bootlogo on|off|once|status - logo przy uruchamianiu (once = tylko następny start bez logo)
+#   sudo kiosk-mode name Salon [hostname] [prefiks/mqtt] - nazwa kiosku (HA, DLNA, hostname, tematy MQTT)
+#   sudo kiosk-mode ro on|off|save|status - dysk tylko do odczytu (szczegóły: sudo kiosk-ro)
+#   sudo kiosk-mode status
+#   sudo kiosk-mode web  http://adres
+#   sudo kiosk-mode rtsp rtsp://kam1 [rtsp://kam2 ...]
+#   sudo kiosk-mode usb  [/dev/video0]
+#   sudo kiosk-mode mix  http://adres rtsp://kam1 [rtsp://kam2 ...]
+#   sudo kiosk-mode split 60             - mix: % szerokości dla strony
+#   sudo kiosk-mode clock tile|corner|off [tl|tr|bl|br] [s|m|l] - zegar
+#   sudo kiosk-mode screen-timeout 15    - wyłącz ekran po 15 min bez dotyku (0 = nigdy)
+#   sudo kiosk-mode power-off-after 600  - wyłącz komputer 600 min po starcie (0 = nigdy)
+#   sudo kiosk-mode reload               - podmień zawartość ekranu (bez restartu X)
+#   sudo kiosk-mode restart              - pełny restart ekranu (X; z pulpitem: tylko kiosk)
+#   sudo kiosk-mode session desktop|kiosk - pulpit + kiosk na drugim monitorze / cały komputer jako kiosk
+#   sudo kiosk-mode api-token            - token panelu WWW/API (port 8088) i hasło MPD
+#   KM_MODE=.. KM_URL=.. KM_CAMS=.. KM_USB=.. KM_PCT=.. kiosk-mode apply  - (dla API) zmiana kilku pól naraz
+set -e
+CONF=/etc/kiosk-setup/kiosk.conf
+[ "$EUID" -eq 0 ] || { echo "Uruchom jako root: sudo kiosk-mode $*" >&2; exit 1; }
+KIOSK_SCREEN_OFF_MIN=0
+KIOSK_SHUTDOWN_MIN=0
+[ -r "$CONF" ] && . "$CONF"
+
+kq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+save() {
+    local owner
+    owner=$(stat -c %G "$CONF" 2>/dev/null || echo root)
+    {
+        echo "# Konfiguracja kiosku — zmieniaj przez: sudo kiosk-mode, panel WWW (port 8088) lub dpkg-reconfigure kiosk-setup"
+        echo "KIOSK_USER=$(kq "${KIOSK_USER:-}")"
+        echo "KIOSK_MODE=$(kq "$KIOSK_MODE")"
+        echo "KIOSK_URL=$(kq "$KIOSK_URL")"
+        echo "KIOSK_RTSP_URLS=$(kq "$KIOSK_RTSP_URLS")"
+        echo "KIOSK_USB_DEVICE=$(kq "$KIOSK_USB_DEVICE")"
+        echo "KIOSK_WEB_PERCENT=$(kq "${KIOSK_WEB_PERCENT:-50}")"
+        echo "KIOSK_SCREEN_OFF_MIN=$(kq "${KIOSK_SCREEN_OFF_MIN:-0}")"
+        echo "KIOSK_SHUTDOWN_MIN=$(kq "${KIOSK_SHUTDOWN_MIN:-0}")"
+        echo "KIOSK_MPV_EXTRA=$(kq "${KIOSK_MPV_EXTRA:-}")"
+        echo "KIOSK_CLOCK=$(kq "${KIOSK_CLOCK:-off}")"
+        echo "KIOSK_CLOCK_POS=$(kq "${KIOSK_CLOCK_POS:-tr}")"
+        echo "KIOSK_CLOCK_SIZE=$(kq "${KIOSK_CLOCK_SIZE:-m}")"
+    } > "$CONF.tmp"
+    chown "root:$owner" "$CONF.tmp"; chmod 0640 "$CONF.tmp"
+    mv "$CONF.tmp" "$CONF"
+    # Trzymaj debconf w zgodzie, żeby dpkg-reconfigure pokazywał aktualne wartości.
+    {
+        echo "kiosk-setup kiosk-setup/mode select $KIOSK_MODE"
+        echo "kiosk-setup kiosk-setup/url string $KIOSK_URL"
+        echo "kiosk-setup kiosk-setup/rtsp_urls string $KIOSK_RTSP_URLS"
+        echo "kiosk-setup kiosk-setup/usb_device string $KIOSK_USB_DEVICE"
+        echo "kiosk-setup kiosk-setup/web_percent string ${KIOSK_WEB_PERCENT:-50}"
+        echo "kiosk-setup kiosk-setup/screen_off_minutes string ${KIOSK_SCREEN_OFF_MIN:-0}"
+        echo "kiosk-setup kiosk-setup/shutdown_minutes string ${KIOSK_SHUTDOWN_MIN:-0}"
+    } | debconf-set-selections 2>/dev/null || true
+}
+
+update_splash() {
+    local src=/usr/share/kiosk-setup/logo-stream.png
+    [ "$KIOSK_MODE" = "web" ] && src=/usr/share/kiosk-setup/logo-kiosk.png
+    [ -r /etc/kiosk-setup/logo-custom.png ] && src=/etc/kiosk-setup/logo-custom.png
+    local dst=/usr/share/plymouth/themes/mylogo/logo.png
+    if [ -d "$(dirname "$dst")" ] && ! cmp -s "$src" "$dst"; then
+        cp "$src" "$dst"
+        # initramfs trwa długo — w tle, żeby nie opóźniać przełączenia.
+        ( update-initramfs -u >/dev/null 2>&1 || logger "kiosk-mode: update-initramfs nie powiodło się" ) &
+    fi
+}
+
+refresh_firewall() {
+    if [ -x /usr/local/sbin/kiosk-firewall ]; then
+        ( /usr/local/sbin/kiosk-firewall refresh >/dev/null 2>&1 || logger "kiosk-mode: odświeżenie firewalla nie powiodło się" ) &
+    fi
+}
+
+KIOSK_SESSION=kiosk
+[ -r /etc/kiosk-setup/session.conf ] && . /etc/kiosk-setup/session.conf
+
+restart_screen() {
+    if [ "$KIOSK_SESSION" = desktop ]; then
+        # Pulpit zostaje — restartujemy tylko sesję kiosku w sesji X użytkownika.
+        local home
+        pkill -TERM -f '^/bin/sh /usr/local/bin/kiosk-session$' 2>/dev/null || true
+        sleep 2
+        home=$(getent passwd "$KIOSK_USER" | cut -d: -f6)
+        if pgrep -u "$KIOSK_USER" -x xfce4-session >/dev/null 2>&1 || [ -S /tmp/.X11-unix/X0 ]; then
+            runuser -u "$KIOSK_USER" -- env DISPLAY=:0 XAUTHORITY="$home/.Xauthority" \
+                setsid /usr/local/bin/kiosk-session >/dev/null 2>&1 < /dev/null &
+            echo "Kiosk na drugim monitorze uruchamia się ponownie."
+        else
+            echo "Pulpit nie działa — kiosk wystartuje po zalogowaniu $KIOSK_USER." >&2
+        fi
+        return 0
+    fi
+    # .bash_profile uruchamia startx w pętli, więc po zabiciu X kiosk wstaje sam.
+    pkill -x Xorg 2>/dev/null || pkill -x X 2>/dev/null || true
+    echo "Ekran kiosku uruchamia się ponownie."
+}
+
+reload_screen() {
+    # kiosk-session na SIGHUP podmienia samą zawartość (1-2 s, bez restartu X).
+    if pkill -HUP -f '^/bin/sh /usr/local/bin/kiosk-session$' 2>/dev/null; then
+        echo "Zawartość ekranu przeładowana."
+    else
+        restart_screen
+    fi
+}
+
+mask_list() { printf '%s' "$1" | tr ',' '\n' | sed -E 's#//[^:@/]+:[^@/]+@#//***:***@#; /^$/d; s/^/  - /'; echo; }
+
+status() {
+    [ "$KIOSK_SESSION" = desktop ] && echo "Ekran:       pulpit + kiosk na drugim monitorze"
+    echo "Tryb:        $KIOSK_MODE"
+    case "$KIOSK_MODE" in
+        web)  echo "Adres:       $KIOSK_URL" ;;
+        rtsp) echo "Kamery:"; mask_list "$KIOSK_RTSP_URLS" ;;
+        usb)  echo "Urządzenie:  $KIOSK_USB_DEVICE" ;;
+        mix)  echo "Strona:      $KIOSK_URL (lewe ${KIOSK_WEB_PERCENT:-50}% ekranu)"
+              echo "Kamery:"; mask_list "$KIOSK_RTSP_URLS" ;;
+    esac
+    case "${KIOSK_CLOCK:-off}" in
+        corner) echo "Zegar:       w rogu (${KIOSK_CLOCK_POS:-tr}, rozmiar ${KIOSK_CLOCK_SIZE:-m})" ;;
+        tile)   echo "Zegar:       kafelek w siatce kamer" ;;
+        *)      echo "Zegar:       wyłączony" ;;
+    esac
+    echo "Ekran gaśnie po: $([ "${KIOSK_SCREEN_OFF_MIN:-0}" -gt 0 ] 2>/dev/null && echo "${KIOSK_SCREEN_OFF_MIN} min bez dotyku" || echo nigdy)"
+    echo "Wyłączenie komputera: $([ "${KIOSK_SHUTDOWN_MIN:-0}" -gt 0 ] 2>/dev/null && echo "${KIOSK_SHUTDOWN_MIN} min po starcie" || echo nie)"
+}
+
+content_menu() {
+    local m
+    m=$(whiptail --title "Tryb kiosku" --default-item "$KIOSK_MODE" --menu "Co ma wyświetlać kiosk?" 16 70 4 \
+        web  "Strona WWW (Chromium)" \
+        rtsp "Kamery IP (RTSP, kilka = siatka)" \
+        mix  "Strona WWW + kamery obok" \
+        usb  "Kamera USB" 3>&1 1>&2 2>&3) || return 1
+    case "$m" in
+        web)  KIOSK_URL=$(whiptail --inputbox "Adres strony:" 9 72 "$KIOSK_URL" 3>&1 1>&2 2>&3) || return 1 ;;
+        rtsp) KIOSK_RTSP_URLS=$(whiptail --inputbox "Adresy RTSP oddzielone przecinkami:" 9 100 "$KIOSK_RTSP_URLS" 3>&1 1>&2 2>&3) || return 1 ;;
+        usb)  KIOSK_USB_DEVICE=$(whiptail --inputbox "Urządzenie kamery (ls /dev/video*):" 9 60 "${KIOSK_USB_DEVICE:-/dev/video0}" 3>&1 1>&2 2>&3) || return 1 ;;
+        mix)  KIOSK_URL=$(whiptail --inputbox "Adres strony (lewa część ekranu):" 9 72 "$KIOSK_URL" 3>&1 1>&2 2>&3) || return 1
+              KIOSK_RTSP_URLS=$(whiptail --inputbox "Adresy RTSP oddzielone przecinkami (prawa część):" 9 100 "$KIOSK_RTSP_URLS" 3>&1 1>&2 2>&3) || return 1
+              KIOSK_WEB_PERCENT=$(whiptail --inputbox "Ile % szerokości ekranu dla strony (10-90):" 9 60 "${KIOSK_WEB_PERCENT:-50}" 3>&1 1>&2 2>&3) || return 1 ;;
+    esac
+    KIOSK_MODE=$m
+}
+
+fw_on() { /usr/local/sbin/kiosk-firewall status 2>/dev/null | grep -q WŁĄCZONY; }
+sync_debconf() { echo "set $1 $2" | debconf-communicate kiosk-setup >/dev/null 2>&1 || true; }
+autologin_on() { ! grep -q '^KIOSK_AUTOLOGIN=no' /etc/kiosk-setup/session.conf 2>/dev/null; }
+show() { local t=$1 out; shift; out=$("$@" 2>&1) || true; whiptail --title "$t" --scrolltext --msgbox "$out" 20 78; }
+
+desktop_name() {
+    local d f
+    d=$(sed -n 's/^KIOSK_DESKTOP=//p' /etc/kiosk-setup/session.conf 2>/dev/null || true)
+    case "${d:-auto}" in
+        auto) echo "automatycznie (ostatnio używany)" ;;
+        *)    f=/usr/share/xsessions/$d.desktop
+              if [ -f "$f" ]; then sed -n 's/^Name=//p' "$f" | head -n 1; else echo "$d (nie zainstalowany)"; fi ;;
+    esac
+}
+
+has_dm() { [ -r /etc/X11/default-display-manager ]; }
+
+# Brak pulpitu: LightDM + wybrany pulpit z repozytorium Ubuntu.
+install_desktop() {
+    local d pk
+    d=$(whiptail --title "Instalacja pulpitu" --menu "Na tym komputerze nie ma pulpitu z ekranem logowania.\nKtóry zainstalować (z LightDM)?" 16 76 4 \
+        cinnamon "Cinnamon — pasek na dole, przyciąganie okien (jak Windows)" \
+        xfce     "XFCE — lekki i szybki" \
+        plasma   "KDE Plasma — nowoczesny, cięższy" 3>&1 1>&2 2>&3) || return 1
+    case "$d" in
+        cinnamon) pk="lightdm slick-greeter cinnamon" ;;
+        xfce)     pk="lightdm lightdm-gtk-greeter xfce4 xfce4-terminal" ;;
+        plasma)   pk="lightdm lightdm-gtk-greeter kde-plasma-desktop" ;;
+    esac
+    clear; echo "Instaluję: $pk (kilka minut, potrzebny internet)..."
+    # shellcheck disable=SC2086
+    DEBIAN_FRONTEND=noninteractive apt-get install -y $pk || { read -rp "Instalacja nie powiodła się — Enter, aby wrócić" _; return 1; }
+    echo /usr/sbin/lightdm > /etc/X11/default-display-manager
+    /usr/local/sbin/kiosk-session-mode desktop-session "$([ "$d" = plasma ] && { [ -f /usr/share/xsessions/plasmax11.desktop ] && echo plasmax11 || echo plasma; } || echo "$d")" "$KIOSK_USER" >/dev/null 2>&1 || true
+}
+
+mqtt_label() {
+    local en host port user
+    IFS=$'\t' read -r en host port user < <(python3 /usr/local/sbin/kiosk-api --mqtt-info 2>/dev/null || true)
+    if [ "${en:-0}" = 1 ]; then echo "Home Assistant (MQTT): $host:$port"; else echo "Home Assistant (MQTT): wyłączone — połącz"; fi
+}
+
+# Połączenie z Home Assistant: wykrycie brokera, login, zapis, restart kiosk-api.
+ha_menu() {
+    local list=() h p n c user pass en host port u
+    IFS=$'\t' read -r en host port u < <(python3 /usr/local/sbin/kiosk-api --mqtt-info 2>/dev/null || true)
+    whiptail --title "Home Assistant" --infobox "Szukam brokera MQTT w sieci (do 30 s)..." 7 64
+    while IFS=$'\t' read -r h p n; do
+        [ -n "$h" ] && list+=("$h:$p" "$n")
+    done < <(python3 /usr/local/sbin/kiosk-api --detect-mqtt 2>/dev/null || true)
+    list+=(reczny "Wpisz adres ręcznie")
+    [ "${en:-0}" = 1 ] && list+=(wylacz "Wyłącz MQTT")
+    c=$(whiptail --title "Home Assistant (MQTT)" --menu "Znalezione brokery MQTT. Home Assistant: dodatek Mosquitto broker.\nKiosk pojawi się w HA sam (Urządzenia i usługi → MQTT)." 18 78 8 "${list[@]}" 3>&1 1>&2 2>&3) || return 0
+    if [ "$c" = wylacz ]; then
+        show "MQTT" bash -c 'echo "{\"enabled\": false}" | python3 /usr/local/sbin/kiosk-api --set-mqtt && systemctl restart kiosk-api'
+        return 0
+    fi
+    if [ "$c" = reczny ]; then
+        c=$(whiptail --title "Broker MQTT" --inputbox "Adres brokera (np. 192.168.0.1 albo 192.168.0.1:1883):" 9 70 "${host:+$host:$port}" 3>&1 1>&2 2>&3) || return 0
+    fi
+    h=${c%%:*}; p=${c#*:}; [ "$p" = "$c" ] && p=1883
+    user=$(whiptail --title "Logowanie do brokera" --inputbox "Użytkownik (w Mosquitto z HA: użytkownik Home Assistant, np. kiosk):" 9 74 "$u" 3>&1 1>&2 2>&3) || return 0
+    pass=$(whiptail --title "Logowanie do brokera" --passwordbox "Hasło (puste = bez zmian):" 9 60 3>&1 1>&2 2>&3) || return 0
+    show "Home Assistant" bash -c 'python3 -c "import json,sys; print(json.dumps({\"enabled\":True,\"host\":sys.argv[1],\"port\":int(sys.argv[2]),\"user\":sys.argv[3],\"password\":sys.argv[4],\"discovery\":True}))" "$@" | python3 /usr/local/sbin/kiosk-api --set-mqtt && systemctl restart kiosk-api && sleep 4 && echo && echo "Stan połączenia: panel WWW → MQTT. W HA: Ustawienia → Urządzenia i usługi → MQTT → urządzenie kecaj kiosk."' _ "$h" "$p" "$user" "$pass"
+}
+
+ask_reboot() {
+    whiptail --title "Restart" --yesno "Zmiana zadziała po ponownym uruchomieniu komputera.\n\nUruchomić ponownie teraz?" 10 64 && { clear; echo "Restart..."; systemctl reboot; exit 0; }
+    return 0
+}
+
+main_menu() {
+    local c items cur
+    while true; do
+        KIOSK_SESSION=kiosk; [ -r /etc/kiosk-setup/session.conf ] && . /etc/kiosk-setup/session.conf
+        items=(tresc "Co wyświetla: $KIOSK_MODE (strona / kamery / mix / USB)"
+               ekran "Ekran: $([ "$KIOSK_SESSION" = desktop ] && echo 'pulpit + kiosk na drugim monitorze' || echo 'cały komputer jako kiosk')")
+        [ "$KIOSK_SESSION" = desktop ] && items+=(pulpit "Pulpit: $(desktop_name)"
+                                                  login "Logowanie do pulpitu: $(autologin_on && echo automatyczne || echo 'z hasłem')")
+        items+=(ha "$(mqtt_label)"
+                firewall "Blokada internetu (firewall): $(fw_on && echo WŁĄCZONA || echo wyłączona)"
+                logo     "$(/usr/local/sbin/kiosk-bootlogo status 2>/dev/null || echo 'Logo przy starcie')"
+                status "Stan kiosku"
+                debug  "Diagnostyka i dzienniki (debug)"
+                reload "Odśwież ekran kiosku"
+                panel  "Adres i hasło panelu WWW")
+        c=$(whiptail --title "Kiosk — ustawienia" --menu "Wybierz (Esc = wyjście):" 18 78 8 "${items[@]}" 3>&1 1>&2 2>&3) || { clear; return 0; }
+        case "$c" in
+            tresc)
+                if content_menu; then save; refresh_firewall; update_splash; reload_screen >/dev/null; show "Kiosk" status; fi ;;
+            ekran)
+                cur=$KIOSK_SESSION
+                c=$(whiptail --title "Ekran" --radiolist "Jak ma działać ekran?" 13 78 2 \
+                    desktop "Pulpit na monitorze głównym, kiosk na drugim" "$([ "$cur" = desktop ] && echo ON || echo OFF)" \
+                    kiosk   "Cały komputer jako kiosk (bez pulpitu)" "$([ "$cur" = kiosk ] && echo ON || echo OFF)" 3>&1 1>&2 2>&3) || continue
+                [ "$c" = "$cur" ] && continue
+                if [ "$c" = desktop ] && ! has_dm; then install_desktop || continue; fi
+                show "Ekran" /usr/local/sbin/kiosk-session-mode "$c" "$KIOSK_USER"
+                sync_debconf kiosk-setup/session "$c"
+                ask_reboot ;;
+            pulpit)
+                local list=() n d cur_d
+                cur_d=$(sed -n 's/^KIOSK_DESKTOP=//p' /etc/kiosk-setup/session.conf 2>/dev/null || true); cur_d=${cur_d:-auto}
+                list+=(auto "Automatycznie (ostatnio używany)" "$([ "$cur_d" = auto ] && echo ON || echo OFF)")
+                while IFS=$'\t' read -r n d; do
+                    [ -n "$n" ] && list+=("$n" "$d" "$([ "$cur_d" = "$n" ] && echo ON || echo OFF)")
+                done < <(/usr/local/sbin/kiosk-session-mode list-sessions)
+                list+=(+nowy "Zainstaluj inny pulpit…" OFF)
+                c=$(whiptail --title "Pulpit" --radiolist "Który pulpit uruchamiać na monitorze głównym?" 18 76 8 "${list[@]}" 3>&1 1>&2 2>&3) || continue
+                if [ "$c" = +nowy ]; then install_desktop && ask_reboot; continue; fi
+                [ "$c" = "$cur_d" ] && continue
+                show "Pulpit" /usr/local/sbin/kiosk-session-mode desktop-session "$c" "$KIOSK_USER"
+                ask_reboot ;;
+            login)
+                if autologin_on; then
+                    whiptail --title "Logowanie" --yesno "Wyłączyć automatyczne logowanie do pulpitu?\n\nPo włączeniu komputera pojawi się ekran logowania z hasłem, a kiosk na drugim monitorze ruszy dopiero po zalogowaniu $KIOSK_USER." 12 74 || continue
+                    show "Logowanie" /usr/local/sbin/kiosk-session-mode autologin no "$KIOSK_USER"
+                else
+                    whiptail --title "Logowanie" --yesno "Włączyć automatyczne logowanie $KIOSK_USER do pulpitu?\n\nKiosk na drugim monitorze wstanie sam po włączeniu prądu, ale pulpit będzie dostępny bez hasła dla każdego przy klawiaturze." 12 74 || continue
+                    show "Logowanie" /usr/local/sbin/kiosk-session-mode autologin yes "$KIOSK_USER"
+                fi ;;
+            firewall)
+                if fw_on; then
+                    whiptail --title "Firewall" --yesno "Wyłączyć blokadę internetu?\n\nKomputer (także przeglądarka na pulpicie) będzie mieć pełny dostęp do internetu." 11 70 || continue
+                    show "Firewall" /usr/local/sbin/kiosk-firewall off
+                    sync_debconf kiosk-setup/confirm_firewall false
+                else
+                    whiptail --title "Firewall" --defaultno --yesno "Włączyć blokadę internetu?\n\nDo internetu tylko adres kiosku i serwery Ubuntu; sieć lokalna (Home Assistant, kamery, MQTT) bez ograniczeń.\nUWAGA: przeglądarka na pulpicie nie otworzy stron z internetu." 13 74 || continue
+                    show "Firewall" /usr/local/sbin/kiosk-firewall on
+                    sync_debconf kiosk-setup/confirm_firewall true
+                fi ;;
+            ha)      ha_menu ;;
+            debug)   local f; f=$(mktemp); whiptail --title "Diagnostyka" --infobox "Sprawdzam usługi, ekran, sieć i kamery..." 7 60
+                     python3 /usr/local/sbin/kiosk-api --report > "$f" 2>&1 || true
+                     whiptail --title "Diagnostyka (strzałki/PgDn — przewijanie)" --scrolltext --textbox "$f" 30 100; rm -f "$f" ;;
+            logo)
+                cur=$(sed -n 's/^KIOSK_BOOTLOGO=//p' /etc/kiosk-setup/boot.conf 2>/dev/null || true); cur=${cur:-on}
+                [ -e /etc/kiosk-setup/bootlogo-once ] && cur=once
+                c=$(whiptail --title "Logo przy starcie" --radiolist "Co widać podczas uruchamiania komputera?" 14 78 3 \
+                    on   "Logo kecaj (cichy start)" "$([ "$cur" = on ] && echo ON || echo OFF)" \
+                    once "Bez logo tylko przy następnym starcie, potem logo wraca" "$([ "$cur" = once ] && echo ON || echo OFF)" \
+                    off  "Bez logo na stałe (widać komunikaty systemu)" "$([ "$cur" = off ] && echo ON || echo OFF)" 3>&1 1>&2 2>&3) || continue
+                [ "$c" = "$cur" ] && continue
+                clear; echo "Zapisuję ustawienia rozruchu (GRUB)..."
+                show "Logo przy starcie" /usr/local/sbin/kiosk-bootlogo "$c"
+                [ "$c" = once ] && ask_reboot ;;
+            status)  show "Stan kiosku" bash -c "/usr/local/sbin/kiosk-mode status; echo; /usr/local/sbin/kiosk-firewall status; /usr/local/sbin/kiosk-bootlogo status; /usr/local/sbin/kiosk-power status" ;;
+            reload)  show "Ekran" reload_screen ;;
+            panel)   show "Panel WWW" /usr/local/sbin/kiosk-mode api-token ;;
+        esac
+    done
+}
+
+num() { case "${1:-}" in ''|*[!0-9]*) return 1 ;; esac; [ "$1" -le "$2" ]; }
+
+case "${1:-}" in
+    "")       main_menu; exit 0 ;;
+    menu)     content_menu || exit 0 ;;
+    firewall) case "${2:-status}" in
+                  on|off) /usr/local/sbin/kiosk-firewall "$2"
+                          sync_debconf kiosk-setup/confirm_firewall "$([ "$2" = on ] && echo true || echo false)" ;;
+                  status) /usr/local/sbin/kiosk-firewall status ;;
+                  *)      echo "Użycie: sudo kiosk-mode firewall on|off|status" >&2; exit 1 ;;
+              esac; exit 0 ;;
+    desktop)  [ -n "${2:-}" ] || { /usr/local/sbin/kiosk-session-mode list-sessions; exit 0; }
+              /usr/local/sbin/kiosk-session-mode desktop-session "$2" "$KIOSK_USER"; exit $? ;;
+    debug)    python3 /usr/local/sbin/kiosk-api --report; exit 0 ;;
+    mqtt-detect)
+              out=$(python3 /usr/local/sbin/kiosk-api --detect-mqtt || true)
+              if [ -n "$out" ]; then printf '%s\n' "$out" | awk -F'\t' '{printf "%s:%s  %s\n", $1, $2, $3}'
+              else echo "Nie znaleziono brokera MQTT w sieci (Home Assistant: dodatek Mosquitto broker)."; fi
+              exit 0 ;;
+    bootlogo) case "${2:-status}" in
+                  on|off|once|status) /usr/local/sbin/kiosk-bootlogo "${2:-status}"; exit $? ;;
+                  *) echo "Użycie: sudo kiosk-mode bootlogo on|off|once|status" >&2; exit 1 ;;
+              esac ;;
+    autologin)
+              case "${2:-}" in yes|no) /usr/local/sbin/kiosk-session-mode autologin "$2" "$KIOSK_USER"; exit 0 ;;
+                  *) echo "Użycie: sudo kiosk-mode autologin yes|no" >&2; exit 1 ;; esac ;;
+    name)     [ -n "${2:-}" ] || { python3 -c 'import json;d=json.load(open("/etc/kiosk-setup/name.json"));print(d.get("name",""))' 2>/dev/null || hostname; exit 0; }
+              python3 /usr/local/sbin/kiosk-api --set-name "$2" "${3:-}" "${4:-}" && systemctl restart kiosk-api; exit $? ;;
+    ro)       exec /usr/local/sbin/kiosk-ro "${2:-status}" "${@:3}" ;;
+    status)   status; exit 0 ;;
+    restart)  restart_screen; exit 0 ;;
+    reload)   reload_screen; exit 0 ;;
+    api-token)
+              echo "Token: $(cat /etc/kiosk-setup/api-token)"
+              echo "Panel: http://$(hostname -I | awk '{print $1}'):8088/  (użytkownik dowolny, hasło = token)"
+              echo "MPD (Home Assistant media_player): port 6600, hasło = ten sam token"
+              exit 0 ;;
+    web)      [ -n "${2:-}" ] && KIOSK_URL=$2; KIOSK_MODE=web ;;
+    rtsp)     shift; [ $# -gt 0 ] && KIOSK_RTSP_URLS=$(IFS=,; echo "$*"); KIOSK_MODE=rtsp ;;
+    usb)      [ -n "${2:-}" ] && KIOSK_USB_DEVICE=$2; KIOSK_MODE=usb ;;
+    mix)      shift; if [ $# -gt 0 ]; then KIOSK_URL=$1; shift; fi
+              [ $# -gt 0 ] && KIOSK_RTSP_URLS=$(IFS=,; echo "$*"); KIOSK_MODE=mix ;;
+    split)    case "${2:-}" in [1-9][0-9]) KIOSK_WEB_PERCENT=$2 ;; *) echo "Podaj procent 10-90, np.: sudo kiosk-mode split 60" >&2; exit 1 ;; esac ;;
+    clock)    case "${2:-}" in off|corner|tile) KIOSK_CLOCK=$2 ;; *) echo "Użycie: sudo kiosk-mode clock tile|corner|off [tl|tr|bl|br] [s|m|l]" >&2; exit 1 ;; esac
+              case "${3:-}" in tl|tr|bl|br) KIOSK_CLOCK_POS=$3 ;; "") ;; *) echo "Pozycja: tl, tr, bl, br" >&2; exit 1 ;; esac
+              case "${4:-}" in s|m|l) KIOSK_CLOCK_SIZE=$4 ;; "") ;; *) echo "Rozmiar: s, m, l" >&2; exit 1 ;; esac ;;
+    screen-timeout)
+              num "${2:-}" 1440 || { echo "Podaj minuty 0-1440, np.: sudo kiosk-mode screen-timeout 15" >&2; exit 1; }
+              KIOSK_SCREEN_OFF_MIN=$2; save; status; reload_screen; exit 0 ;;
+    power-off-after)
+              num "${2:-}" 10080 || { echo "Podaj minuty 0-10080, np.: sudo kiosk-mode power-off-after 600" >&2; exit 1; }
+              KIOSK_SHUTDOWN_MIN=$2; save; status; /usr/local/sbin/kiosk-power apply; exit 0 ;;
+    apply)    [ -n "${KM_MODE+x}" ] && KIOSK_MODE=$KM_MODE
+              [ -n "${KM_URL+x}" ] && KIOSK_URL=$KM_URL
+              [ -n "${KM_CAMS+x}" ] && KIOSK_RTSP_URLS=$KM_CAMS
+              [ -n "${KM_USB+x}" ] && KIOSK_USB_DEVICE=$KM_USB
+              [ -n "${KM_PCT+x}" ] && KIOSK_WEB_PERCENT=$KM_PCT
+              [ -n "${KM_CLOCK+x}" ] && KIOSK_CLOCK=$KM_CLOCK
+              [ -n "${KM_CLOCK_POS+x}" ] && KIOSK_CLOCK_POS=$KM_CLOCK_POS
+              [ -n "${KM_CLOCK_SIZE+x}" ] && KIOSK_CLOCK_SIZE=$KM_CLOCK_SIZE
+              case "${KIOSK_CLOCK:-off}" in off|corner|tile) ;; *) echo "Zegar: off, corner lub tile" >&2; exit 1 ;; esac
+              case "${KIOSK_CLOCK_POS:-tr}" in tl|tr|bl|br) ;; *) echo "Pozycja zegara: tl, tr, bl lub br" >&2; exit 1 ;; esac
+              case "${KIOSK_CLOCK_SIZE:-m}" in s|m|l) ;; *) echo "Rozmiar zegara: s, m lub l" >&2; exit 1 ;; esac
+              case "$KIOSK_MODE" in web|rtsp|mix|usb) ;; *) echo "Nieznany tryb: $KIOSK_MODE" >&2; exit 1 ;; esac ;;
+    session)  case "${2:-}" in
+                  desktop|kiosk)
+                      /usr/local/sbin/kiosk-session-mode "$2" "$KIOSK_USER"
+                      echo "set kiosk-setup/session $2" | debconf-communicate kiosk-setup >/dev/null 2>&1 || true
+                      exit 0 ;;
+                  "") echo "Ekran: $([ "$KIOSK_SESSION" = desktop ] && echo 'pulpit + kiosk na drugim monitorze' || echo 'cały komputer jako kiosk')"; exit 0 ;;
+                  *)  echo "Użycie: sudo kiosk-mode session desktop|kiosk" >&2; exit 1 ;;
+              esac ;;
+    -h|--help|help) sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *)        echo "Nieznana opcja: $1 (sudo kiosk-mode help)" >&2; exit 1 ;;
+esac
+
+save
+status
+# Panel WWW zmienia kilka ustawień po kolei — przeładowanie tylko na końcu.
+[ "${KIOSK_NO_RESTART:-}" = "1" ] && exit 0
+refresh_firewall
+update_splash
+reload_screen

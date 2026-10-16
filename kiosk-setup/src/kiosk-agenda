@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""Plan dnia z kalendarzy Home Assistant w rogu ekranu kiosku.
+
+  kiosk-agenda --corner bl --area 1920x1080+0+0
+
+Wydarzenia zapisuje kiosk-api do /run/kiosk-agenda.json (co 5 min). Kartę
+rysuje ImageMagick (czcionka DejaVu), Tk ją tylko wyświetla. Bez wydarzeń
+karta się chowa.
+"""
+import argparse
+import json
+import os
+import subprocess
+import tempfile
+import time
+import tkinter as tk
+
+BG, INK, MUTED, LINE, ACCENT = "#0E1216", "#F3F5F7", "#A3AEB9", "#26303A", "#F2A900"
+FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+SRC = "/run/kiosk-agenda.json"
+
+
+def read_events():
+    try:
+        with open(SRC) as f:
+            return json.load(f).get("events", [])[:6]
+    except Exception:
+        return []
+
+
+def render(events, pt, out):
+    rows = ["(", "-background", BG, "-fill", ACCENT, "-font", FONT_BOLD, "-pointsize", str(int(pt * 0.9)),
+            "label:Plan dnia", ")"]
+    for e in events:
+        when = e.get("when", "") + ((" " + e["time"]) if e.get("time") else "")
+        rows += ["(", "(", "-background", BG, "-fill", MUTED, "-font", FONT, "-pointsize", str(pt),
+                 "label:" + when.replace("%", "%%") + "  ", ")",
+                 "(", "-background", BG, "-fill", INK, "-font", FONT, "-pointsize", str(pt),
+                 "label:" + e.get("summary", "")[:48].replace("%", "%%"), ")",
+                 "-background", BG, "+append", ")"]
+    pad = max(8, pt // 2)
+    cmd = ["convert"] + rows + ["-background", BG, "-gravity", "west", "-append",
+                                "-bordercolor", BG, "-border", "%dx%d" % (pad * 2, pad),
+                                "-bordercolor", LINE, "-border", "2", "PNG24:" + out]
+    subprocess.run(cmd, check=True, timeout=20)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--corner", default="bl", choices=["tl", "tr", "bl", "br"])
+    ap.add_argument("--area", required=True, help="WxH+X+Y — monitor kiosku")
+    a = ap.parse_args()
+    wh, ox, oy = a.area.split("+", 1)[0], *map(int, a.area.split("+")[1:3])
+    sw, sh = map(int, wh.split("x"))
+    pt = max(12, int(sh * 0.022))
+    margin = int(sh * 0.025)
+
+    root = tk.Tk()
+    root.configure(cursor="none")
+    root.overrideredirect(True)
+    root.configure(bg=BG)
+    label = tk.Label(root, borderwidth=0, highlightthickness=0, bg=BG)
+    label.pack()
+    tmp = os.path.join(tempfile.mkdtemp(prefix="kiosk-agenda-"), "a.png")
+    state = {"key": None, "img": None}
+
+    def refresh():
+        ev = read_events()
+        key = json.dumps(ev, ensure_ascii=False)
+        if key != state["key"]:
+            state["key"] = key
+            if not ev:
+                root.withdraw()
+            else:
+                try:
+                    render(ev, pt, tmp)
+                    img = tk.PhotoImage(file=tmp)
+                    state["img"] = img
+                    label.configure(image=img)
+                    w, h = img.width(), img.height()
+                    x = ox + (margin if a.corner in ("tl", "bl") else sw - w - margin)
+                    y = oy + (margin if a.corner in ("tl", "tr") else sh - h - margin)
+                    root.geometry("%dx%d+%d+%d" % (w, h, x, y))
+                    root.deiconify()
+                except Exception as e:
+                    print("plan dnia: %s" % e, flush=True)
+        root.lift()
+        root.after(20000, refresh)
+
+    refresh()
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

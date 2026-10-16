@@ -1,0 +1,148 @@
+Template: kiosk-setup/run_wizard
+Type: boolean
+Default: false
+Description: Uruchomić kreator konfiguracji kiosku?
+ Kiosk jest już skonfigurowany.
+ .
+ Nie - aktualizacja zachowa wszystkie obecne ustawienia (tryb ekranu, pulpit,
+ kamery, adres strony, MQTT, firewall, logo, wyłączanie) i podmieni tylko
+ programy kiosku.
+ .
+ Tak - pytania instalatora jeszcze raz, z obecnymi ustawieniami jako
+ podpowiedziami.
+ .
+ Kreator możesz uruchomić później: sudo dpkg-reconfigure kiosk-setup
+ (pojedyncze ustawienia: sudo kiosk-mode albo panel WWW).
+
+Template: kiosk-setup/username
+Type: string
+Default: kiosk
+Description: Nazwa użytkownika do autologinu:
+ Użytkownik systemowy, na którego ma się odbywać automatyczne
+ logowanie na konsoli tty1. Musi już istnieć w systemie.
+
+Template: kiosk-setup/session
+Type: select
+Choices: desktop, kiosk
+Default: kiosk
+Description: Jak ma działać ekran?
+ desktop - pulpit (np. XFCE) zostaje na monitorze głównym z automatycznym
+           logowaniem, a kiosk (kamery / strona) zajmuje DRUGI monitor
+           (VGA, DisplayPort, HDMI). Bez drugiego monitora kiosk czeka.
+ kiosk   - cały komputer jako kiosk: bez pulpitu, kiosk na całym ekranie.
+ .
+ Później: sudo kiosk-mode session desktop|kiosk (i restart komputera).
+
+Template: kiosk-setup/mode
+Type: select
+Choices: web, rtsp, mix, usb
+Default: web
+Description: Co ma wyświetlać kiosk?
+ web  - strona WWW w Chromium (np. panel Home Assistant), logo "kiosk"
+ rtsp - obraz z kamer IP (jedna lub kilka w siatce), logo "stream"
+ mix  - strona WWW po lewej i kamery IP po prawej, logo "stream"
+ usb  - obraz z kamery podłączonej przez USB, logo "stream"
+ .
+ Tryb można później przełączyć przez SSH: sudo kiosk-mode
+
+Template: kiosk-setup/url
+Type: string
+Default: http://localhost/
+Description: Adres URL wyświetlany w trybie kiosk (web):
+ Pełny adres (http:// lub https://), który Chromium otworzy
+ automatycznie w trybie pełnoekranowym.
+
+Template: kiosk-setup/rtsp_urls
+Type: string
+Default:
+Description: Adresy kamer RTSP (tryb rtsp):
+ Jeden lub kilka adresów oddzielonych przecinkami, np.
+ rtsp://admin:haslo@192.168.0.203:554/,rtsp://admin:haslo@192.168.0.204:554/
+ Kilka kamer zostanie ułożonych automatycznie w siatce na ekranie.
+
+Template: kiosk-setup/usb_device
+Type: string
+Default: /dev/video0
+Description: Urządzenie kamery USB (tryb usb):
+ Ścieżka urządzenia V4L2. Listę kamer pokaże: ls /dev/video*
+
+Template: kiosk-setup/logo_path
+Type: string
+Default:
+Description: Własne logo na splash screen (opcjonalnie):
+ Ścieżka do pliku PNG z logo, które ma się wyświetlać przy starcie
+ systemu i jako tło przed załadowaniem obrazu. Zostaw puste, aby użyć
+ wbudowanego logo kecaj: "kiosk" w trybie web, "stream" w trybach
+ rtsp i usb.
+
+Template: kiosk-setup/confirm_firewall
+Type: boolean
+Default: true
+Description: Ograniczyć ruch wychodzący wyłącznie do kiosku i serwerów Ubuntu?
+ Jeśli tak, firewall zablokuje cały ruch wychodzący do internetu poza:
+ adres kiosku, serwery aktualizacji Ubuntu, DNS, DHCP, NTP i ping.
+ Sieć lokalna działa bez ograniczeń. UWAGA: przeglądarka i inne programy
+ na pulpicie NIE otworzą stron z internetu — przy trybie „pulpit + kiosk”
+ wybierz „nie”. Wyłączenie później: sudo kiosk-firewall off
+ Lista adresów IP będzie odświeżana co godzinę. SSH i VNC przychodzące
+ z sieci lokalnej nigdy nie są blokowane (to dotyczy tylko ruchu
+ wychodzącego z tego urządzenia).
+
+Template: kiosk-setup/shutdown_minutes
+Type: string
+Default: 0
+Description: Automatyczne wyłączenie komputera po X minutach od startu (0 = wyłączone):
+ Jeśli podasz liczbę większą od zera, komputer wyłączy się automatycznie
+ tyle minut po każdym starcie systemu. Zmienisz to też w panelu WWW, API i MQTT.
+
+Template: kiosk-setup/admin_ips
+Type: string
+Default:
+Description: Ogranicz SSH/VNC do konkretnych adresów IP (opcjonalnie):
+ Lista adresów IP lub zakresów CIDR oddzielonych przecinkami (np.
+ 203.0.113.5,10.8.0.0/24), z których ma być dozwolony dostęp SSH i VNC
+ — np. adres Twojego VPN-a. Zostaw puste, aby zezwolić z całej sieci
+ lokalnej (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) — ustawienie
+ domyślne.
+
+Template: kiosk-setup/web_percent
+Type: string
+Default: 50
+Description: Tryb mix: ile procent szerokości ekranu zajmuje strona WWW (10-90):
+ Strona WWW jest po lewej, kamery w pozostałej części po prawej.
+
+Template: kiosk-setup/screen_off_minutes
+Type: string
+Default: 0
+Description: Wyłączaj ekran po X minutach bez dotyku/myszy/klawiatury (0 = nigdy):
+ Monitor gaśnie po tylu minutach bezczynności; dotknięcie ekranu lub ruch
+ myszy go budzi. Ekran można też włączać i wyłączać z panelu WWW, API i MQTT.
+
+Template: kiosk-setup/mqtt_host
+Type: string
+Default:
+Description: Broker MQTT (opcjonalnie):
+ Adres brokera MQTT, np. 192.168.0.1 (Mosquitto w Home Assistant).
+ Zostaw puste, aby nie używać MQTT — można je włączyć później w panelu WWW.
+ Kiosk publikuje stan, przyjmuje komendy i sam pojawia się w Home Assistant.
+
+Template: kiosk-setup/mqtt_port
+Type: string
+Default: 1883
+Description: Port brokera MQTT:
+
+Template: kiosk-setup/mqtt_user
+Type: string
+Default:
+Description: Użytkownik MQTT:
+
+Template: kiosk-setup/mqtt_password
+Type: password
+Description: Hasło MQTT:
+
+Template: kiosk-setup/mqtt_prefix
+Type: string
+Default: kecaj/kiosk
+Description: Prefiks tematów MQTT:
+ Np. kecaj/kiosk — komendy: kecaj/kiosk/mode/set, kecaj/kiosk/bubble/set itd.
+ Przy kilku kioskach nadaj każdemu inny prefiks (np. kecaj/salon).
