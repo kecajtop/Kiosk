@@ -6,7 +6,7 @@
 
 ## Przegląd
 
-kiosk-setup (wersja 1.0.3) zamienia komputer z Ubuntu w kiosk: pokazuje kamery, stronę Home Assistant albo jedno i drugie, mówi, gra radio i reaguje na Home Assistant. Sterujesz nim z panelu WWW, z Home Assistant (MQTT), z API HTTP, z menu w terminalu albo dla wielu kiosków naraz z dodatku HA „Kioski”.
+kiosk-setup (wersja 1.0.4) zamienia komputer z Ubuntu w kiosk: pokazuje kamery, stronę Home Assistant albo jedno i drugie, mówi, gra radio i reaguje na Home Assistant. Sterujesz nim z panelu WWW, z Home Assistant (MQTT), z API HTTP, z menu w terminalu albo dla wielu kiosków naraz z dodatku HA „Kioski”.
 
 ![Panel WWW kiosku — strona Start](img/panel-start.png)
 
@@ -17,7 +17,7 @@ Panel WWW: menu sekcji po lewej (Start, Ekran, Komunikaty, Dźwięk, Automatyka,
 | Kiosk | kecaj, 192.168.0.214, użytkownik `kecaj` |
 | Home Assistant | 192.168.0.1:8123 |
 | Kamera | rtsp://admin:…@192.168.0.203:554/ |
-| Pakiet | kiosk-setup\_1.0.3\_amd64.deb (wersja 1:1.0.3, amd64, ok. 22 MB, zawiera Piper TTS); kod i wydania: github.com/kecajtop/Kiosk |
+| Pakiet | kiosk-setup\_1.0.4\_amd64.deb (wersja 1:1.0.4, amd64, ok. 22 MB, zawiera Piper TTS); kod i wydania: github.com/kecajtop/Kiosk |
 
 **Wymagania:** Ubuntu (Server albo z pulpitem), GRUB, procesor x86-64, monitor (do dwóch wyjść: HDMI, DisplayPort, VGA), sieć lokalna. Opcjonalnie: głośnik, mikrofon (interkom, asystent głosowy), monitor z DDC/CI (sterowanie podświetleniem).
 
@@ -46,7 +46,7 @@ Pierwsza instalacja to jedno polecenie i kreator; każda kolejna wersja zachowuj
 
    ```bash
    sudo apt update
-   sudo apt install ./kiosk-setup_1.0.3_amd64.deb
+   sudo apt install ./kiosk-setup_1.0.4_amd64.deb
    ```
 3. Kreator zapyta o: użytkownika (`kecaj`), ekran (**desktop** = pulpit + kiosk na drugim monitorze, **kiosk** = cały komputer), tryb (web/rtsp/mix/usb), adres strony lub kamer, logo, firewall (przy pulpicie: **nie**), wyłączanie ekranu i komputera, MQTT, dostęp SSH/VNC.
 4. Ustaw strefę czasową i uruchom ponownie: `sudo timedatectl set-timezone Europe/Warsaw`, potem `sudo reboot`.
@@ -77,7 +77,7 @@ Kod, gotowy pakiet i plik aktualizacji są w [github.com/kecajtop/Kiosk](https:/
 
 Przy adresie z GitHuba zapora kiosku sama przepuszcza serwery GitHuba. „Jaka wersja jest dostępna?” w panelu albo `sudo kiosk-update latest` tylko sprawdza, nic nie instaluje.
 
-**Numeracja.** Pakiet ma numer wersji `1:1.0.3`.
+**Numeracja.** Pakiet ma numer wersji `1:1.0.4`.
 
 **Budowanie ze źródeł.** Programy kiosku są w `kiosk-setup/src/`. Skrypt `kiosk-setup/build.sh` wkleja je do instalatora i buduje `.deb`; Piper bierze z gotowego pakietu (`--piper-from`) albo pomija (`--no-piper`). Panel WWW (HTML, CSS, JavaScript) jest wbudowany w `kiosk-setup/src/kiosk-api`.
 
@@ -160,7 +160,16 @@ Zegar ma 23 wyglądy do wyboru w panelu: Ekran → Co wyświetla kiosk → Wygl�
 
 Podświetlenie wyświetlaczy LCD: zielone, niebieskie albo bursztynowe (pole pod listy wyglądów). Zegar na cały ekran wyłącza się, wybierając w polu „Zegar” inne miejsce (w rogu albo brak) i klikając „Pokaż na kiosku”.
 
-**Mimika podczas mowy.** Gdy kiosk mówi (komunikat, mówiący zegar, pogoda, wiadomość głosowa), oczy — ludzkie i robota — patrzą na rozmówcę, pulsują w rytm głosu, częściej mrugają i przybierają wyraz pasujący do treści: „uwaga”, „ktoś przy furtce” — zdziwienie, „niestety”, „deszcz” — smutek, „smacznego”, „brawo” — radość, „dobranoc” — senność, pytanie — zaciekawienie.
+**Mimika podczas mowy.** Gdy kiosk mówi (komunikat, mówiący zegar, pogoda, wiadomość głosowa), oczy — ludzkie i robota — patrzą na rozmówcę, pulsują w rytm głosu, częściej mrugają i przybierają wyraz pasujący do treści. Słownik ma ok. 350 słów i fraz po polsku i angielsku, dopasowywanych od początku słowa („deszcz” pasuje też do „deszczowo”); wygrywa nastrój z największą liczbą trafień. Bez trafień: pytanie — zaciekawienie, wykrzyknik — zdziwienie.
+
+| Wyraz oczu | Przykładowe słowa |
+| --- | --- |
+| Zdziwienie | uwaga, alarm, dym, zalanie, ktoś przy furtce, dzwonek, kurier, paczka, goście, otwarte okno, wykryto ruch, pilne |
+| Złość | nie wolno, zakaz, przestań, za głośno, ostrzegam, ostatni raz, posprzątaj, stop |
+| Smutek | niestety, deszcz, burza, mróz, pochmurno, przepraszam, błąd, nie działa, słaba bateria, odwołane, chory, szkoda |
+| Senność | dobranoc, kolorowych snów, późno, pora spania, odpocznij, wieczór, zmęczony |
+| Radość | dzień dobry, cześć, smacznego, obiad, słonecznie, ciepło, dziękuję, brawo, urodziny, święta, weekend, wakacje |
+| Zaciekawienie | pamiętaj, przypominam, nie zapomnij, sprawdź, ciekawe, dlaczego, kto to |
 
 ### Na ekranie: ikony, aktualizacja, „Teraz gra”
 
@@ -530,10 +539,11 @@ Kopia zapasowa z panelu (System → Kopia) obejmuje cały ten katalog.
 
 ## Historia wersji kiosk-setup
 
-Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy.
+Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, a 1.0.4 — większy słownik mimiki.
 
 | Wersja | Data | Zawartość |
 | --- | --- | --- |
+| 1.0.4 | 16.10.2026 | Większy słownik mimiki oczu (ok. 350 słów i fraz po polsku i angielsku), dopasowanie od początku słowa, wygrywa nastrój z największą liczbą trafień |
 | 1.0.3 | 16.10.2026 | Nowe wyglądy zegara: oczy robota (z godziną i same), zegar słowny PL i EN, zegar radiowy LCD, kod czasu DCF77, LED z pierścieniem, minimalistyczny, woltomierze kwadratowe; oczy reagują na mowę kiosku |
 | 1.0.2 | 16.10.2026 | Nowe wyglądy zegara: „Oczy z zegarem” (oczy rozglądają się, mrugają i zerkają na godzinę przy zmianie minuty) i „Same oczy” |
 | 1.0.1 | 16.10.2026 | Pierwsze wydanie: ekran z kamerami RTSP, stroną HA, trybem mix i kamerą USB, wiele monitorów, pulpit + kiosk, widoki i ich rotacja; 12 wyglądów zegara, zegar nocny, zdjęcia, plan dnia, pogoda, pasek informacyjny, dymki, alert z kamerą; ikony połączeń, postęp aktualizacji i karta „Teraz gra” na ekranie; mowa (Piper, espeak), gong, radio, MPD, DLNA, interkom, asystent głosowy; harmonogram, obecność, wykrywanie ruchu z nagraniami; MQTT z auto-wykryciem w HA, API HTTP, panel WWW z kontami i HTTPS, dodatek HA „Kioski”; jasność DDC/CI lub programowa (także odwrócona); nazwa kiosku, dysk tylko do odczytu, firewall, kopia ustawień; aktualizacje z panelu, nocne i z GitHuba (update.json, SHA-256) |

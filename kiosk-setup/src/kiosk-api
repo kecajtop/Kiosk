@@ -447,24 +447,71 @@ def fade(setter, a, b, steps=5, pause=0.06):
 # Stan mowy dla oczu na ekranie (kiosk-clock: wygląd „oczy” / „oczy robota”): kiedy kiosk mówi,
 # oczy patrzą na rozmówcę, pulsują w rytm głosu i przybierają wyraz pasujący do treści.
 SPEAK_FILE = "/run/kiosk-speaking.json"
+# Słowa i frazy (małe litery) dopasowywane od początku słowa: „deszcz” pasuje też do „deszczowo”.
+# „_” łączy słowa we frazę, „=” na końcu = tylko całe słowo. Wygrywa nastrój z największą liczbą
+# trafień; przy remisie kolejność poniżej. Bez trafień: „?” — zaciekawienie, „!” — zdziwienie.
 SPEECH_MOODS = (
-    ("surprised", ("uwaga", "alarm", "pożar", "dym ", "zalan", "właman", "awari", "ktoś", "dzwonek", "furtk", "drzwi")),
-    ("sad", ("niestety", "deszcz", "burz", "ulew", "błąd", "nie udało", "brak ", "mróz", "zimno", "smut", "przykro")),
-    ("sleepy", ("dobranoc", "śpij", "spać", "późno", "kolorowych snów")),
-    ("angry", ("zamknij", "wyłącz natychmiast", "nie wolno", "zakaz", "stop")),
-    ("happy", ("dzień dobry", "witaj", "cześć", "brawo", "gratul", "smacznego", "obiad", "kolacj", "śniadani",
-               "słonecz", "pogodnie", "dziękuj", "super", "świetn", "urodzin", "wesoł", "miłego", "zapraszam")),
+    ("surprised", """uwaga alarm alert pożar ogień płomie dym= dymu czad tlenek zalan zalew wyciek woda_w właman
+        intruz złodziej awari ktoś dzwonek dzwoni furtk brama= bramie bramy drzwi okno= okna= otwart otworz kurier
+        paczk przesyłk listonosz gość goście gości przyjecha przyszed przyszła przyjdzie odwiedz nagle
+        niespodziank wow ojej o_rany naprawdę niesamowit nie_do_wiary szok wykryto wykryłem ruch_na ruch_przy
+        kamer syrena wezwanie pilne pilnie natychmiastow ważne ważna ważny ups oops warning fire smoke door
+        doorbell someone= visitor delivery package urgent surprise""".split()),
+    ("angry", """zamknij zamknąć nie_wolno zakaz zabronion natychmiast przestań przestańcie dość= dosyć uspokój
+        hałas za_głośno ciszej ostrzegam ostatni_raz kara= karę szlaban bałagan posprzątaj sprzątnij spóźni
+        pospiesz pośpiesz wstawaj wstań koniec_gier odłóż_telefon stop= zły= zła= złości wściek denerw irytuj
+        grrr quiet= don't angry""".split()),
+    ("sad", """niestety deszcz pada= padać ulew mżawk burz grad śnieżyc zawiej mróz mroźn przymroz zimno zimn
+        chłod pochmurn zachmurz mgła mgły mglisto wichur wietrzn smut przykro żal= żałuj przepraszam przeprosin
+        błąd błędu nie_udało nieudan nie_działa zepsu uszkodz brak= braku rozładow bateria baterii słaba= słaby=
+        odwołan opóźn spóźnion choroba chory chora kaszel gorączk ból= boli tęsknię tęsknota szkoda pożegna
+        żegnaj do_widzenia smutno płacz łzy niski_poziom zabrakło sorry unfortunately rain cold= error failed
+        broken goodbye sad= miss_you""".split()),
+    ("sleepy", """dobranoc śpij spać śpię sen= snu senny senna kolorowych_snów późno późna późny odpocz relaks
+        cisza_nocna nocny nocna noc= nocy wieczór wieczorem zmęcz ziew drzemk leniw powoli kołysank łóżk
+        poduszk piżam pora_spania good_night sleep tired""".split()),
+    ("happy", """dzień_dobry dobry_wieczór witaj witam cześć hej= siema brawo gratul smacznego obiad kolacj śniadani
+        podwieczor deser ciast tort pizza lody= czekolad słonecz słońce pogodnie bezchmurn ciepło ciepły
+        ciepła upał lato= wiosna dziękuj dzięki super świetn ekstra wspania doskonał rewelac fantastycz cudown
+        piękn urodzin imienin rocznic święt wigili sylwest nowy_rok wesoł miłego zapraszam kocham kochani
+        buziak uśmiech radoś radosn szczęśl wygra sukces udało gotowe gotowy zrobione weekend wakacj urlop ferie
+        piątek impreza prezent zabaw muzyk film spacer wycieczk dobra_robota hurra jupi hello hi= good_morning
+        thanks thank great awesome congratulations happy birthday dinner lunch breakfast sunny""".split()),
+    ("suspicious", """zastanów zastanawia sprawdź sprawdzić ciekaw hmm czy_ktoś kto_to co_to dlaczego czemu
+        jak_to pamiętaj przypominam przypomnienie nie_zapomnij zagadk sekret tajemn podejrzan dziwn chyba
+        może= why= what= who= remember reminder""".split()),
 )
+_SPEECH_RE = None
+
+
+def _speech_patterns():
+    global _SPEECH_RE
+    if _SPEECH_RE is None:
+        pats = []
+        for mood, words in SPEECH_MOODS:
+            parts = []
+            for w in words:
+                whole = w.endswith("=")
+                ph = w.rstrip("=").replace("_", " ")
+                parts.append(r"(?<!\w)" + re.escape(ph) + (r"(?!\w)" if whole else ""))
+            pats.append((mood, re.compile("|".join(parts))))
+        _SPEECH_RE = pats
+    return _SPEECH_RE
 
 
 def speech_mood(text):
-    t = " " + str(text or "").lower() + " "
-    for mood, words in SPEECH_MOODS:
-        if any(w in t for w in words):
-            return mood
-    if t.strip().endswith("?"):
+    """Nastrój komunikatu z jego treści (do mimiki oczu na ekranie)."""
+    t = " ".join(str(text or "").lower().split())
+    best, score = "neutral", 0
+    for mood, rx in _speech_patterns():
+        n = len(rx.findall(t))
+        if n > score:
+            best, score = mood, n
+    if score:
+        return best
+    if t.endswith("?"):
         return "suspicious"
-    if t.strip().endswith("!"):
+    if t.endswith("!"):
         return "surprised"
     return "neutral"
 

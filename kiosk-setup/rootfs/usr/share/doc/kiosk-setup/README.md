@@ -251,7 +251,9 @@ np. „JEST ZA KWADRANS TRZECIA”, kropki w rogach = minuty), **zegar radiowy**
 z masztem DCF), **kod czasu DCF77** (pierścień sekund z bitami telegramu: minuta, godzina, data,
 bity parzystości) i **LED z pierścieniem** (60 diod sekundnika). Gdy kiosk mówi, oczy (ludzkie
 i robota) patrzą na rozmówcę, pulsują w rytm głosu i przybierają wyraz pasujący do treści
-(„uwaga” — zdziwienie, „niestety” — smutek, „smacznego” — radość, „dobranoc” — senność). Do tego wyświetlacze znakowe **LCD 1602** (duże HH:MM, dzień
+(np. „uwaga”, „kurier”, „otwarte okno” — zdziwienie; „niestety”, „deszcz”, „słaba bateria” —
+smutek; „smacznego”, „urodziny”, „słonecznie” — radość; „dobranoc”, „późno” — senność; „przestań”,
+„za głośno” — złość; „pamiętaj”, pytanie — zaciekawienie; ok. 350 słów i fraz, także po angielsku). Do tego wyświetlacze znakowe **LCD 1602** (duże HH:MM, dzień
 tygodnia i sekundy) i **LCD 2004** (duże HH:MM:SS, data i temperatura) z wyborem
 podświetlenia: zielone, niebieskie albo bursztynowe. Wygląd dotyczy zegara w rogu, kafelka w
 siatce kamer i nocnego zegara; zmiana działa po kilku sekundach, bez przeładowania
@@ -871,6 +873,9 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 
 ## Historia wersji
 
+- **1.0.4** (16.10.2026) — większy słownik mimiki oczu (ok. 350 słów i fraz po polsku i angielsku),
+  dopasowanie od początku słowa (np. „stopni” nie wywołuje złości), wygrywa nastrój z największą
+  liczbą trafień.
 - **1.0.3** (16.10.2026) — nowe wyglądy zegara: oczy robota (z godziną i same), zegar słowny
   PL i EN, zegar radiowy LCD, kod czasu DCF77, LED z pierścieniem; oczy reagują na mowę kiosku.
 - **1.0.2** (16.10.2026) — nowe wyglądy zegara: „Oczy z zegarem” (para oczu rozgląda się,
