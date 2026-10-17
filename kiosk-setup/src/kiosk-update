@@ -4,6 +4,8 @@
 #   sudo kiosk-update check                                    - pobierz z adresu z updates.conf, zainstaluj, jeśli nowszy
 #   sudo kiosk-update auto                                     - jak check, ale tylko gdy włączone automatyczne (timer nocą)
 #   sudo kiosk-update latest                                   - tylko pokaż, jaka wersja jest dostępna
+#   sudo kiosk-update github                                   - najnowsze wydanie z GitHuba (bez ustawiania adresu)
+#   sudo kiosk-update git [gałąź]                              - zbuduj i zainstaluj najnowszy kod z gita (domyślnie main)
 # Adres: panel WWW → System, albo /etc/kiosk-setup/updates.conf (UPDATE_URL=…). Może to być:
 #   plik .deb, plik update.json (np. z GitHuba) albo API wydań GitHub (…/releases/latest).
 set -u
@@ -12,6 +14,7 @@ LOG=/var/log/kiosk-update.log
 DIR=/var/lib/kiosk-setup
 CONF=/etc/kiosk-setup/updates.conf
 UPDATE_URL=""; UPDATE_AUTO=no
+GIT_REPO="kecajtop/Kiosk"; GIT_BRANCH="main"
 [ -r "$CONF" ] && . "$CONF"
 mkdir -p "$DIR"
 exec > >(tee -a "$LOG") 2>&1
@@ -237,8 +240,73 @@ fetch_and_install() {
 
 # Całość w funkcji wywołanej w jednej linii: bash wczytuje ją przed wykonaniem,
 # więc podmiana tego pliku przez instalowany pakiet nie przeszkadza.
+github_manifest() {
+    if [ "$(edition)" = kiosk-setup-light ]; then f=update-light.json; else f=update.json; fi
+    echo "https://raw.githubusercontent.com/$GIT_REPO/main/$f"
+}
+
+# Aktualizacja prosto z kodu w gicie: pobiera archiwum gałęzi, buduje pakiet tej samej edycji
+# (pełna: Piper z /opt/kiosk-piper, light: --light) i instaluje. Wersja: <wersja z repo>+git<data>.<commit>.
+from_git() {
+    local branch=${1:-$GIT_BRANCH} work="$DIR/git" info sha date ver edition flags deb
+    [[ "$branch" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "BŁĄD: niepoprawna nazwa gałęzi"; return 1; }
+    [ -x /usr/local/sbin/kiosk-firewall ] && /usr/local/sbin/kiosk-firewall allow-github >/dev/null 2>&1
+    progress download 2 "Kod z gita: $GIT_REPO ($branch)…"
+    info=$(python3 - "$GIT_REPO" "$branch" <<'EOF'
+import json, sys, urllib.request
+repo, br = sys.argv[1:3]
+req = urllib.request.Request("https://api.github.com/repos/%s/commits/%s" % (repo, br),
+                             headers={"Accept": "application/vnd.github+json", "User-Agent": "kiosk-update"})
+try:
+    with urllib.request.urlopen(req, timeout=30) as r:
+        j = json.load(r)
+    print(j["sha"][:7], j["commit"]["committer"]["date"][:10].replace("-", ""))
+except Exception as e:
+    sys.exit("BŁĄD: GitHub (%s): %s" % (br, getattr(e, "reason", None) or e))
+EOF
+) || { progress error 0 "Nie udało się połączyć z GitHubem"; return 1; }
+    read -r sha date <<<"$info"
+    rm -rf "$work"; mkdir -p "$work"
+    if ! python3 - "https://codeload.github.com/$GIT_REPO/tar.gz/$sha" "$work/src.tar.gz" <<'EOF'
+import sys, urllib.request
+with urllib.request.urlopen(urllib.request.Request(sys.argv[1], headers={"User-Agent": "kiosk-update"}), timeout=120) as r, open(sys.argv[2], "wb") as f:
+    while True:
+        b = r.read(1 << 18)
+        if not b:
+            break
+        f.write(b)
+EOF
+    then
+        echo "BŁĄD: pobieranie kodu"; progress error 0 "Nie udało się pobrać kodu z gita"; return 1
+    fi
+    tar -xzf "$work/src.tar.gz" -C "$work" || { echo "BŁĄD: archiwum"; return 1; }
+    local src; src=$(find "$work" -mindepth 2 -maxdepth 2 -type d -name kiosk-setup | head -n 1)
+    [ -x "$src/build.sh" ] || { echo "BŁĄD: w repozytorium brak kiosk-setup/build.sh"; return 1; }
+    ver=$(sed -n 's/^Version: //p' "$src/debian/control")+git$date.$sha
+    edition=$(edition)
+    echo "Kod z gita: $GIT_REPO $branch @ $sha ($date) → $edition $ver"
+    if [ "$(installed)" = "$ver" ]; then
+        echo "Ta wersja jest już zainstalowana — nic do zrobienia."; progress idle 0 ""; return 0
+    fi
+    sed -i "s/^Version: .*/Version: $ver/" "$src/debian/control"
+    progress install 15 "Budowanie pakietu z kodu ($sha)…"
+    if [ "$edition" = kiosk-setup-light ]; then flags=--light
+    elif [ -d /opt/kiosk-piper ]; then flags=""; export PIPER_DIR=/opt/kiosk-piper
+    else flags=--no-piper; fi
+    # shellcheck disable=SC2086
+    if ! (cd "$src" && ./build.sh $flags); then
+        echo "BŁĄD: budowanie pakietu"; progress error 15 "Nie udało się zbudować pakietu"; return 1
+    fi
+    deb=$(ls "$src"/dist/*.deb | head -n 1)
+    install_deb "$deb" && rm -rf "$work"
+}
+
 main() {
 case "${1:-}" in
+    github) UPDATE_URL=$(github_manifest)
+           [ -x /usr/local/sbin/kiosk-firewall ] && /usr/local/sbin/kiosk-firewall allow-github >/dev/null 2>&1
+           fetch_and_install ;;
+    git)   from_git "${2:-}" ;;
     file)  [ -f "${2:-}" ] || { echo "Podaj plik .deb"; exit 1; }
            install_deb "$2" ;;
     check) fetch_and_install ;;

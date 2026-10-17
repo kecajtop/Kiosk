@@ -11,6 +11,10 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+if ! command -v wpa_supplicant >/dev/null; then
+    echo "UWAGA: brak wpasupplicant — Wi-Fi się nie połączy. Zainstaluj: sudo apt install wpasupplicant" >&2
+fi
+echo "Wygodniej: panel WWW → Połączenia → Wi-Fi i sieć (skanowanie sieci, cofnięcie zmian po 2 min)."
 echo "Dostępne interfejsy sieciowe:"
 ip -brief link show | awk '{print "  - "$1}' | grep -v lo
 
@@ -92,6 +96,7 @@ echo "Zapisano $NETPLAN_FILE. Zastosować teraz? (połączenie SSH może się ze
 read -rp "Zastosować? [t/N]: " APPLY
 if [[ "$APPLY" =~ ^[tT]$ ]]; then
     netplan apply
+    [ -x /usr/local/sbin/kiosk-ro ] && /usr/local/sbin/kiosk-ro is-active && /usr/local/sbin/kiosk-ro save /etc/netplan
     echo "Zastosowano. Nowy adres IP:"
     ip -4 -brief addr show "$IFACE"
 else

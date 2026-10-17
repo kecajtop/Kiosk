@@ -5,6 +5,7 @@
 #                                  (sieć lokalna bez ograniczeń)
 #   sudo kiosk-firewall off      - zdejmij blokadę (internet bez ograniczeń)
 #   sudo kiosk-firewall refresh  - odśwież listę dozwolonych adresów (co godzinę z crona)
+#   sudo kiosk-firewall allow-github - dopuść serwery GitHuba (aktualizacja z gita; do odświeżenia listy)
 # Ograniczenie SSH/VNC/panelu do wybranych adresów: ADMIN_IPS w
 # /etc/kiosk-setup/firewall.conf (np. ADMIN_IPS='192.168.0.50,10.8.0.0/24').
 [ "$EUID" -eq 0 ] || { echo "Uruchom jako root: sudo kiosk-firewall ${1:-status}" >&2; exit 1; }
@@ -125,5 +126,11 @@ case "${1:-status}" in
     on)      on; save; echo "Firewall kiosku włączony: do internetu tylko adres kiosku i serwery Ubuntu, sieć lokalna bez ograniczeń." ;;
     off)     off; save; echo "Firewall kiosku wyłączony — internet bez ograniczeń (także po restarcie)." ;;
     refresh) if active; then refresh; save; fi ;;
+    allow-github)
+        if active; then
+            for h in $GITHUB_DOMAINS; do
+                for ip in $(getent ahostsv4 "$h" | awk '{print $1}' | sort -u); do ipset add kiosk_allowed "$ip" -exist; done
+            done
+        fi ;;
     *)       sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

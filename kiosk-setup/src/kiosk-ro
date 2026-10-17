@@ -16,7 +16,7 @@ LOCAL_CONF=/etc/overlayroot.local.conf
 RO_CONF=/etc/kiosk-setup/ro.conf
 LOCK=/run/kiosk-ro.lock
 # Co zapisywać domyślnie: ustawienia kiosku i pliki, które zmienia panel.
-DEFAULT_PATHS="/etc/kiosk-setup /etc/hostname /etc/hosts /etc/lightdm /etc/iptables /etc/systemd/system/kiosk-satellite.service /var/lib/kiosk-photos /var/lib/kiosk-voices /var/lib/kiosk-setup"
+DEFAULT_PATHS="/etc/kiosk-setup /etc/hostname /etc/hosts /etc/lightdm /etc/iptables /etc/netplan /etc/systemd/system/kiosk-satellite.service /var/lib/kiosk-photos /var/lib/kiosk-voices /var/lib/kiosk-setup"
 EXTRA_PATHS=""
 KEEP_CLIPS=no
 [ -r "$RO_CONF" ] && . "$RO_CONF"

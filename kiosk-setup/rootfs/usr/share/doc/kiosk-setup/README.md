@@ -871,6 +871,27 @@ w menu bocznym HA: stan każdego kiosku, pełny panel kiosku bez osobnego logowa
 akcje na wszystkich naraz (powiedz, dymek, widok, ekrany, odświeżenie, aktualizacja
 z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 
+## Wi-Fi (panel → Połączenia → Wi-Fi i sieć)
+
+- **Stan:** sieć, siła sygnału, adres i oszczędzanie energii każdej karty Wi-Fi.
+- **Połącz:** „Szukaj sieci” pokazuje sieci w pobliżu; wpisz hasło, wybierz DHCP albo stały adres
+  (adres z maską, brama, DNS) i „Połącz”. Masz 2 minuty na „Działa — zachowaj ustawienia”;
+  bez potwierdzenia kiosk sam wraca do poprzednich ustawień (gdyby zniknął z sieci).
+  Puste hasło przy tej samej sieci = bez zmiany, przy innej = sieć otwarta.
+- Ustawienia trafiają do `/etc/netplan/90-kiosk-network.yaml` (przy dysku tylko do odczytu —
+  także na dysk). W terminalu: `sudo kiosk-netconfig.sh`.
+- Oszczędzanie energii karty Wi-Fi jest wyłączone (inaczej kiosk bywa nieosiągalny dla panelu,
+  SSH i VNC); pakiet instaluje `wpasupplicant` i `iw`. Stan Wi-Fi jest też w Diagnostyce.
+
+## Aktualizacja z GitHuba i z gita
+
+- **Aktualizuj z GitHuba (wydanie)** — najnowsze wydanie tej edycji, bez ustawiania adresu
+  (`sudo kiosk-update github`).
+- **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
+  github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
+  i go instaluje; wersja np. `1:1.0.6+git20261017.abc1234`. W terminalu:
+  `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
+
 ## Wersja light (kiosk-setup-light)
 
 Lżejsza edycja tego samego kiosku dla słabszych komputerów: ekran (strona WWW w Chromium,
@@ -888,6 +909,10 @@ i asystenta głosowego. Pakiet ma ok. 0,3 MB zamiast ok. 22 MB i nie instaluje e
 
 ## Historia wersji
 
+- **1.0.6** (17.10.2026) — Wi-Fi w panelu (skanowanie, połączenie, DHCP/stały adres, cofnięcie
+  zmian bez potwierdzenia), wyłączone oszczędzanie energii Wi-Fi, `wpasupplicant` i `iw` w
+  zależnościach, stan Wi-Fi w Diagnostyce; aktualizacja z GitHuba jednym przyciskiem i prosto
+  z gita (`kiosk-update github`, `kiosk-update git`).
 - **1.0.5** (16.10.2026) — wersja light (`kiosk-setup-light`): ekran, Chromium, kamery RTSP,
   panel WWW, MQTT/HA i muzyka, bez mowy; osobny plik aktualizacji `update-light.json`.
 - **1.0.4** (16.10.2026) — większy słownik mimiki oczu (ok. 350 słów i fraz po polsku i angielsku),

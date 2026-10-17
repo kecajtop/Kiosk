@@ -1439,6 +1439,211 @@ def local_ip():
         return "localhost"
 
 
+# ---------------------------------------------------------------- Wi-Fi (netplan + wpa_supplicant)
+WIFI_NETPLAN = "/etc/netplan/90-kiosk-network.yaml"
+WIFI_BACKUP = "/run/kiosk-netplan.bak"
+WIFI_ROLLBACK_S = 120
+WIFI_PENDING = {}
+WIFI_LOCK = threading.Lock()
+IPV4_CIDR = re.compile(r"^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$")
+IPV4 = re.compile(r"^(\d{1,3}\.){3}\d{1,3}$")
+
+
+def wifi_ifaces():
+    try:
+        return sorted(n for n in os.listdir("/sys/class/net") if os.path.isdir("/sys/class/net/%s/wireless" % n))
+    except OSError:
+        return []
+
+
+def wifi_link(iface):
+    out = qrun(["iw", "dev", iface, "link"], timeout=5)
+    info = {"connected": "Connected to" in out}
+    m = re.search(r"SSID: (.*)", out)
+    info["ssid"] = m.group(1).strip() if m else ""
+    m = re.search(r"signal: (-?\d+)", out)
+    info["signal_dbm"] = int(m.group(1)) if m else None
+    m = re.search(r"freq: (\d+)", out)
+    info["freq"] = int(m.group(1)) if m else None
+    ps = qrun(["iw", "dev", iface, "get", "power_save"], timeout=5)
+    info["power_save"] = "on" if "on" in ps.lower() else ("off" if "off" in ps.lower() else "?")
+    addr = qrun(["ip", "-4", "-o", "addr", "show", "dev", iface], timeout=5)
+    m = re.search(r"inet (\S+)", addr)
+    info["address"] = m.group(1) if m else ""
+    return info
+
+
+def wifi_saved():
+    """Zapisana konfiguracja z netplan (bez hasła)."""
+    try:
+        with open(WIFI_NETPLAN) as f:
+            t = f.read()
+    except OSError:
+        return {}
+    out = {}
+    m = re.search(r"^\s{4}(\S+):\s*$", t, re.M)
+    if m and "wifis:" in t:
+        out["iface"] = m.group(1)
+    m = re.search(r'access-points:\s*\n\s*"((?:[^"\\]|\\.)*)":', t)
+    if m:
+        out["ssid"] = json.loads('"%s"' % m.group(1)) if m.group(1) else ""
+    out["mode"] = "static" if re.search(r"dhcp4:\s*(no|false)", t) else "dhcp"
+    m = re.search(r"addresses:\s*\[([^\]]*)\]", t)
+    if m and out["mode"] == "static":
+        out["address"] = m.group(1).strip().strip('"')
+    m = re.search(r"via:\s*(\S+)", t)
+    if m:
+        out["gateway"] = m.group(1).strip('"')
+    m = re.search(r"nameservers:\s*\n\s*addresses:\s*\[([^\]]*)\]", t)
+    if m:
+        out["dns"] = ",".join(x.strip().strip('"') for x in m.group(1).split(","))
+    return out
+
+
+def wifi_info():
+    with WIFI_LOCK:
+        pend = dict(WIFI_PENDING)
+    left = int(pend["deadline"] - time.time()) if pend else 0
+    return {"ifaces": [dict(wifi_link(i), name=i) for i in wifi_ifaces()],
+            "wpa_supplicant": bool(shutil.which("wpa_supplicant")), "iw": bool(shutil.which("iw")),
+            "saved": wifi_saved(), "pending": max(0, left) if pend else 0, "ip": local_ip()}
+
+
+def wifi_scan(body):
+    iface = str(body.get("iface") or (wifi_ifaces() or [""])[0])
+    if iface not in wifi_ifaces():
+        raise ValueError("brak karty Wi-Fi")
+    qrun(["ip", "link", "set", iface, "up"], timeout=5)
+    out = qrun(["iw", "dev", iface, "scan"], timeout=25)
+    nets = {}
+    for block in re.split(r"\nBSS ", "\n" + out):
+        m = re.search(r"\n\s*SSID: (.+)", block)
+        if not m or not m.group(1).strip() or "\\x00" in m.group(1):
+            continue
+        ssid = m.group(1).strip()
+        sg = re.search(r"signal: (-?\d+)", block)
+        sig = int(sg.group(1)) if sg else -100
+        sec = bool(re.search(r"\n\s*(RSN|WPA):", block))
+        if ssid not in nets or sig > nets[ssid]["signal_dbm"]:
+            nets[ssid] = {"ssid": ssid, "signal_dbm": sig, "secured": sec}
+    if not nets and not out.strip():
+        raise RuntimeError("skanowanie nie zwróciło wyników (karta wyłączona albo brak programu iw)")
+    return {"networks": sorted(nets.values(), key=lambda n: -n["signal_dbm"])[:40]}
+
+
+def _yq(v):
+    return json.dumps(str(v), ensure_ascii=False)        # cudzysłów JSON = poprawny napis YAML
+
+
+def wifi_apply(body):
+    if not shutil.which("netplan"):
+        raise RuntimeError("brak netplan na tym systemie")
+    if not shutil.which("wpa_supplicant"):
+        raise RuntimeError("brak wpasupplicant — zainstaluj: sudo apt install wpasupplicant")
+    iface = str(body.get("iface") or "")
+    if iface not in wifi_ifaces():
+        raise ValueError("wybierz kartę Wi-Fi")
+    ssid = str(body.get("ssid") or "")
+    if not 1 <= len(ssid.encode()) <= 32 or "\n" in ssid:
+        raise ValueError("nazwa sieci (SSID): 1–32 znaki")
+    pw = str(body.get("password") or "")
+    # puste hasło przy tej samej sieci = bez zmiany; przy innej sieci = sieć otwarta
+    keep = bool(body.get("keep_password")) and not pw and wifi_saved().get("ssid") == ssid
+    if keep:
+        try:
+            m = re.search(r'password:\s*(".*")\s*$', open(WIFI_NETPLAN).read(), re.M)
+            pw = json.loads(m.group(1)) if m else ""
+        except (OSError, ValueError):
+            pw = ""
+    if pw and not 8 <= len(pw) <= 63:
+        raise ValueError("hasło Wi-Fi: 8–63 znaki (puste = sieć otwarta)")
+    mode = "static" if body.get("mode") == "static" else "dhcp"
+    lines = ["# Wi-Fi kiosku — zmieniaj w panelu WWW (Połączenia → Wi-Fi i sieć) albo: sudo kiosk-netconfig.sh",
+             "network:", "  version: 2", "  wifis:", "    %s:" % iface]
+    if mode == "static":
+        addr, gw = str(body.get("address") or "").strip(), str(body.get("gateway") or "").strip()
+        dns = [d.strip() for d in str(body.get("dns") or gw).split(",") if d.strip()]
+        if not IPV4_CIDR.match(addr):
+            raise ValueError("adres z maską, np. 192.168.0.214/24")
+        if not IPV4.match(gw):
+            raise ValueError("brama, np. 192.168.0.1")
+        if not dns or not all(IPV4.match(d) for d in dns):
+            raise ValueError("serwery DNS, np. 192.168.0.1,1.1.1.1")
+        lines += ["      dhcp4: false", "      addresses: [%s]" % _yq(addr),
+                  "      routes:", "        - to: default", "          via: %s" % _yq(gw),
+                  "      nameservers:", "        addresses: [%s]" % ", ".join(_yq(d) for d in dns)]
+    else:
+        lines += ["      dhcp4: true"]
+    lines += ["      access-points:", "        %s:" % _yq(ssid)]
+    lines += ["          password: %s" % _yq(pw)] if pw else ["          {}"]
+    new = "\n".join(lines) + "\n"
+    if lines[-1].strip() == "{}":
+        new = new.replace("        %s:\n          {}\n" % _yq(ssid), "        %s: {}\n" % _yq(ssid))
+    with WIFI_LOCK:
+        if WIFI_PENDING:
+            raise ValueError("poprzednia zmiana czeka na potwierdzenie")
+        old = None
+        try:
+            with open(WIFI_NETPLAN) as f:
+                old = f.read()
+        except OSError:
+            pass
+        fd = os.open(WIFI_NETPLAN + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(new)
+        os.replace(WIFI_NETPLAN + ".tmp", WIFI_NETPLAN)
+        r = subprocess.run(["netplan", "generate"], capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            _wifi_restore(old)
+            raise ValueError("netplan odrzucił ustawienia: " + (r.stderr or r.stdout).strip()[-300:])
+        WIFI_PENDING.update({"deadline": time.time() + WIFI_ROLLBACK_S, "old": old})
+    threading.Thread(target=_wifi_apply_bg, daemon=True).start()
+    return ("Łączę z „%s” (%s). Potwierdź w ciągu %d s, że kiosk działa — inaczej wrócą poprzednie ustawienia."
+            % (ssid, "stały adres" if mode == "static" else "DHCP", WIFI_ROLLBACK_S))
+
+
+def _wifi_restore(old):
+    try:
+        if old is None:
+            os.unlink(WIFI_NETPLAN)
+        else:
+            fd = os.open(WIFI_NETPLAN, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(old)
+    except OSError as e:
+        log("wifi: przywracanie: %s" % e)
+
+
+def _wifi_apply_bg():
+    time.sleep(1.5)                                   # odpowiedź zdąży dojść do przeglądarki
+    r = subprocess.run(["netplan", "apply"], capture_output=True, text=True, timeout=90)
+    if r.returncode != 0:
+        log("wifi: netplan apply: " + (r.stderr or r.stdout).strip()[-300:])
+    while True:
+        time.sleep(1)
+        with WIFI_LOCK:
+            if not WIFI_PENDING:
+                return
+            if time.time() < WIFI_PENDING["deadline"]:
+                continue
+            old = WIFI_PENDING.get("old")
+            WIFI_PENDING.clear()
+        log("wifi: brak potwierdzenia — przywracam poprzednie ustawienia sieci")
+        _wifi_restore(old)
+        subprocess.run(["netplan", "apply"], capture_output=True, text=True, timeout=90)
+        return
+
+
+def wifi_confirm():
+    with WIFI_LOCK:
+        if not WIFI_PENDING:
+            return "Nic nie czeka na potwierdzenie"
+        WIFI_PENDING.clear()
+    if ro_active() and os.path.exists(KIOSK_RO):
+        qrun([KIOSK_RO, "save", "/etc/netplan"], timeout=60)
+    return "Ustawienia Wi-Fi zachowane"
+
+
 # ---------------------------------------------------------------- MQTT
 
 def read_mqtt_conf():
@@ -2026,7 +2231,7 @@ def net_loop():
 # ---------------------------------------------------------------- dysk tylko do odczytu
 
 KIOSK_RO = "/usr/local/sbin/kiosk-ro"
-RO_WATCH = ("/etc/kiosk-setup", "/etc/hostname", "/etc/hosts", "/etc/lightdm", "/etc/iptables",
+RO_WATCH = ("/etc/kiosk-setup", "/etc/hostname", "/etc/hosts", "/etc/lightdm", "/etc/iptables", "/etc/netplan",
             "/var/lib/kiosk-photos", "/var/lib/kiosk-voices")
 
 
@@ -4036,6 +4241,18 @@ def debug_diag():
             add("Usługi", label, None, "nie działa (" + {"lightdm": "tryb bez pulpitu", "kiosk-dlna": "brak gmediarender?"}.get(unit, "nie zainstalowany") + ")")
         else:
             add("Usługi", label, st == "active", st)
+    # Wi-Fi
+    for wi in wifi_ifaces():
+        lk = wifi_link(wi)
+        if lk["connected"]:
+            add("Wi-Fi", wi, True, "%s, sygnał %s dBm, adres %s, oszczędzanie energii: %s" % (
+                lk["ssid"], lk["signal_dbm"], lk["address"] or "brak", lk["power_save"]))
+        else:
+            add("Wi-Fi", wi, None, "nie połączono" + (", adres " + lk["address"] if lk["address"] else ""))
+        if lk["power_save"] == "on":
+            add("Wi-Fi", wi + " — oszczędzanie energii", False, "włączone: kiosk bywa nieosiągalny (wyłącz: sudo iw dev %s set power_save off)" % wi)
+    if wifi_ifaces() and not shutil.which("wpa_supplicant"):
+        add("Wi-Fi", "wpasupplicant", False, "brak — Wi-Fi nie połączy się (sudo apt install wpasupplicant)")
     # Ekran
     add("Ekran", "Serwer X", bool(pids("Xorg") or pids("X")), "działa" if (pids("Xorg") or pids("X")) else "nie działa")
     ks = qrun(["pgrep", "-f", "/usr/local/bin/kiosk-session"]).split()
@@ -4300,6 +4517,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, name_info())
         if path == "/api/ro":
             return self.send(200, ro_info())
+        if path == "/api/wifi":
+            return self.send(200, wifi_info())
         if path == "/api/screenicons":
             return self.send(200, dict(read_icons(), net=NET_LAST))
         if path == "/api/clockstyle":
@@ -4785,6 +5004,13 @@ class Handler(BaseHTTPRequestHandler):
             if r.returncode != 0:
                 raise RuntimeError("Nie udało się sprawdzić: " + (" ".join(lines[-2:]) or r.stderr.strip() or "błąd"))
             return " · ".join(l for l in lines if l.startswith(("Zainstalowana", "Dostępna")))
+        if path == "/api/update/github":
+            return start_update("github")
+        if path == "/api/update/git":
+            br = str(body.get("branch") or "main")
+            if not re.match(r"^[A-Za-z0-9._/-]{1,60}$", br):
+                raise ValueError("niepoprawna nazwa gałęzi")
+            return start_update("git", br)
         if path == "/api/update/check":
             if not read_updates()["url"]:
                 raise ValueError("najpierw podaj adres pakietu aktualizacji")
@@ -4909,6 +5135,12 @@ class Handler(BaseHTTPRequestHandler):
             return set_kiosk_name(body)
         if path == "/api/ro":
             return ro_action(body)
+        if path == "/api/wifi/scan":
+            return wifi_scan(body)
+        if path == "/api/wifi":
+            return wifi_apply(body)
+        if path == "/api/wifi/confirm":
+            return wifi_confirm()
         if path == "/api/clockstyle":
             st = body.get("style", read_clock_style())
             if st not in dict(CLOCK_STYLES):
@@ -5440,11 +5672,31 @@ a{color:var(--blue)}
 </div>
 <div class="group" data-group="polaczenia" hidden>
 <div class="subnav" role="tablist" aria-label="Połączenia">
+<a href="#/siec" role="tab" data-pane="siec">Wi-Fi i sieć</a>
 <a href="#/mqtt" role="tab" data-pane="mqtt">MQTT i Home Assistant</a>
 <a href="#/frigate" role="tab" data-pane="frigate">Frigate / go2rtc</a>
 <a href="#/kioski" role="tab" data-pane="kioski">Kioski w sieci</a>
 <a href="#/pomoc" role="tab" data-pane="pomoc">Jak używać (MQTT, HA, API)</a>
 </div>
+<section class="card pane" role="tabpanel" id="siec" aria-labelledby="h-siec" hidden><h2 id="h-siec">Wi-Fi i sieć</h2>
+<p id="wfst" class="lead"></p>
+<div id="wfifs"></div>
+<h3>Połącz z siecią Wi-Fi</h3>
+<form id="wff">
+<div class="field"><label for="wfiface">Karta Wi-Fi</label><select id="wfiface"></select></div>
+<div class="field"><label for="wfssid">Nazwa sieci (SSID)</label><div class="row" style="margin:0"><input type="text" id="wfssid" list="wfssids" maxlength="32" autocomplete="off" style="flex:1;min-width:180px"><button type="button" id="wfscan">Szukaj sieci</button></div><datalist id="wfssids"></datalist><div class="hint" id="wfscanres"></div></div>
+<div class="field"><label for="wfpass">Hasło</label><input type="password" id="wfpass" maxlength="63" autocomplete="new-password" placeholder="puste = bez zmiany (albo sieć otwarta)"></div>
+<div class="field"><label for="wfmode">Adres IP</label><select id="wfmode"><option value="dhcp">Automatycznie (DHCP)</option><option value="static">Stały adres</option></select></div>
+<div id="wfstatic" hidden>
+<div class="field"><label for="wfaddr">Adres z maską</label><input type="text" id="wfaddr" placeholder="192.168.0.214/24"></div>
+<div class="field"><label for="wfgw">Brama</label><input type="text" id="wfgw" placeholder="192.168.0.1"></div>
+<div class="field"><label for="wfdns">Serwery DNS</label><input type="text" id="wfdns" placeholder="192.168.0.1,1.1.1.1"></div>
+</div>
+<div class="row"><button type="submit" class="primary">Połącz</button></div>
+<div class="hint">Po połączeniu masz 2 minuty na potwierdzenie, że kiosk działa — inaczej wrócą poprzednie ustawienia sieci (gdyby kiosk zniknął z sieci). Jeśli zmienia się adres, otwórz panel pod nowym adresem i potwierdź tam.</div>
+</form>
+<div id="wfpend" class="block" hidden><p class="lead" id="wfpendt"></p><div class="row"><button type="button" class="primary" id="wfok">Działa — zachowaj ustawienia</button></div></div>
+</section>
 <section class="card pane" role="tabpanel" id="mqtt" aria-labelledby="h-mqtt" hidden><h2 id="h-mqtt">MQTT i Home Assistant</h2>
 <p id="mqst" class="lead"></p>
 <form id="mf">
@@ -5530,7 +5782,7 @@ a{color:var(--blue)}
 <div class="row"><button type="button" id="upgh">Użyj GitHub (kecajtop/Kiosk)</button></div>
 <div class="hint">Wydania z GitHuba (plik <code>update.json</code> z repozytorium albo API wydań <code>…/releases/latest</code>), albo wprost plik <code>.deb</code>, np. wgrany do folderu <code>www</code> w Home Assistant (<code>http://192.168.0.1:8123/local/kiosk-setup.deb</code>). Kiosk sprawdza adres co noc o 3:30, pobiera pakiet tylko gdy jest nowsza wersja i sprawdza jego sumę SHA-256; ustawienia zostają. Zapora kiosku sama przepuszcza wtedy serwery GitHuba.</div></div>
 <label class="check"><input type="checkbox" id="upauto"> Aktualizuj automatycznie w nocy</label>
-<div class="row"><button type="submit" class="primary">Zapisz</button><button type="button" id="uplatest">Jaka wersja jest dostępna?</button><button type="button" id="upcheck">Sprawdź i zainstaluj</button></div></form>
+<div class="row"><button type="submit" class="primary">Zapisz</button><button type="button" id="uplatest">Jaka wersja jest dostępna?</button><button type="button" id="upghnow">Aktualizuj z GitHuba (wydanie)</button><button type="button" id="upgit">Aktualizuj z gita (najnowszy kod)</button><button type="button" id="upcheck">Sprawdź i zainstaluj</button></div></form>
 <pre id="uplog" style="max-height:40vh;overflow:auto"></pre>
 <h3>Kopia ustawień</h3>
 <p class="lead">Wszystkie ustawienia kiosku w jednym pliku: tryb, kamery, widoki, monitory, MQTT, pogoda, dźwięk, harmonogram, pasek, firewall, logo. Plik zawiera hasła (kamer, MQTT) — trzymaj go bezpiecznie. Przywrócenie działa też na innym kiosku.</p>
@@ -5910,8 +6162,36 @@ function watchUpdate(){ clearInterval(UPT); const t0=Date.now(); let seen=false;
   UPT=setInterval(async()=>{ try{ const r=await loadUpdate(); if(r.running) seen=true; else if(seen||Date.now()-t0>20000){ clearInterval(UPT); toast('Aktualizacja zakończona: '+r.version,'okm'); setTimeout(()=>location.reload(),3000); } }catch(e){ /* panel restartuje się podczas instalacji */ } }, 3000); }
 $('updeb').onchange=()=>{ const f=$('updeb').files[0]; $('updeb').value=''; if(!f) return; if(!confirm('Zainstalować '+f.name+'? Ustawienia zostają, ekran kiosku może na chwilę się odświeżyć.')) return; upload('api/update/upload', f).then(watchUpdate).catch(()=>{}); };
 $('upf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/updates',{url:$('upurl').value.trim(), auto:$('upauto').checked})).then(()=>loadUpdate().catch(()=>{})); });
+
+// Połączenia → Wi-Fi i sieć
+let WFT=null;
+function sigTxt(d){ if(d==null) return ''; const q=d>=-55?'bardzo dobry':d>=-67?'dobry':d>=-75?'słaby':'bardzo słaby'; return d+' dBm ('+q+')'; }
+async function loadWifi(){ const r=await api('api/wifi');
+  let st = r.ifaces.length ? '' : 'Brak karty Wi-Fi w tym komputerze — kiosk działa przez kabel.';
+  if(r.ifaces.length && !r.wpa_supplicant) st='Brak programu wpasupplicant — Wi-Fi się nie połączy. Zainstaluj nową wersję pakietu albo: sudo apt install wpasupplicant';
+  $('wfst').textContent = st || ('Adres panelu: '+r.ip);
+  $('wfifs').replaceChildren(...r.ifaces.map(i=>{ const d=document.createElement('p'); d.className='hint';
+    d.textContent=i.name+': '+(i.connected?('połączono z „'+i.ssid+'”, sygnał '+sigTxt(i.signal_dbm)+', adres '+(i.address||'brak')):'nie połączono')+' · oszczędzanie energii: '+(i.power_save==='on'?'WŁĄCZONE (kiosk bywa nieosiągalny)':i.power_save==='off'?'wyłączone':'?'); return d; }));
+  const sel=$('wfiface'), cur=sel.value; sel.replaceChildren(...r.ifaces.map(i=>{ const o=document.createElement('option'); o.value=o.textContent=i.name; return o; })); if(cur) sel.value=cur;
+  $('wff').hidden=!r.ifaces.length;
+  const sv=r.saved||{}; if(!WFT){ if(sv.iface) sel.value=sv.iface; if(sv.ssid && !$('wfssid').value) $('wfssid').value=sv.ssid; $('wfmode').value=sv.mode||'dhcp';
+    if(sv.address) $('wfaddr').value=sv.address; if(sv.gateway) $('wfgw').value=sv.gateway; if(sv.dns) $('wfdns').value=sv.dns; $('wfstatic').hidden=$('wfmode').value!=='static'; }
+  $('wfpend').hidden=!r.pending; if(r.pending){ $('wfpendt').textContent='Nowe ustawienia Wi-Fi działają? Zostało '+r.pending+' s — potem wrócą poprzednie.'; if(!WFT) WFT=setInterval(()=>loadWifi().catch(()=>{}), 2000); }
+  else if(WFT){ clearInterval(WFT); WFT=null; }
+  return r; }
+$('wfmode').onchange=()=>{ $('wfstatic').hidden=$('wfmode').value!=='static'; };
+$('wfscan').onclick=()=>{ $('wfscanres').textContent='Szukam…'; post('api/wifi/scan',{iface:$('wfiface').value}).then(r=>{
+  $('wfssids').replaceChildren(...r.networks.map(n=>{ const o=document.createElement('option'); o.value=n.ssid; o.label=sigTxt(n.signal_dbm)+(n.secured?' · zabezpieczona':' · otwarta'); return o; }));
+  $('wfscanres').textContent=r.networks.length?('Znaleziono: '+r.networks.map(n=>n.ssid+' ('+n.signal_dbm+' dBm)').join(', ')):'Nie znaleziono sieci.'; }).catch(e=>{ $('wfscanres').textContent=''; toast(e.message,'err'); }); };
+$('wff').addEventListener('submit', e=>{ e.preventDefault();
+  const b={iface:$('wfiface').value, ssid:$('wfssid').value, password:$('wfpass').value, keep_password:!$('wfpass').value, mode:$('wfmode').value,
+           address:$('wfaddr').value.trim(), gateway:$('wfgw').value.trim(), dns:$('wfdns').value.trim()};
+  act(()=>post('api/wifi', b)).then(()=>{ $('wfpass').value=''; setTimeout(()=>loadWifi().catch(()=>{}), 2500); }); });
+$('wfok').onclick=()=>act(()=>post('api/wifi/confirm')).then(()=>loadWifi().catch(()=>{}));
 $('upgh').onclick=()=>{ $('upurl').value='https://raw.githubusercontent.com/kecajtop/Kiosk/main/update'+(LIGHT?'-light':'')+'.json'; toast('Adres wpisany — kliknij Zapisz','okm'); };
 $('uplatest').onclick=()=>act(()=>post('api/update/latest'));
+$('upghnow').onclick=()=>act(()=>post('api/update/github')).then(watchUpdate);
+$('upgit').onclick=()=>{ if(!confirm('Pobrać najnowszy kod z gita (gałąź main), zbudować pakiet na kiosku i zainstalować? To wersja rozwojowa — może zawierać zmiany jeszcze niewydane.')) return; act(()=>post('api/update/git',{branch:'main'})).then(watchUpdate); };
 $('upcheck').onclick=()=>act(()=>post('api/update/check')).then(watchUpdate);
 // ---- zrzut ekranu
 $('shotb').onclick=async()=>{ const b=$('shotb'); b.disabled=true; try{ const r=await fetch('api/screenshot'); if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||('Błąd '+r.status)); }
@@ -6082,6 +6362,7 @@ function showTab(id, focus){
   if(g==='dzwiek') loadRadio().catch(()=>{});
   if(adm && g==='system'){ loadUpdate().catch(e=>toast(e.message,'err')); loadUsers().catch(()=>{}); loadName().catch(()=>{}); loadRo().catch(()=>{}); }
   if(adm && id==='kioski') loadPeers().catch(()=>{});
+  if(adm && id==='siec') loadWifi().catch(e=>toast(e.message,'err'));
   if(id==='debug' && !DBTEXT) dbLoad();
   dbLive();
   if(changed && window.scrollY>200) window.scrollTo(0,0);

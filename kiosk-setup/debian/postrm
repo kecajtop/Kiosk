@@ -46,6 +46,7 @@ case "$1" in
         rm -rf /var/lib/kiosk-setup
         rm -f /run/kiosk-alert.conf /run/kiosk-ticker.txt /var/log/kiosk-update.log
         rm -f /etc/systemd/system/kiosk-dlna.service
+        rm -f /etc/udev/rules.d/70-kiosk-wifi-powersave.rules /etc/NetworkManager/conf.d/kiosk-wifi-powersave.conf
         rm -f /etc/systemd/system/kiosk-bootlogo.service
         systemctl disable --now kiosk-api.service 2>/dev/null || true
         rm -f /etc/systemd/system/kiosk-api.service /usr/local/sbin/kiosk-api

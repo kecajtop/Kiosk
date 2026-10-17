@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.5",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.5_amd64.deb",
-  "sha256": "12cefed51a45c89d7dd2175a2ff46c11947a4a3cc62c06cfdd1d6bd7a637d355",
-  "size": 22945218,
-  "date": "2026-10-16",
-  "notes": "Wersja light jako osobny pakiet; aktualizacje osobno dla każdej edycji."
+  "version": "1:1.0.6",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.6_amd64.deb",
+  "sha256": "375dc55d090eccb7d0faf6487ee2ebdacc463fcaa64bf3daebcfa4a7d2a362b1",
+  "size": 22950368,
+  "date": "2026-10-17",
+  "notes": "Wi-Fi w panelu, wyłączone oszczędzanie energii Wi-Fi, aktualizacja z GitHuba i prosto z gita."
 }

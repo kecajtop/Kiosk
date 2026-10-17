@@ -29,17 +29,17 @@ Dokumentacja pakietu: [kiosk-setup/rootfs/usr/share/doc/kiosk-setup/README.md](k
 
 ## Instalacja na kiosku
 
-Gotowy pakiet: [`releases/kiosk-setup_1.0.5_amd64.deb`](releases/).
+Gotowy pakiet: [`releases/kiosk-setup_1.0.6_amd64.deb`](releases/).
 
 ```bash
-sudo apt install ./kiosk-setup_1.0.5_amd64.deb
+sudo apt install ./kiosk-setup_1.0.6_amd64.deb
 # aktualizacja istniejącego kiosku (działa też przy dysku tylko do odczytu):
-sudo kiosk-update file ./kiosk-setup_1.0.5_amd64.deb
+sudo kiosk-update file ./kiosk-setup_1.0.6_amd64.deb
 ```
 
 ### Wersja light
 
-`releases/kiosk-setup-light_1.0.5_amd64.deb` (ok. 0,3 MB) — ekran (Chromium, kamery RTSP), zegary, panel WWW,
+`releases/kiosk-setup-light_1.0.6_amd64.deb` (ok. 0,3 MB) — ekran (Chromium, kamery RTSP), zegary, panel WWW,
 MQTT/Home Assistant i muzyka, bez mowy, interkomu i asystenta głosowego. Instalacja jak wyżej; zastępuje
 pełny pakiet i odwrotnie. Aktualizacje: `update-light.json` zamiast `update.json`. Budowanie: `./build.sh --light`.
 
@@ -49,6 +49,9 @@ W panelu kiosku: **System → Aktualizacje → „Użyj GitHub”**, potem **Zap
 „Aktualizuj automatycznie w nocy”. Adres:
 
     https://raw.githubusercontent.com/kecajtop/Kiosk/main/update.json
+
+Można też jednym przyciskiem: **Aktualizuj z GitHuba (wydanie)** albo **Aktualizuj z gita (najnowszy kod)** —
+kiosk pobiera kod z gałęzi `main`, sam buduje pakiet i go instaluje (`sudo kiosk-update github` / `sudo kiosk-update git`).
 
 Kiosk co noc czyta `update.json` i pobiera pakiet tylko wtedy, gdy jest nowsza wersja; potem sprawdza
 jego sumę SHA-256. 
@@ -69,7 +72,7 @@ Potrzebne `dpkg-deb` i `python3`.
 
 ```bash
 cd kiosk-setup
-./build.sh --piper-from kiosk-setup_1.0.5_amd64.deb   # Piper (TTS) z gotowego pakietu
+./build.sh --piper-from kiosk-setup_1.0.6_amd64.deb   # Piper (TTS) z gotowego pakietu
 ./build.sh --no-piper                                 # albo bez Pipera
 # wynik: kiosk-setup/dist/kiosk-setup_<wersja>_amd64.deb
 ```

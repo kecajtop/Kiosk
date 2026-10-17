@@ -469,6 +469,21 @@ cat > /usr/local/sbin/kiosk-netconfig.sh <<'EOF_NET'
 EOF_NET
 chmod +x /usr/local/sbin/kiosk-netconfig.sh
 
+echo "==> Wi-Fi: bez oszczędzania energii (kiosk zawsze osiągalny w sieci)..."
+# Karta Wi-Fi w trybie oszczędzania energii potrafi nie odpowiadać na połączenia przychodzące
+# (panel, SSH, VNC, MQTT) — wyłączamy je teraz, po każdym podłączeniu karty i w NetworkManagerze.
+cat > /etc/udev/rules.d/70-kiosk-wifi-powersave.rules <<'EOF'
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="wl*", RUN+="/usr/sbin/iw dev $name set power_save off"
+EOF
+if [ -d /etc/NetworkManager/conf.d ]; then
+    printf '[connection]\nwifi.powersave = 2\n' > /etc/NetworkManager/conf.d/kiosk-wifi-powersave.conf
+fi
+for w in /sys/class/net/*/wireless; do
+    [ -e "$w" ] || continue
+    n=$(basename "$(dirname "$w")")
+    iw dev "$n" set power_save off 2>/dev/null || true
+done
+
 echo "==> Watchdog IP (automatyczny restart przy utracie łączności)..."
 cat > /usr/local/sbin/ip-watchdog.sh <<'EOF_WATCHDOG'
 # (treść: src/ip-watchdog.sh — wkleja build.sh)
@@ -693,6 +708,7 @@ echo "  - MQTT: $(python3 -c 'import json;c=json.load(open("/etc/kiosk-setup/mqt
 echo "  - Dźwięk: MPD na porcie 6600 (Home Assistant: integracja MPD, hasło = token panelu)"
 echo "  - Mowa: $VOICE_SUMMARY"
 echo "  - Dostęp SSH/VNC/panel WWW: $ADMIN_ACCESS_SUMMARY"
+echo "  - Wi-Fi: panel WWW → Połączenia → Wi-Fi i sieć (albo sudo kiosk-netconfig.sh); oszczędzanie energii wyłączone"
 echo ""
 echo "UWAGA: firewall (jeśli włączony) ogranicza tylko ruch WYCHODZĄCY z tej"
 echo "maszyny (poza portami SSH/VNC, które mają własne, jawne reguły INPUT)."

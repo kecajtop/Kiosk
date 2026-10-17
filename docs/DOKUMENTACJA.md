@@ -6,7 +6,7 @@
 
 ## Przegląd
 
-kiosk-setup (wersja 1.0.5) zamienia komputer z Ubuntu w kiosk: pokazuje kamery, stronę Home Assistant albo jedno i drugie, mówi, gra radio i reaguje na Home Assistant. Sterujesz nim z panelu WWW, z Home Assistant (MQTT), z API HTTP, z menu w terminalu albo dla wielu kiosków naraz z dodatku HA „Kioski”.
+kiosk-setup (wersja 1.0.6) zamienia komputer z Ubuntu w kiosk: pokazuje kamery, stronę Home Assistant albo jedno i drugie, mówi, gra radio i reaguje na Home Assistant. Sterujesz nim z panelu WWW, z Home Assistant (MQTT), z API HTTP, z menu w terminalu albo dla wielu kiosków naraz z dodatku HA „Kioski”.
 
 ![Panel WWW kiosku — strona Start](img/panel-start.png)
 
@@ -17,7 +17,7 @@ Panel WWW: menu sekcji po lewej (Start, Ekran, Komunikaty, Dźwięk, Automatyka,
 | Kiosk | kecaj, 192.168.0.214, użytkownik `kecaj` |
 | Home Assistant | 192.168.0.1:8123 |
 | Kamera | rtsp://admin:…@192.168.0.203:554/ |
-| Pakiet | kiosk-setup\_1.0.5\_amd64.deb (wersja 1:1.0.5, amd64, ok. 22 MB, zawiera Piper TTS); kod i wydania: github.com/kecajtop/Kiosk |
+| Pakiet | kiosk-setup\_1.0.6\_amd64.deb (wersja 1:1.0.6, amd64, ok. 22 MB, zawiera Piper TTS); kod i wydania: github.com/kecajtop/Kiosk |
 
 **Wymagania:** Ubuntu (Server albo z pulpitem), GRUB, procesor x86-64, monitor (do dwóch wyjść: HDMI, DisplayPort, VGA), sieć lokalna. Opcjonalnie: głośnik, mikrofon (interkom, asystent głosowy), monitor z DDC/CI (sterowanie podświetleniem).
 
@@ -46,7 +46,7 @@ Pierwsza instalacja to jedno polecenie i kreator; każda kolejna wersja zachowuj
 
    ```bash
    sudo apt update
-   sudo apt install ./kiosk-setup_1.0.5_amd64.deb
+   sudo apt install ./kiosk-setup_1.0.6_amd64.deb
    ```
 3. Kreator zapyta o: użytkownika (`kecaj`), ekran (**desktop** = pulpit + kiosk na drugim monitorze, **kiosk** = cały komputer), tryb (web/rtsp/mix/usb), adres strony lub kamer, logo, firewall (przy pulpicie: **nie**), wyłączanie ekranu i komputera, MQTT, dostęp SSH/VNC.
 4. Ustaw strefę czasową i uruchom ponownie: `sudo timedatectl set-timezone Europe/Warsaw`, potem `sudo reboot`.
@@ -77,7 +77,9 @@ Kod, gotowy pakiet i plik aktualizacji są w [github.com/kecajtop/Kiosk](https:/
 
 Przy adresie z GitHuba zapora kiosku sama przepuszcza serwery GitHuba. „Jaka wersja jest dostępna?” w panelu albo `sudo kiosk-update latest` tylko sprawdza, nic nie instaluje.
 
-**Numeracja.** Pakiet ma numer wersji `1:1.0.5`.
+Bez ustawiania adresu: **Aktualizuj z GitHuba (wydanie)** instaluje najnowsze wydanie tej edycji (`sudo kiosk-update github`). **Aktualizuj z gita (najnowszy kod)** pobiera kod z gałęzi `main`, buduje na kiosku pakiet jego edycji (pełnej z głosami Piper albo light) i go instaluje — wersja np. `1:1.0.6+git20261017.abc1234` (`sudo kiosk-update git [gałąź]`). Na czas pobierania zapora dopuszcza serwery GitHuba.
+
+**Numeracja.** Pakiet ma numer wersji `1:1.0.6`.
 
 **Budowanie ze źródeł.** Programy kiosku są w `kiosk-setup/src/`. Skrypt `kiosk-setup/build.sh` wkleja je do instalatora i buduje `.deb`; Piper bierze z gotowego pakietu (`--piper-from`) albo pomija (`--no-piper`). Panel WWW (HTML, CSS, JavaScript) jest wbudowany w `kiosk-setup/src/kiosk-api`.
 
@@ -93,7 +95,7 @@ Pakiet `kiosk-setup-light` to lżejsza edycja kiosku dla słabszych komputerów:
 | Panel WWW, MQTT i auto-wykrycie w Home Assistant, automatyka ekranu, aktualizacje | Interkom i wiadomości głosowe |
 | Muzyka: MPD, radio, odtwarzacz DLNA, głośność, karta „Teraz gra” | Asystent głosowy (Assist) |
 
-Instalacja: `sudo apt install ./kiosk-setup-light_1.0.5_amd64.deb`. Pakiet zastępuje pełny (i odwrotnie), ustawienia zostają. Panel chowa zakładki z mową, a w Home Assistant znikają encje mowy.
+Instalacja: `sudo apt install ./kiosk-setup-light_1.0.6_amd64.deb`. Pakiet zastępuje pełny (i odwrotnie), ustawienia zostają. Panel chowa zakładki z mową, a w Home Assistant znikają encje mowy.
 
 Aktualizacje z GitHuba mają osobny plik: `https://raw.githubusercontent.com/kecajtop/Kiosk/main/update-light.json`; przycisk „Użyj GitHub” w wersji light wpisuje go sam. Kiosk nie zmienia edycji automatycznie — tylko przy ręcznej instalacji pliku. Budowanie: `./build.sh --light`.
 
@@ -314,6 +316,17 @@ Nowe wersje dodatku pojawiają się w HA jako zwykłe aktualizacje. Dodatek dzia
 - Karta każdego kiosku: stan ekranu, monitora, kamer, sieci, czas pracy i „Teraz gra”.
 - **Otwórz panel** otwiera panel kiosku wewnątrz HA (z paskiem powrotu), bez osobnego logowania.
 - **Wszystkie kioski naraz:** „powiedz”, dymek, widok, włączenie i wyłączenie ekranów, odświeżenie, wgranie `.deb` na wszystkie i sprawdzenie adresu aktualizacji.
+
+### Wi-Fi
+
+Kiosk może działać przez Wi-Fi; ustawia się je w panelu: Połączenia → Wi-Fi i sieć (w terminalu: `sudo kiosk-netconfig.sh`).
+
+- **Stan:** sieć, siła sygnału, adres i oszczędzanie energii każdej karty Wi-Fi; to samo w Diagnostyce.
+- **Połącz:** „Szukaj sieci”, hasło, DHCP albo stały adres (adres z maską, brama, DNS). Masz 2 minuty na „Działa — zachowaj ustawienia”; bez potwierdzenia kiosk sam wraca do poprzednich ustawień, gdyby zniknął z sieci. Puste hasło przy tej samej sieci = bez zmiany, przy innej = sieć otwarta.
+- **Oszczędzanie energii karty Wi-Fi jest wyłączone** — inaczej kiosk bywa nieosiągalny dla panelu, SSH i VNC. Pakiet instaluje `wpasupplicant` (bez niego Wi-Fi na Ubuntu Server się nie łączy) i `iw`.
+- Ustawienia są w `/etc/netplan/90-kiosk-network.yaml`; przy dysku tylko do odczytu zapisują się także na dysk.
+
+Jeśli kiosk jest na kablu, a nie da się na niego wejść z telefonu w Wi-Fi, przyczyna jest zwykle w routerze: sieć gościnna albo „separacja klientów” (AP isolation).
 
 ## MQTT, API i terminal
 
@@ -553,10 +566,11 @@ Kopia zapasowa z panelu (System → Kopia) obejmuje cały ten katalog.
 
 ## Historia wersji kiosk-setup
 
-Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, a 1.0.5 — wersję light.
+Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, 1.0.5 — wersję light, a 1.0.6 — Wi-Fi w panelu i aktualizację z gita.
 
 | Wersja | Data | Zawartość |
 | --- | --- | --- |
+| 1.0.6 | 17.10.2026 | Wi-Fi w panelu (skanowanie, połączenie, DHCP/stały adres, cofnięcie bez potwierdzenia), wyłączone oszczędzanie energii Wi-Fi, wpasupplicant i iw w zależnościach; aktualizacja z GitHuba jednym przyciskiem i prosto z gita |
 | 1.0.5 | 16.10.2026 | Wersja light (kiosk-setup-light): ekran, Chromium, kamery RTSP, panel WWW, MQTT/HA i muzyka, bez mowy; osobny plik aktualizacji update-light.json |
 | 1.0.4 | 16.10.2026 | Większy słownik mimiki oczu (ok. 350 słów i fraz po polsku i angielsku), dopasowanie od początku słowa, wygrywa nastrój z największą liczbą trafień |
 | 1.0.3 | 16.10.2026 | Nowe wyglądy zegara: oczy robota (z godziną i same), zegar słowny PL i EN, zegar radiowy LCD, kod czasu DCF77, LED z pierścieniem, minimalistyczny, woltomierze kwadratowe; oczy reagują na mowę kiosku |
