@@ -200,7 +200,7 @@ public class MainActivity extends Activity {
             s.setJavaScriptEnabled(true);
             s.setDomStorageEnabled(true);
             s.setMediaPlaybackRequiresUserGesture(false);
-            s.setUserAgentString(s.getUserAgentString() + " KioskApp/1.1");
+            s.setUserAgentString(s.getUserAgentString() + " KioskApp/1.2");
             web.addJavascriptInterface(new Bridge(), "KioskApp");
             web.setWebChromeClient(new WebChromeClient() {
                 @Override
@@ -264,7 +264,7 @@ public class MainActivity extends Activity {
             } });
         }
         if (web.getParent() == null) setContentView(web);
-        web.loadUrl(base + "#/" + prefs.getString("start", "radio"));   // widok startowy (domyślnie radio)
+        web.loadUrl(base + "#/" + prefs.getString("start", "start"));   // widok startowy (domyślnie Pilot: radio i głośność)
     }
 
     void showError(String msg) {
@@ -290,7 +290,7 @@ public class MainActivity extends Activity {
             volKeys = on;
             prefs.edit().putBoolean("volkeys", on).apply();
         }
-        @JavascriptInterface public String version() { return "1.1"; }
+        @JavascriptInterface public String version() { return "1.2"; }
     }
 
     // ------------------------------------------------------------------ głośność przyciskami
@@ -470,9 +470,9 @@ public class MainActivity extends Activity {
         box.addView(vk);
 
         box.addView(label("Widok po otwarciu"));
-        final String[][] views = {{"radio", "Radio i muzyka"}, {"start", "Start (podsumowanie)"}, {"glos", "Głośność i głos"}, {"tryb", "Co wyświetla kiosk"}};
+        final String[][] views = {{"start", "Pilot — radio, głośność, ekran"}, {"kamery", "Kamery"}, {"radio", "Radio i muzyka (wyszukiwarka stacji)"}, {"ustawienia", "Ustawienia"}};
         android.widget.RadioGroup rg = new android.widget.RadioGroup(this);
-        String curStart = prefs.getString("start", "radio");
+        String curStart = prefs.getString("start", "start");
         for (int i = 0; i < views.length; i++) {
             android.widget.RadioButton rb = new android.widget.RadioButton(this);
             rb.setId(1000 + i);

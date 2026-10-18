@@ -30,7 +30,7 @@ Adres panelu: `http://<kiosk>:8088`.
 
 | | |
 |---|---|
-| **Start** — najczęstsze czynności<br>![](img/panel-start.png) | **Ekran → Co wyświetla kiosk**<br>![](img/panel-tryb.png) |
+| **Pilot** — radio, głośność, ekran<br>![](img/panel-start.png) | **Ekran → Co wyświetla kiosk**<br>![](img/panel-tryb.png) |
 | **Ekran → Widoki**<br>![](img/panel-widoki.png) | **Ekran → Monitory**<br>![](img/panel-monitory.png) |
 | **Ekran → Jasność i wyłączanie**<br>![](img/panel-zasilanie.png) | **Wygląd zegara**<br>![](img/panel-wyglad-zegara.png) |
 | **Komunikaty → Powiedz**<br>![](img/panel-powiedz.png) | **Dźwięk → Radio**<br>![](img/panel-radio.png) |

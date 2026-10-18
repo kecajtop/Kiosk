@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.10",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.10_amd64.deb",
-  "sha256": "256a99d392db2055d664717d28be05c30334e9bad8e4bb8f1712bc2f12d49805",
-  "size": 22984982,
+  "version": "1:1.0.11",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.11_amd64.deb",
+  "sha256": "b0610339cfa016d771409f3242c3c3aa48a40af2a70522989d976e81b8caddfd",
+  "size": 22986720,
   "date": "2026-10-18",
-  "notes": "Radio w panelu: Teraz gra i kafelki ulubionych stacji; aplikacja Kiosk 1.1 startuje od radia."
+  "notes": "Nowy układ panelu: Pilot (radio, głośność, ekran), zakładka Kamery, na telefonie dolne zakładki i Ustawienia jako lista."
 }

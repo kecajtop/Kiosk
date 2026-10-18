@@ -165,7 +165,8 @@ menu z siedmioma sekcjami, a w każdej sekcji kilka zakładek:
 
 | Sekcja | Zakładki |
 |---|---|
-| **Start** | widoki jednym kliknięciem, szybkie przyciski (ekran, noc, alarm, radio, dźwięk), głośność, jasność, „Powiedz” |
+| **Pilot** | „Teraz gra”, głośność −/+ i stop, kafelki ulubionych stacji, widoki i ekran (wł./wył., noc, odśwież, alarm), jasność, „Powiedz” |
+| **Kamery** | podgląd ekranu kiosku, kamera na kiosku na żądanie (30 s) |
 | **Ekran** | Co wyświetla kiosk · Widoki (z rotacją) · Monitory · Jasność i wyłączanie |
 | **Komunikaty** | Dymek · Powiedz na głos (z mówiącym zegarem) · Alarm na ekranie · Pasek informacyjny |
 | **Dźwięk** | Głośność i głos · Radio i muzyka · Wiadomość i interkom · Asystent głosowy |
@@ -174,7 +175,8 @@ menu z siedmioma sekcjami, a w każdej sekcji kilka zakładek:
 | **System** | Nazwa kiosku · Konta i dostęp · Aktualizacje i kopia · Dysk tylko do odczytu · Powiadomienia i ochrona · Diagnostyka |
 
 Zakładkę można otworzyć adresem, np. `http://ADRES_KIOSKU:8088/#/mqtt`; strzałki
-←/→ przełączają zakładki w sekcji. Domownik (konto „domownik”) widzi tylko Start,
+←/→ przełączają zakładki w sekcji. Na telefonie: trzy zakładki na dole (Pilot, Kamery, Ustawienia), a Ustawienia to lista wszystkich sekcji.
+Domownik (konto „domownik”) widzi tylko Pilot, Kamery,
 widoki, komunikaty i dźwięk.
 
 ## Nazwa kiosku (panel → System → Nazwa kiosku)
@@ -206,7 +208,7 @@ kamera USB), adres strony, kamery do zaznaczenia (z listy wszystkich znanych kam
 albo nowe adresy), szerokość strony i zegar. **Zapisz** nie zmienia ekranu, **Zapisz i
 pokaż** od razu go pokazuje. **Edytuj** przy widoku zmienia też nazwę — rotacja,
 harmonogram i drugi monitor same przechodzą na nową nazwę. „Zapisz obecny ekran jako
-widok” zapisuje to, co jest teraz na ekranie. Widoki przełączasz na stronie Start,
+widok” zapisuje to, co jest teraz na ekranie. Widoki przełączasz na Pilocie,
 w Home Assistant, w harmonogramie i z dodatku „Kioski”.
 
 Przełączanie stron i widoków nie pokazuje już logo: do czasu pojawienia się nowej
@@ -903,18 +905,19 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 
 ## Panel na telefonie i aplikacja na Androida
 
-- Na telefonie panel ma na dole **pasek pilota**: głośność −/+, stop dźwięku, ekran kiosku
-  wł./wył. (działa też dla kont domowników). Pola i przyciski są większe pod palec.
+- Na telefonie panel ma na dole trzy zakładki: **Pilot** (teraz gra, głośność, kafelki radia,
+  ekran, „Powiedz”), **Kamery** (podgląd ekranu kiosku, kamera na kiosku) i **Ustawienia** (lista
+  wszystkich sekcji; w każdej pozycji „‹ Ustawienia” wraca do listy). Pola i przyciski są większe pod palec.
 - **Na ekran główny:** menu przeglądarki → „Dodaj do ekranu głównego” — ikona kiosku,
   kolor paska. Pełny ekran bez paska adresu przeglądarka daje tylko przy zaufanym HTTPS.
 - **Przyciski głośności telefonu:** Dźwięk → Głośność i głos → „Przyciski głośności tego
   urządzenia sterują kioskiem”. Chrome na Androidzie zwykle nie przekazuje ich stronom —
   wtedy użyj aplikacji.
-- **Aplikacja Kiosk** (`releases/kiosk-android-1.1.apk`, Android 5.0+): panel na pełnym ekranie,
+- **Aplikacja Kiosk** (`releases/kiosk-android-1.2.apk`, Android 5.0+): panel na pełnym ekranie,
   przyciski głośności telefonu zawsze sterują kioskiem, wyszukiwanie kiosków w sieci, zapamiętany
   token lub konto domownika, HTTPS kiosku (zaufanie po porównaniu odcisku SHA-256), „wstecz”
-  cofa zakładki, ⚙ na pasku pilota otwiera ustawienia aplikacji. Po otwarciu pokazuje radio
-  (w ustawieniach aplikacji: widok po otwarciu — Radio, Start, Głośność, Co wyświetla kiosk). Instalacja: skopiuj plik na
+  cofa zakładki, Ustawienia → „Aplikacja Kiosk” otwiera ustawienia aplikacji. Po otwarciu pokazuje
+  Pilota (widok po otwarciu do wyboru: Pilot, Kamery, Radio i muzyka, Ustawienia). Instalacja: skopiuj plik na
   telefon i otwórz (zezwól na instalowanie aplikacji z tego źródła).
 - API: `POST /api/audio {"volume_step": 5}` (albo `-5`), MQTT `<prefiks>/volume/step`.
 
@@ -936,7 +939,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
   (`sudo kiosk-update github`).
 - **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
   github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
-  i go instaluje; wersja np. `1:1.0.10+git20261017.abc1234`. W terminalu:
+  i go instaluje; wersja np. `1:1.0.11+git20261017.abc1234`. W terminalu:
   `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
 
 ## Wersja light (kiosk-setup-light)
@@ -966,6 +969,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.11** (18.10.2026) — nowy układ panelu: Pilot jako strona główna, zakładka Kamery,
+  na telefonie dolne zakładki i Ustawienia jako lista; aplikacja Kiosk 1.2 otwiera się na Pilocie.
 - **1.0.10** (18.10.2026) — aplikacja Kiosk 1.1 startuje od radia (widok po otwarciu do wyboru);
   w panelu „Teraz gra” i kafelki ulubionych stacji.
 - **1.0.9** (18.10.2026) — aplikacja Kiosk na Androida (przyciski głośności telefonu sterują

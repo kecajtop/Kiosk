@@ -1,5 +1,15 @@
 # Zmiany
 
+## 1.0.11 (2026-10-18)
+- **Nowy układ panelu:** strona główna to **Pilot** — „Teraz gra”, głośność −/+ i stop, kafelki ulubionych stacji,
+  widoki i ekran, „Powiedz”, jasność. Nowa zakładka **Kamery**: podgląd ekranu kiosku i kamery na żądanie.
+- **Na telefonie:** trzy zakładki na dole (Pilot, Kamery, Ustawienia) zamiast dwóch przewijanych pasków u góry;
+  **Ustawienia** to jedna lista sekcji (jak w Androidzie) z paskiem „‹ Ustawienia” w każdej pozycji; jedna warstwa ramek,
+  krótszy nagłówek.
+- **Aplikacja Kiosk 1.2** (`releases/kiosk-android-1.2.apk`): otwiera się na Pilocie (radio i głośność na górze);
+  w ustawieniach aplikacji widok po otwarciu: Pilot, Kamery, Radio i muzyka, Ustawienia.
+- Gotowe pakiety: `releases/kiosk-setup_1.0.11_amd64.deb`, `releases/kiosk-setup-light_1.0.11_amd64.deb`.
+
 ## 1.0.10 (2026-10-18)
 - **Aplikacja Kiosk 1.1** (`releases/kiosk-android-1.1.apk`): otwiera się od razu na sterowaniu radiem; w ustawieniach
   aplikacji wybór widoku po otwarciu (Radio, Start, Głośność, Co wyświetla kiosk). Instaluje się na wersję 1.0.

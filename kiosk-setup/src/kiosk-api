@@ -5806,15 +5806,49 @@ a{color:var(--blue)}
 /* Telefon: pilot na dole ekranu, większe pola dotyku, bez opóźnienia podwójnego dotknięcia */
 html{-webkit-text-size-adjust:100%}
 body{touch-action:manipulation;overscroll-behavior-y:contain;-webkit-tap-highlight-color:transparent}
-#remote{display:none}
+#tabbar,#backbar{display:none}
+/* Pilot: teraz gra + głośność */
+.pnow{display:flex;flex-direction:column;gap:12px}
+.pnow .rdnow{margin:0}
+.block .rdnow{border:0;background:none;padding:2px 2px 6px;min-height:40px;margin-top:0}
+.block .rdnow .rdtt{font-size:17px}
+.pvol{display:grid;grid-template-columns:56px 1fr 56px auto;gap:8px;align-items:center}
+@media (min-width:861px){ .pnow{max-width:560px} }
+.pvol button{min-height:52px;font-size:20px;padding:0}
+.pvol #pstop{font-size:15px;padding:0 16px}
+.pvolv{text-align:center;color:var(--amber);font-weight:600;font-size:22px;letter-spacing:.04em}
+.quick button.on,#pscr.on{color:var(--amber);border-color:var(--amberline);background:var(--amberbg)}
+/* Ustawienia jako lista (telefon) */
+.mgroup{margin:0 0 18px}
+.mgroup .mh{display:flex;gap:10px;align-items:center;margin:0 0 8px;font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.mgroup .mh svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.mlist{border:1px solid var(--line);border-radius:var(--r);background:var(--block);overflow:hidden}
+.mlist a,.mlist button{display:flex;width:100%;justify-content:space-between;align-items:center;min-height:52px;padding:0 16px;color:var(--ink);text-decoration:none;border:0;border-top:1px solid var(--line);border-radius:0;background:none;font:inherit;font-size:15px;text-align:left;cursor:pointer}
+.mlist>:first-child{border-top:0}
+.mlist a:hover,.mlist button:hover{background:var(--btnh)}
+.mlist .chev{color:var(--muted);font-size:20px}
+.mlist small{color:var(--muted);font-size:12px;margin-left:10px}
+img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--line);background:#000;aspect-ratio:16/9;object-fit:contain}
 @media (max-width:860px){
-  #remote{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:6;gap:6px;align-items:center;justify-content:center;
-    padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);box-shadow:0 -6px 20px #0005}
-  #remote button{flex:1 1 0;max-width:120px;min-height:48px;padding:0 6px;font-size:17px}
-  #remote .rvol{flex:0 0 auto;min-width:54px;text-align:center;color:var(--amber);font-weight:600;font-size:15px}
-  #remote button.on{color:var(--amber);border-color:var(--amberline);background:var(--amberbg)}
-  main{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
-  #toast{bottom:calc(80px + env(safe-area-inset-bottom))}
+  /* Telefon: dolne zakładki Pilot / Kamery / Ustawienia zamiast dwóch pasków u góry */
+  nav.groups,.subnav,header.top .stat,#theme{display:none!important}
+  header.top{grid-template-columns:auto minmax(0,1fr);margin-bottom:6px;padding:4px 0 10px}
+  header.top img{height:30px}
+  #tabbar{display:grid;grid-template-columns:repeat(3,1fr);position:fixed;left:0;right:0;bottom:0;z-index:6;
+    background:var(--card);border-top:1px solid var(--line);box-shadow:0 -6px 20px #0004;padding-bottom:env(safe-area-inset-bottom)}
+  #tabbar a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:60px;color:var(--muted);text-decoration:none;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+  #tabbar a svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  #tabbar a.on{color:var(--amber);box-shadow:inset 0 3px 0 var(--amber)}
+  #backbar:not([hidden]){display:flex;align-items:center;gap:6px;margin:0 0 6px;min-height:44px}
+  #backbar a{color:var(--amber);text-decoration:none;font-weight:600;font-size:15px;display:flex;align-items:center;min-height:44px;padding-right:8px}
+  #backbar span{color:var(--muted);font-size:13px;letter-spacing:.1em;text-transform:uppercase}
+  /* jedna warstwa ramek: karta bez ramki, ramki mają tylko części (bloki) */
+  .card{background:none;border:0;padding:0;margin-bottom:8px;overflow:visible}
+  .card>*,.card>.lead{margin-left:0!important;margin-right:0!important}
+  .pane h2{background:none;border:0;padding:2px 0 4px!important;margin:0 0 6px!important;font-size:20px;letter-spacing:.02em;text-transform:none;color:var(--ink)}
+  .block{padding:14px;margin-top:12px}
+  main{padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+  #toast{bottom:calc(76px + env(safe-area-inset-bottom))}
 }
 @media (pointer:coarse){
   button,.btn,select,input[type=text],input[type=number],input[type=time],input[type=password],input[type=url]{min-height:44px}
@@ -5832,7 +5866,8 @@ body{touch-action:manipulation;overscroll-behavior-y:contain;-webkit-tap-highlig
 <header class="top"><img src="logo.png" alt="Logo kiosku"><div class="hostrow"><span id="host"></span><button type="button" id="theme" aria-label="Motyw jasny / ciemny">◐ Motyw</button></div><div class="stat" id="stat"><div>Ładowanie…</div></div></header>
 <div class="app">
 <nav class="groups" aria-label="Sekcje panelu" id="groups">
-<a href="#/start" data-group="start"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/></svg><span>Start</span></a>
+<a href="#/start" data-group="start"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9h-6v-6H9v6H3z"/></svg><span>Pilot</span></a>
+<a href="#/kamery" data-group="kamery"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h12v10H3zM15 10l6-3v10l-6-3"/></svg><span>Kamery</span></a>
 <a href="#/tryb" data-group="ekran"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v12H3zM8 21h8M12 17v4"/></svg><span>Ekran</span></a>
 <a href="#/dymek" data-group="komunikaty"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z"/></svg><span>Komunikaty</span></a>
 <a href="#/glos" data-group="dzwiek"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zM16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg><span>Dźwięk</span></a>
@@ -5841,32 +5876,47 @@ body{touch-action:manipulation;overscroll-behavior-y:contain;-webkit-tap-highlig
 <a href="#/nazwa" data-group="system"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM19 12l2-1-1-3-2 .3-1.5-1.5L17 5l-3-1-1 2h-2L10 4 7 5l.5 1.8L6 8.3 4 8l-1 3 2 1v0l-2 1 1 3 2-.3 1.5 1.5L7 19l3 1 1-2h2l1 2 3-1-.5-1.8 1.5-1.5 2 .3 1-3z"/></svg><span>System</span></a>
 </nav>
 <div class="content">
+<div id="backbar" hidden><a href="#/ustawienia">‹ Ustawienia</a><span id="backgrp"></span></div>
 <div class="group" data-group="start" hidden>
 <div class="subnav" role="tablist" aria-label="Start" hidden>
-<a href="#/start" role="tab" data-pane="start">Start</a>
+<a href="#/start" role="tab" data-pane="start">Pilot</a>
 </div>
-<section class="card pane" role="tabpanel" id="start" aria-labelledby="h-start" hidden><h2 id="h-start">Start</h2>
-<p class="lead">Najczęstsze czynności w jednym miejscu. Pełne ustawienia są w sekcjach z menu.</p>
-<h3 class="first">Widok na ekranie</h3>
+<section class="card pane" role="tabpanel" id="start" aria-labelledby="h-start" hidden><h2 id="h-start">Pilot</h2>
+<div class="pnow">
+<div class="rdnow" aria-live="polite"><span class="rdst">■</span><span class="rdtt">—</span></div>
+<div class="pvol"><button type="button" id="pvd" aria-label="Ciszej">−</button><span id="pvol" class="pvolv" aria-live="polite">—</span><button type="button" id="pvu" aria-label="Głośniej">+</button><button type="button" id="pstop">■ Stop</button></div>
+</div>
+<h3>Radio</h3>
+<div class="tiles" data-radio></div>
+<h3>Ekran</h3>
 <div id="qviews" class="chips"></div>
-<h3>Szybko</h3>
-<div class="quick">
-<button type="button" data-proxy="son">Włącz ekran</button>
-<button type="button" data-proxy="soff">Wyłącz ekran</button>
-<button type="button" data-proxy="restart" class="adm">Odśwież ekran</button>
+<div class="quick" style="margin-top:10px">
+<button type="button" id="pscr">⏻ Ekran</button>
 <button type="button" data-proxy="nton" class="adm">Noc teraz</button>
 <button type="button" data-proxy="ntauto" class="adm">Noc wg godzin</button>
+<button type="button" data-proxy="restart" class="adm">Odśwież ekran</button>
 <button type="button" data-proxy="alstop" class="adm">Zakończ alarm</button>
-<button type="button" data-proxy="rdstop">Wyłącz radio</button>
-<button type="button" data-proxy="astop">Zatrzymaj dźwięk</button>
-<button type="button" data-proxy="saytime">Powiedz godzinę</button>
 </div>
-<div class="grid2" style="margin-top:16px">
-<div class="field"><label for="qvol">Głośność: <span id="qvolv">—</span>%</label><input type="range" id="qvol" min="0" max="100" step="5" value="50"></div>
-<div class="field adm"><label for="qbri">Jasność: <span id="qbriv">—</span>%</label><input type="range" id="qbri" min="5" max="100" step="5" value="100"></div>
+<div class="field adm" style="margin-top:14px"><label for="qbri">Jasność ekranu: <span id="qbriv">—</span>%</label><input type="range" id="qbri" min="5" max="100" step="5" value="100"></div>
+<h3>Powiedz</h3>
+<form id="qsayf" class="field"><label for="qsay" class="lbl">Tekst</label>
+<div class="row"><input type="text" id="qsay" maxlength="1000" placeholder="Obiad gotowy!" style="flex:1;min-width:180px"><button type="submit" class="primary">Powiedz</button><button type="button" data-proxy="saytime">Która godzina</button></div></form>
+</section>
 </div>
-<form id="qsayf" class="field"><label for="qsay">Powiedz na kiosku</label>
-<div class="row"><input type="text" id="qsay" maxlength="1000" placeholder="Obiad gotowy!" style="flex:1;min-width:200px"><button type="submit" class="primary">Powiedz</button></div></form>
+<div class="group" data-group="kamery" hidden>
+<div class="subnav" role="tablist" aria-label="Kamery" hidden><a href="#/kamery" role="tab" data-pane="kamery">Kamery</a></div>
+<section class="card pane" role="tabpanel" id="kamery" aria-labelledby="h-kamery" hidden><h2 id="h-kamery">Kamery</h2>
+<h3>Ekran kiosku</h3>
+<img id="kmshot" class="shot" alt="Podgląd ekranu kiosku">
+<div class="row" style="margin-top:8px"><button type="button" id="kmshotb">Odśwież</button><span class="hint" id="kmshott" style="align-self:center"></span></div>
+<h3 class="adm">Pokaż kamerę na kiosku</h3>
+<div class="adm"><div id="kmcams" class="quick"></div><div class="row" style="margin-top:8px"><button type="button" data-proxy="alstop">Zakończ alarm</button></div></div>
+</section>
+</div>
+<div class="group" data-group="menu" hidden>
+<div class="subnav" role="tablist" aria-label="Ustawienia" hidden><a href="#/ustawienia" role="tab" data-pane="ustawienia">Ustawienia</a></div>
+<section class="card pane" role="tabpanel" id="ustawienia" aria-labelledby="h-ustawienia" data-noblock hidden><h2 id="h-ustawienia">Ustawienia</h2>
+<div id="menulist"></div>
 </section>
 </div>
 <div class="group" data-group="ekran" hidden>
@@ -6366,7 +6416,11 @@ body{touch-action:manipulation;overscroll-behavior-y:contain;-webkit-tap-highlig
 </div></div>
 </main>
 <div id="toast" role="status" aria-live="polite" hidden></div>
-<nav id="remote" aria-label="Pilot kiosku"><button type="button" id="rmvd" aria-label="Ciszej">−</button><span class="rvol" id="rmvol" aria-live="polite">—</span><button type="button" id="rmvu" aria-label="Głośniej">+</button><button type="button" id="rmstop" aria-label="Zatrzymaj dźwięk">■</button><button type="button" id="rmscr" aria-label="Ekran kiosku (włącz / wyłącz)">⏻ Ekran</button><button type="button" id="rmapp" aria-label="Ustawienia aplikacji" hidden>⚙</button></nav>
+<nav id="tabbar" aria-label="Główne zakładki">
+<a href="#/start" data-tab="start"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v18H7zM12 7.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM10 16h4"/></svg><span>Pilot</span></a>
+<a href="#/kamery" data-tab="kamery"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h12v10H3zM15 10l6-3v10l-6-3"/></svg><span>Kamery</span></a>
+<a href="#/ustawienia" data-tab="menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Ustawienia</span></a>
+</nav>
 <script>
 const $ = (id) => document.getElementById(id);
 let toastT;
@@ -6391,7 +6445,7 @@ async function loadStatus(){
     if(s.device_id && DID!==s.device_id){ DID=s.device_id; fillHelp($('mprefix').value||'kecaj/kiosk', $('mhost').value||'192.168.0.1'); } if(host!==s.hostname.replace(/[^A-Za-z0-9_]/g,'_')){ host=s.hostname.replace(/[^A-Za-z0-9_]/g,'_'); loadMqtt().catch(()=>{}); }
     const a=s.audio||{};
     rdNow(a); if(RADIO && a.state==='stopped' && RADIO.playing){ RADIO.playing=null; rdTiles(); }
-    if(a.volume!=null) $('rmvol').textContent=a.volume+'%'; SCR=s.screen; $('rmscr').classList.toggle('on', s.screen==='on'); $('rmscr').title=s.screen==='off'?'Włącz ekran kiosku':'Wyłącz ekran kiosku';
+    if(a.volume!=null) $('pvol').textContent=a.volume+'%'; SCR=s.screen; $('pscr').classList.toggle('on', s.screen==='on'); $('pscr').textContent=s.screen==='off'?'⏻ Włącz ekran':'⏻ Wyłącz ekran';
     $('stat').replaceChildren(
       cell('Tryb', (names[s.mode]||s.mode)+(s.view?' · '+s.view:'')),
       cell('Monitor', okDot(s.screen==='on', s.screen==='on'?'włączony':(s.screen==='off'?'wyłączony':'nieznany'))),
@@ -6480,8 +6534,8 @@ const VOLKEY_UP=new Set(['AudioVolumeUp','VolumeUp']), VOLKEY_DN=new Set(['Audio
 let volKeys=(()=>{ try{ const v=localStorage.getItem('kioskVolKeys'); if(v!==null) return v==='1'; }catch(e){} return matchMedia('(pointer:coarse)').matches; })();
 let volAcc=0, volKT=0, volSeen=false;
 function volStep(d){ volAcc+=d; clearTimeout(volKT); volKT=setTimeout(()=>{ const s=volAcc; volAcc=0; if(!s) return;
-  post('api/audio',{volume_step:s}).then(r=>{ const m=/(\d+)%/.exec(r.output||''); if(m){ $('vol').value=m[1]; $('volv').textContent=m[1]; $('rmvol').textContent=m[1]+'%'; } toast('Kiosk — '+(r.output||'głośność'),'okm'); }).catch(e=>toast(e.message,'err')); }, 250); }
-function volKeysHint(){ $('volkeys').checked=volKeys; $('volkeyst').textContent=!volKeys?'':(volSeen?'Działa — przeglądarka przekazuje przyciski głośności.':'Naciśnij przycisk głośności na telefonie. Jeśli nic się nie dzieje, ta przeglądarka nie przekazuje go stronom (częste w Chrome na Androidzie) — użyj przycisków −/+ na dole albo aplikacji Kiosk na Androida (tam przyciski głośności działają zawsze).'); }
+  post('api/audio',{volume_step:s}).then(r=>{ const m=/(\d+)%/.exec(r.output||''); if(m){ $('vol').value=m[1]; $('volv').textContent=m[1]; $('pvol').textContent=m[1]+'%'; } toast('Kiosk — '+(r.output||'głośność'),'okm'); }).catch(e=>toast(e.message,'err')); }, 250); }
+function volKeysHint(){ $('volkeys').checked=volKeys; $('volkeyst').textContent=!volKeys?'':(volSeen?'Działa — przeglądarka przekazuje przyciski głośności.':'Naciśnij przycisk głośności na telefonie. Jeśli nic się nie dzieje, ta przeglądarka nie przekazuje go stronom (częste w Chrome na Androidzie) — użyj przycisków −/+ w Pilocie albo aplikacji Kiosk na Androida (tam przyciski głośności działają zawsze).'); }
 document.addEventListener('keydown', e=>{ if(!volKeys) return; const k=e.key, c=e.keyCode;
   const up=VOLKEY_UP.has(k)||c===175||c===24, dn=VOLKEY_DN.has(k)||c===174||c===25; if(!up&&!dn) return;
   e.preventDefault(); volSeen=true; volKeysHint(); volStep(up?5:-5); }, true);
@@ -6495,13 +6549,12 @@ if(APP){ volKeys=false; document.documentElement.classList.add('inapp');
   try{ $('volkeys').checked=APP.volumeKeys(); }catch(e){}
   $('volkeys').onchange=()=>{ try{ APP.setVolumeKeys($('volkeys').checked); }catch(e){} $('volkeyst').textContent=$('volkeys').checked?'Działa zawsze, gdy aplikacja jest otwarta.':'Przyciski głośności zmieniają głośność telefonu.'; };
   $('volkeyst').textContent=$('volkeys').checked?'Działa zawsze, gdy aplikacja jest otwarta.':'';
-  $('rmapp').hidden=false; $('rmapp').onclick=()=>{ try{ APP.settings(); }catch(e){} };
 }
-// ---- pilot na dole ekranu telefonu (także dla kont domowników)
+// ---- Pilot (także dla kont domowników)
 let SCR='unknown';
-$('rmvd').onclick=()=>volStep(-5); $('rmvu').onclick=()=>volStep(5);
-$('rmstop').onclick=()=>post('api/audio',{stop:true}).then(r=>toast(r.output||'Zatrzymano','okm')).catch(e=>toast(e.message,'err'));
-$('rmscr').onclick=()=>{ const on=SCR==='off'; post('api/screen',{on}).then(()=>{ toast(on?'Ekran włączony':'Ekran wyłączony','okm'); setTimeout(loadStatus,1500); }).catch(e=>toast(e.message,'err')); };
+$('pvd').onclick=()=>volStep(-5); $('pvu').onclick=()=>volStep(5);
+$('pstop').onclick=()=>post('api/audio',{stop:true}).then(r=>{ toast(r.output||'Zatrzymano','okm'); if(RADIO){ RADIO.playing=null; rdTiles(); } setTimeout(loadStatus,1200); }).catch(e=>toast(e.message,'err'));
+$('pscr').onclick=()=>{ const on=SCR==='off'; post('api/screen',{on}).then(()=>{ toast(on?'Ekran włączony':'Ekran wyłączony','okm'); setTimeout(loadStatus,1500); }).catch(e=>toast(e.message,'err')); };
 let volT; $('vol').addEventListener('input', ()=>{ volTouched=true; $('volv').textContent=$('vol').value; clearTimeout(volT); volT=setTimeout(()=>{ post('api/audio',{volume:Number($('vol').value)}).catch(e=>toast(e.message,'err')).finally(()=>{volTouched=false;}); }, 300); });
 $('sf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/say',{text:$('saytext').value.trim(), voice:$('voice').value})); });
 $('vsample').onclick=()=>act(()=>post('api/say',{text:'Dzień dobry. Wszystkie systemy działają poprawnie. Ktoś stoi przy bramie.', voice:$('voice').value}));
@@ -6807,6 +6860,28 @@ $('dcf').addEventListener('submit', async e=>{ e.preventDefault(); const cmd=$('
   out.scrollTop=out.scrollHeight; setTimeout(loadStatus, 2000); });
 // ---- rotacja, noc, zdjęcia, kalendarz, ruch, nagrania, Frigate, radio, interkom, asystent, jasność, powiadomienia, konta, kioski
 let EXT=null, ME='admin';
+// ---- Ustawienia jako lista (telefon) i Kamery
+let KMT=0;
+function buildMenu(){ const mk=(t,c)=>{ const e=document.createElement(t); if(c) e.className=c; return e; }; const out=[];
+  const top=mk('div','mgroup'), tl=mk('div','mlist');
+  const th=mk('button'); th.type='button'; th.append(mk('span'), Object.assign(mk('span','chev'),{textContent:'◐'})); th.firstChild.textContent=$('theme').textContent.replace(/^◐\s*/,'');
+  th.onclick=()=>{ $('theme').click(); th.firstChild.textContent=$('theme').textContent.replace(/^◐\s*/,''); }; tl.append(th);
+  if(window.KioskApp){ const ab=mk('button'); ab.type='button'; ab.append(Object.assign(mk('span'),{textContent:'Aplikacja Kiosk — kiosk, token, przyciski głośności'}), Object.assign(mk('span','chev'),{textContent:'›'})); ab.onclick=()=>{ try{ window.KioskApp.settings(); }catch(e){} }; tl.append(ab); }
+  top.append(tl); out.push(top);
+  document.querySelectorAll('#groups a[data-group]').forEach(ga=>{ const g=ga.dataset.group; if(['start','kamery','menu'].includes(g)) return;
+    const grp=document.querySelector('.group[data-group="'+g+'"]'); if(!grp) return;
+    const links=[...grp.querySelectorAll('.subnav a[data-pane]')].filter(a=>{ const p=document.getElementById(a.dataset.pane); return p && paneOk(p) && !a.hidden; });
+    if(!links.length) return;
+    const d=mk('div','mgroup'), h=mk('div','mh'), l=mk('div','mlist'); const ic=ga.querySelector('svg'); if(ic) h.append(ic.cloneNode(true)); h.append(ga.textContent.trim());
+    links.forEach(a=>{ const r=mk('a'); r.href='#/'+a.dataset.pane; r.append(Object.assign(mk('span'),{textContent:a.textContent}), Object.assign(mk('span','chev'),{textContent:'›'})); l.append(r); });
+    d.append(h,l); out.push(d); });
+  $('menulist').replaceChildren(...out); }
+function kmShot(){ const i=$('kmshot'); i.onerror=()=>{ $('kmshott').textContent='Brak podglądu ekranu (kiosk nie odpowiada albo ekran wyłączony).'; }; i.onload=()=>{ $('kmshott').textContent='Stan z '+new Date().toLocaleTimeString('pl-PL'); }; i.src='api/screenshot?t='+Date.now(); }
+async function loadKamery(){ kmShot(); if(ME!=='admin') return;
+  try{ const c=await api('api/config'); const cams=c.cameras||[];
+    $('kmcams').replaceChildren(...cams.map((u,i)=>{ const b=document.createElement('button'); b.type='button'; b.textContent='Kamera '+(i+1); b.onclick=()=>act(()=>post('api/alert',{camera:i+1, seconds:30, title:'Kamera '+(i+1)})).then(()=>setTimeout(kmShot,2500)); return b; }));
+    if(!cams.length) $('kmcams').textContent='Brak kamer — dodaj je w Ustawienia → Co wyświetla kiosk.'; }catch(e){} }
+$('kmshotb').onclick=kmShot;
 // ---- rozpoznawanie twarzy
 let FCTIMER=0, FCSIG='';
 const fcName=()=>$('fcname').value.trim();
@@ -6912,15 +6987,15 @@ $('frfind').onclick=async()=>{ try{ const r=await post('api/cameras/import',{hos
   if(!d.cameras.length) $('frlist').textContent=d.source+': brak kamer'; else toast(d.source+': '+d.cameras.length+' kamer','okm'); }catch(e){ toast(e.message,'err'); } };
 // radio
 let RADIO={stations:[]};
-function rdTiles(){ const box=$('rdtiles'); if(!RADIO) return;
+function rdTiles(){ if(!RADIO) return; document.querySelectorAll('#rdtiles,.tiles[data-radio]').forEach(box=>{
   box.replaceChildren(...RADIO.stations.map(st=>{ const b=document.createElement('button'); b.type='button'; b.textContent=st.name; b.classList.toggle('on', RADIO.playing===st.name);
     b.onclick=()=>{ const off=RADIO.playing===st.name; post('api/radio/play',{station:off?'OFF':st.name}).then(r=>{ RADIO.playing=off?null:st.name; rdTiles(); toast(r.output||(off?'Zatrzymano':st.name),'okm'); setTimeout(loadStatus,1500); }).catch(e=>toast(e.message,'err')); };
     return b; }));
-  if(!RADIO.stations.length) box.textContent='Brak ulubionych — znajdź stację wyszukiwarką niżej i dodaj „Do ulubionych”.'; }
-function rdNow(a){ if(!$('rdnow')) return; const play=a&&a.state==='playing';
-  $('rdnow').querySelector('.rdst').textContent=play?'▶':(a&&a.state==='paused'?'❚❚':'■');
+  if(!RADIO.stations.length) box.textContent=box.id==='rdtiles'?'Brak ulubionych — znajdź stację wyszukiwarką niżej i dodaj „Do ulubionych”.':'Brak ulubionych stacji — dodaj je w Ustawienia → Radio i muzyka.'; }); }
+function rdNow(a){ const play=a&&a.state==='playing';
+  document.querySelectorAll('.rdnow').forEach(el=>{ el.querySelector('.rdst').textContent=play?'▶':(a&&a.state==='paused'?'❚❚':'■'); });
   const t=a&&a.title&&!/^[a-z]+:\/\//i.test(a.title)?a.title:'', st=RADIO&&RADIO.playing;
-  $('rdnow').querySelector('.rdtt').textContent=!play?'Cisza':(st&&t&&t!==st?st+' — '+t:(st||t||'Gra')); }
+  const txt=!play?'Cisza':(st&&t&&t!==st?st+' — '+t:(st||t||'Gra')); document.querySelectorAll('.rdnow .rdtt').forEach(el=>{ el.textContent=txt; }); }
 async function loadRadio(){ RADIO=await api('api/radio'); rdTiles(); $('rdsel').replaceChildren(...RADIO.stations.map(s=>opt(s.name,s.name))); if(!RADIO.stations.length) $('rdsel').append(opt('','(dodaj stacje wyszukiwarką)')); if(RADIO.playing) $('rdsel').value=RADIO.playing; }
 $('rdplay').onclick=()=>{ if(!$('rdsel').value) return toast('Najpierw dodaj stację','err'); act(()=>post('api/radio/play',{station:$('rdsel').value})).then(loadRadio); };
 $('rdstop').onclick=()=>act(()=>post('api/radio/play',{station:'OFF'})).then(loadRadio);
@@ -6962,14 +7037,14 @@ $('pescan').onclick=async()=>{ toast('Szukam kiosków w sieci…','okm'); try{ c
 $('pef').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/peers',{host:$('pehost').value.trim(), token:$('petok').value.trim()})).then(()=>{ $('petok').value=''; loadPeers(); }); });
 $('pesf').addEventListener('submit', async e=>{ e.preventDefault(); try{ const r=await post('api/peers/send',{command:$('pecmd').value.trim(), payload:$('pepay').value}); $('peout').textContent=r.output; }catch(err){ toast(err.message,'err'); } });
 // Nawigacja: grupy (menu boczne) i podstrony w grupie. Adres strony: #id-podstrony.
-const USER_PANES=['start','widoki','dymek','powiedz','glos','radio','interkom'];
+const USER_PANES=['start','kamery','ustawienia','widoki','dymek','powiedz','glos','radio','interkom'];
 const PANES=[...document.querySelectorAll('.pane')];
 let LIGHT=false; const SPEECH_PANES=['powiedz','interkom','asystent'];
 function paneOk(p){ if(LIGHT && SPEECH_PANES.includes(p.id)) return false; return ME==='admin' || USER_PANES.includes(p.id); }
 function applyLight(){ // wersja light: bez mowy — chowa przyciski i pola związane z mową
   if(!LIGHT) return;
   const hide=e=>{ if(e) e.hidden=true; };
-  hide($('qsayf')); hide(document.querySelector('[data-proxy="saytime"]'));
+  const qs=$('qsayf'); hide(qs && (qs.closest('.block')||qs)); hide(document.querySelector('[data-proxy="saytime"]'));
   const v=$('voice'); if(v) hide(v.closest('.field')||v.parentElement); hide($('voicehint'));
   const b=$('bsay'); if(b) hide(b.closest('label')||b);
   const ch=$('chime'); if(ch) hide(ch.closest('.field'));        // gong i przyciszanie — tylko dla komunikatów głosowych
@@ -7005,6 +7080,13 @@ function showTab(id, focus){
   if(adm && id==='kioski') loadPeers().catch(()=>{});
   if(adm && id==='siec') loadWifi().catch(e=>toast(e.message,'err'));
   if(adm && id==='twarze') loadFaces().catch(e=>toast(e.message,'err'));
+  // telefon: dolne zakładki i pasek „wstecz” w ustawieniach
+  const top=['start','kamery','menu'].includes(g);
+  document.querySelectorAll('#tabbar a').forEach(a=>a.classList.toggle('on', a.dataset.tab===(top?g:'menu')));
+  $('backbar').hidden=top; if(!top){ const ga=document.querySelector('#groups a[data-group="'+g+'"] span'); $('backgrp').textContent=ga?'· '+ga.textContent:''; }
+  if(id==='ustawienia') buildMenu();
+  if(g==='start') loadRadio().catch(()=>{});
+  clearInterval(KMT); KMT=0; if(id==='kamery'){ loadKamery(); KMT=setInterval(()=>{ if(!document.hidden) kmShot(); },6000); }
   clearInterval(FCTIMER); FCTIMER=id==='twarze'?setInterval(()=>{ if(!document.hidden) loadFaces(true).catch(()=>{}); },3000):0;
   if(id==='debug' && !DBTEXT) dbLoad();
   dbLive();
@@ -7037,7 +7119,7 @@ function mirrorRange(q, src){ let busy=false;
   const sync=()=>{ if(!busy && $(src).value!==$(q).value){ $(q).value=$(src).value; } $(q+'v').textContent=$(q).value; };
   sync(); setInterval(sync, 1000);
 }
-mirrorRange('qvol','vol'); mirrorRange('qbri','bri');
+mirrorRange('qbri','bri');
 
 // System → Nazwa kiosku
 const slugJs=s=>{ const m={'ą':'a','ć':'c','ę':'e','ł':'l','ń':'n','ó':'o','ś':'s','ź':'z','ż':'z'}; return (s.toLowerCase().replace(/[ąćęłńóśźż]/g,c=>m[c]).replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40).replace(/-+$/,''))||'kiosk'; };
@@ -7071,7 +7153,7 @@ $('roclips').onchange=()=>act(()=>post('api/ro',{keep_clips:$('roclips').checked
     const s=document.createElement('summary'); s.textContent='Więcej informacji';
     p.replaceWith(d); d.append(s, p);
   }
-  document.querySelectorAll('.pane').forEach(pane=>{
+  document.querySelectorAll('.pane:not([data-noblock])').forEach(pane=>{
     const kids=[...pane.children]; let block=null, first=true;
     kids.forEach(el=>{
       if(el.tagName==='H2' || (first && el.classList.contains('lead') && !block)){ return; }

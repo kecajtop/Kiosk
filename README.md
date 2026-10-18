@@ -11,9 +11,9 @@ oraz dodatek Home Assistant „Kioski” do zarządzania wieloma kioskami.
 
 Więcej obrazów: [docs/ZRZUTY.md](docs/ZRZUTY.md).
 
-| Panel WWW — Start | Ekran — co wyświetla kiosk |
+| Panel WWW — Pilot | Ekran — co wyświetla kiosk |
 |---|---|
-| ![Start](docs/img/panel-start.png) | ![Tryb](docs/img/panel-tryb.png) |
+| ![Pilot](docs/img/panel-start.png) | ![Tryb](docs/img/panel-tryb.png) |
 | **Wygląd zegara** | **Dodatek Home Assistant „Kioski”** |
 | ![Wygląd zegara](docs/img/panel-wyglad-zegara.png) | ![Dodatek HA](docs/img/dodatek-ha.png) |
 
@@ -30,17 +30,17 @@ Dokumentacja pakietu: [kiosk-setup/rootfs/usr/share/doc/kiosk-setup/README.md](k
 
 ## Instalacja na kiosku
 
-Gotowy pakiet: [`releases/kiosk-setup_1.0.10_amd64.deb`](releases/).
+Gotowy pakiet: [`releases/kiosk-setup_1.0.11_amd64.deb`](releases/).
 
 ```bash
-sudo apt install ./kiosk-setup_1.0.10_amd64.deb
+sudo apt install ./kiosk-setup_1.0.11_amd64.deb
 # aktualizacja istniejącego kiosku (działa też przy dysku tylko do odczytu):
-sudo kiosk-update file ./kiosk-setup_1.0.10_amd64.deb
+sudo kiosk-update file ./kiosk-setup_1.0.11_amd64.deb
 ```
 
 ### Wersja light
 
-`releases/kiosk-setup-light_1.0.10_amd64.deb` (ok. 0,3 MB) — ekran (Chromium, kamery RTSP), zegary, panel WWW,
+`releases/kiosk-setup-light_1.0.11_amd64.deb` (ok. 0,3 MB) — ekran (Chromium, kamery RTSP), zegary, panel WWW,
 MQTT/Home Assistant i muzyka, bez mowy, interkomu i asystenta głosowego. Instalacja jak wyżej; zastępuje
 pełny pakiet i odwrotnie. Aktualizacje: `update-light.json` zamiast `update.json`. Budowanie: `./build.sh --light`.
 Przełączanie edycji: **System → Aktualizacje → „Przełącz na wersję light/pełną”** albo `sudo kiosk-update switch light|full`.
@@ -65,7 +65,7 @@ jego sumę SHA-256.
 
 ## Aplikacja na Androida
 
-[`releases/kiosk-android-1.1.apk`](releases/) — panel kiosku na telefonie: fizyczne przyciski głośności
+[`releases/kiosk-android-1.2.apk`](releases/) — panel kiosku na telefonie: fizyczne przyciski głośności
 sterują głośnością kiosku, wyszukiwanie kiosków w sieci, zapamiętany token, HTTPS kiosku.
 Kod i budowanie (bez Gradle): [`kiosk-android/`](kiosk-android/README.md).
 
@@ -80,7 +80,7 @@ Potrzebne `dpkg-deb` i `python3`.
 
 ```bash
 cd kiosk-setup
-./build.sh --piper-from kiosk-setup_1.0.10_amd64.deb   # Piper (TTS) z gotowego pakietu
+./build.sh --piper-from kiosk-setup_1.0.11_amd64.deb   # Piper (TTS) z gotowego pakietu
 ./build.sh --no-piper                                 # albo bez Pipera
 # wynik: kiosk-setup/dist/kiosk-setup_<wersja>_amd64.deb
 ```

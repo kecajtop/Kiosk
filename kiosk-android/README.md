@@ -10,10 +10,11 @@ Panel kiosku kecaj (kiosk-setup) jako aplikacja na telefon:
   odcisk SHA-256 certyfikatu; po potwierdzeniu ufa tylko temu certyfikatowi pod tym adresem,
 - pełny ekran z panelem, przycisk **wstecz** cofa zakładki, wgrywanie plików (zdjęcia, pakiety),
   linki spoza kiosku otwierają się w przeglądarce,
-- pasek pilota na dole panelu: głośność −/+, stop, ekran, **⚙** — ustawienia aplikacji,
-- po otwarciu **radio** (kafelki ulubionych stacji, „Teraz gra”); widok po otwarciu do wyboru w ustawieniach.
+- ustawienia aplikacji: Ustawienia → pierwsza pozycja „Aplikacja Kiosk”,
+- po otwarciu **Pilot**: „Teraz gra”, głośność, kafelki ulubionych stacji, ekran; na dole zakładki Pilot, Kamery,
+  Ustawienia; widok po otwarciu do wyboru w ustawieniach aplikacji.
 
-Android 5.0 lub nowszy. Instalacja: skopiuj `releases/kiosk-android-1.1.apk` na telefon i otwórz
+Android 5.0 lub nowszy. Instalacja: skopiuj `releases/kiosk-android-1.2.apk` na telefon i otwórz
 (zgoda na „instalowanie nieznanych aplikacji” dla przeglądarki lub menedżera plików).
 
 ## Budowanie
