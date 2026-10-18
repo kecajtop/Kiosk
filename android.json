@@ -1,9 +1,9 @@
 {
   "package": "pl.kecaj.kiosk",
-  "versionCode": 4,
-  "versionName": "1.3",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-android-1.3.apk",
-  "sha256": "f12c5acc09b87b82fb7a6a4113ce97d228ae98cbb8ddedc03f6a33579a3b0861",
+  "versionCode": 5,
+  "versionName": "1.4",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-android-1.4.apk",
+  "sha256": "de9459d65c0bf3d0114f95befc3b11be33d940b85cc9f39ca3cac81bd8a5bb42",
   "size": 41763,
-  "notes": "Aktualizacja aplikacji z GitHuba (raz dziennie i przyciskiem w ustawieniach aplikacji); Pilot jako widok po otwarciu."
+  "notes": "Automatyczna aktualizacja aplikacji (Android 12+ bez pytania, gdy system pozwala); ekran kiosku na żywo w zakładce Kamery."
 }

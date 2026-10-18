@@ -1,5 +1,19 @@
 # Zmiany
 
+## 1.0.14 (2026-10-18) · dodatek Kioski 1.1.0 · aplikacja Kiosk 1.4
+- **Aktualizacje kiosku w Home Assistant:** encja „Aktualizacja” (zainstalowana i dostępna wersja, opis, postęp,
+  przycisk „Zainstaluj” — kiosk widać w Ustawienia → Aktualizacje), przełącznik „Automatyczne aktualizacje”
+  (nocne) i przycisk „Sprawdź aktualizacje”. Kiosk sprawdza dostępną wersję co 6 godzin. MQTT: `update/set` = `install`,
+  `auto_update/set` = `ON`/`OFF`, `update_check/set`.
+- **Podgląd ekranu w Home Assistant:** w panelu (Połączenia → MQTT i Home Assistant) gotowe adresy dla integracji
+  MJPEG IP Camera — ekran kiosku na żywo jako kamera w HA.
+- **Dodatek Kioski 1.1.0:** przy każdym kiosku „aktualna” albo „↑ dostępna X” i przycisk „Aktualizuj do X”,
+  „Aktualizuj wszystkie z GitHuba”; pasek, gdy w repozytorium jest nowsza wersja samego dodatku.
+- **Aplikacja Kiosk 1.4:** „Aktualizuj aplikację automatycznie” (domyślnie włączone) — nowa wersja instaluje się
+  sama przy codziennym sprawdzeniu (Android 12+ bez pytania, gdy system na to pozwala).
+- Gotowe pakiety: `releases/kiosk-setup_1.0.14_amd64.deb`, `releases/kiosk-setup-light_1.0.14_amd64.deb`,
+  `releases/kiosk-android-1.4.apk`.
+
 ## 1.0.13 (2026-10-18)
 - **Szybki podgląd ekranu na żywo:** Kamery → „▶ Na żywo” pokazuje teraz strumień wideo ekranu kiosku (MJPEG z ffmpeg,
   ok. 10 klatek/s, obraz dopasowany do telefonu, ok. 20% jednego rdzenia tylko podczas oglądania) zamiast wolnego VNC.

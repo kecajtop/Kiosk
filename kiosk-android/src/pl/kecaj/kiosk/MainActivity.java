@@ -163,7 +163,8 @@ public class MainActivity extends Activity {
                 if (m.optString("url").length() > 0) updApk = m.optString("url");
                 final boolean newer = m.optInt("versionCode") > myVersionCode();
                 ui.post(new Runnable() { public void run() {
-                    if (newer) updateDialog(m);
+                    if (newer && !manual && prefs.getBoolean("autoupd", true)) installUpdate(m);
+                    else if (newer) updateDialog(m);
                     else if (manual) toast("Masz najnowszą wersję aplikacji (" + myVersionName() + ")");
                 } });
             } catch (final Exception e) {
@@ -194,6 +195,9 @@ public class MainActivity extends Activity {
                 android.content.pm.PackageInstaller.SessionParams sp = new android.content.pm.PackageInstaller.SessionParams(
                         android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);
                 sp.setAppPackageName(getPackageName());
+                if (android.os.Build.VERSION.SDK_INT >= 31) {   // Android 12+: aktualizacja własnej aplikacji bez pytania (gdy system pozwala)
+                    try { sp.getClass().getMethod("setRequireUserAction", int.class).invoke(sp, 2); } catch (Exception ignored) { }
+                }
                 int sid = pi.createSession(sp);
                 android.content.pm.PackageInstaller.Session ses = pi.openSession(sid);
                 OutputStream o = ses.openWrite("kiosk.apk", 0, apk.length);
@@ -321,7 +325,7 @@ public class MainActivity extends Activity {
             s.setJavaScriptEnabled(true);
             s.setDomStorageEnabled(true);
             s.setMediaPlaybackRequiresUserGesture(false);
-            s.setUserAgentString(s.getUserAgentString() + " KioskApp/1.3");
+            s.setUserAgentString(s.getUserAgentString() + " KioskApp/1.4");
             web.addJavascriptInterface(new Bridge(), "KioskApp");
             web.setWebChromeClient(new WebChromeClient() {
                 @Override
@@ -620,6 +624,13 @@ public class MainActivity extends Activity {
 
         box.addView(label("Aplikacja"));
         box.addView(text("Kiosk " + myVersionName() + " — aktualizacje z github.com/kecajtop/Kiosk (sprawdzane raz dziennie).", MUTED, 13));
+        final CheckBox au = new CheckBox(this);
+        au.setText("Aktualizuj aplikację automatycznie");
+        au.setTextColor(TEXT);
+        au.setChecked(prefs.getBoolean("autoupd", true));
+        au.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(android.widget.CompoundButton cb, boolean on) { prefs.edit().putBoolean("autoupd", on).apply(); } });
+        box.addView(au);
         Button upd = button("Sprawdź aktualizację aplikacji", false);
         upd.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { checkUpdate(true); } });
         box.addView(upd);

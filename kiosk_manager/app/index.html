@@ -36,6 +36,10 @@ input:focus,select:focus,button:focus-visible,.btn:focus-visible{outline:2px sol
 .k .top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .k .name{font-size:17px;font-weight:600;line-height:1.3;color:var(--amber)}
 .k .sub{font-size:13px;color:var(--muted)}
+.vbadge{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line);color:var(--muted)}
+.vbadge.new{color:#F2A900;border-color:#7A5E12;background:#231E0C}
+.upd{padding:12px 16px;margin-bottom:16px;border-color:#7A5E12;color:#F2A900}
+.hint{font-size:12px;color:var(--muted);margin-top:6px}
 .dot{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:8px;vertical-align:1px;background:var(--muted)}
 .dot.on{background:var(--ok)} .dot.err{background:var(--bad)}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -60,13 +64,14 @@ td{padding:8px 4px;border-bottom:1px solid var(--line)}
 <header><h1>Kioski<small id="summary">Ładowanie…</small></h1>
 <div class="row"><button type="button" id="scanb">Szukaj w sieci</button><button type="button" class="primary" id="addb">Dodaj kiosk</button></div></header>
 
+<div class="card upd" id="addonupd" hidden></div>
 <section class="card all" id="allc" hidden aria-labelledby="h-all"><h2 id="h-all">Wszystkie kioski naraz</h2>
 <div class="grid">
 <form id="sayf"><label for="say">Powiedz na wszystkich</label><div class="row"><input id="say" maxlength="1000" placeholder="Obiad gotowy!"><button class="primary">Powiedz</button></div></form>
 <form id="bubf"><label for="bub">Dymek na wszystkich (15 s)</label><div class="row"><input id="bub" maxlength="600" placeholder="Wychodzimy za 5 minut"><button>Pokaż</button></div></form>
 <div><label for="allview">Widok na wszystkich</label><div class="row"><select id="allview" style="flex:1"></select><button type="button" id="allviewb">Pokaż</button></div></div>
 <div><label>Ekran i system</label><div class="row"><button type="button" data-all="screen-on">Włącz ekrany</button><button type="button" data-all="screen-off">Wyłącz ekrany</button><button type="button" data-all="restart">Odśwież</button></div></div>
-<div><label>Aktualizacja kiosk-setup</label><div class="row"><label class="btn"><input type="file" id="deb" accept=".deb" hidden> Wgraj .deb na wszystkie…</label><button type="button" data-all="update-check">Sprawdź adres aktualizacji</button></div></div>
+<div><label>Aktualizacja kiosk-setup</label><div class="row"><button type="button" class="primary" data-all="update-github">Aktualizuj wszystkie z GitHuba</button><label class="btn"><input type="file" id="deb" accept=".deb" hidden> Wgraj .deb na wszystkie…</label></div><div class="hint" id="latestinfo"></div></div>
 </div></section>
 
 <div class="kiosks" id="kiosks"></div>
@@ -98,7 +103,7 @@ const NETN={lan:'LAN', wifi:'Wi-Fi', internet:'Internet', ha:'HA', mqtt:'MQTT'};
 function netChip(n){ if(!n) return null; const keys=Object.keys(NETN).filter(k=>n[k]); if(!keys.length) return null;
   const sp=el('span',null,el('b',{textContent:'Sieć'})); keys.forEach((k,i)=>{ const it=n[k]; const d=el('span',{className:'dot'+(it.state==='bad'?' err':' on'), style:'margin:0 4px 0 '+(i?'8px':'0')+(it.state==='warn'?';background:var(--amber)':'')}); sp.append(d, NETN[k]); }); return sp; }
 const MODES={web:'Strona', rtsp:'Kamery', mix:'Strona + kamery', usb:'Kamera USB'};
-let KIOSKS=[], STATE={};
+let KIOSKS=[], STATE={}, LATEST={};
 
 async function busy(btn, fn){ if(btn) btn.disabled=true; try{ return await fn(); } finally{ if(btn) btn.disabled=false; } }
 
@@ -107,6 +112,8 @@ function card(k){
   const dot=el('span',{className:'dot'+(st?' on':(s.error?' err':''))});
   const name=el('div',{className:'name'}, dot, st ? 'Kiosk '+(st.name||st.hostname) : k.host);
   const sub=el('div',{className:'sub', textContent: k.host+(st?' · '+st.hostname+' · wersja '+(st.version||'?'):'')});
+  if(st && st.version){ const want=st.latest_version||LATEST[st.edition==='light'?'light':'full']; const old=want && newer(want, st.version);
+    sub.append(el('span',{className:'vbadge'+(old?' new':''), textContent: old?'↑ dostępna '+want:'aktualna'})); }
   const top=el('div',{className:'top'}, el('div',null,name,sub));
   const c=el('article',{className:'card k'+(st?'':' off')}, top);
   if(s.error){ c.append(el('div',{className:'err', textContent:'Brak połączenia: '+s.error})); }
@@ -121,9 +128,12 @@ function card(k){
     const scr=el('button',{type:'button', textContent: st.screen==='off'?'Włącz ekran':'Wyłącz ekran'});
     scr.onclick=()=>busy(scr,()=>kpost(k,'/api/screen',{on:st.screen==='off'}));
     const open=el('a',{className:'btn primary', href:'k/'+k.id+'/', textContent:'Otwórz panel'});
+    const want=st.latest_version||LATEST[st.edition==='light'?'light':'full'];
+    const upb=(want && st.version && newer(want, st.version)) ? el('button',{type:'button', textContent:'Aktualizuj do '+want}) : null;
+    if(upb) upb.onclick=()=>{ if(confirm('Zaktualizować kiosk '+(st.name||k.host)+' do '+want+'? Ustawienia zostają.')) busy(upb,()=>kpost(k,'/api/update/github',{},'Aktualizacja uruchomiona — kilka minut')); };
     const del=el('button',{type:'button', className:'danger', textContent:'Usuń z listy'});
     del.onclick=()=>{ if(confirm('Usunąć '+k.host+' z listy? (kiosk działa dalej)')) api('api/kiosks/'+k.id,{method:'DELETE'}).then(()=>{ toast('Usunięto z listy','good'); load(); }).catch(e=>toast(e.message,'bad')); };
-    c.append(el('div',{className:'acts'}, open, scr, el('div',{className:'wide'}, sel), del));
+    c.append(el('div',{className:'acts'}, open, upb, scr, el('div',{className:'wide'}, sel), del));
   } else {
     const del=el('button',{type:'button', className:'danger', textContent:'Usuń z listy'});
     del.onclick=()=>{ if(confirm('Usunąć '+k.host+' z listy?')) api('api/kiosks/'+k.id,{method:'DELETE'}).then(load); };
@@ -146,7 +156,12 @@ async function refresh(k){
        STATE[k.id]={status:st, views:Object.keys(v||{})}; }
   catch(e){ STATE[k.id]={error:e.message}; }
 }
-async function load(){ try{ KIOSKS=(await api('api/kiosks')).kiosks; await Promise.all(KIOSKS.map(refresh)); render(); } catch(e){ toast(e.message,'bad'); } }
+const vparts=v=>String(v||'').replace(/^\d+:/,'').split(/[^0-9]+/).filter(Boolean).map(Number);
+function newer(a,b){ const x=vparts(a), y=vparts(b); for(let i=0;i<Math.max(x.length,y.length);i++){ const d=(x[i]||0)-(y[i]||0); if(d) return d>0; } return false; }
+async function loadLatest(){ try{ LATEST=await api('api/latest');
+  $('latestinfo').textContent='Najnowsze wydanie: '+(LATEST.full||'?')+(LATEST.light?' (light: '+LATEST.light+')':'');
+  const b=$('addonupd'); if(LATEST.addon && newer(LATEST.addon, LATEST.addon_installed)){ b.hidden=false; b.textContent='Nowa wersja dodatku Kioski: '+LATEST.addon+' (masz '+LATEST.addon_installed+'). Zaktualizuj: Ustawienia → Aktualizacje albo Ustawienia → Dodatki → Kioski → Aktualizuj.'; } else b.hidden=true; }catch(e){} }
+async function load(){ try{ await loadLatest(); KIOSKS=(await api('api/kiosks')).kiosks; await Promise.all(KIOSKS.map(refresh)); render(); } catch(e){ toast(e.message,'bad'); } }
 async function kpost(k, path, body, okMsg){ try{ const r=await post('k/'+k.id+path, body); toast(okMsg||r.output||'Gotowe','good'); setTimeout(()=>refresh(k).then(render), 1500); } catch(e){ toast('Kiosk '+k.host+': '+e.message,'bad'); } }
 async function all(path, body, label, btn){
   const on=KIOSKS.filter(k=>(STATE[k.id]||{}).status); if(!on.length) return toast('Żaden kiosk nie odpowiada','bad');
@@ -156,7 +171,7 @@ async function all(path, body, label, btn){
 $('sayf').onsubmit=e=>{ e.preventDefault(); const t=$('say').value.trim(); if(t) all('/api/say',{text:t},'Powiedziano',e.submitter).then(()=>$('say').value=''); };
 $('bubf').onsubmit=e=>{ e.preventDefault(); const t=$('bub').value.trim(); if(t) all('/api/bubble',{text:t, seconds:15},'Dymek pokazany',e.submitter).then(()=>$('bub').value=''); };
 $('allviewb').onclick=e=>{ const v=$('allview').value; if(v) all('/api/view',{name:v},'Widok „'+v+'”',e.target); };
-const ALL={'screen-on':['/api/screen',{on:true},'Ekrany włączone'], 'screen-off':['/api/screen',{on:false},'Ekrany wyłączone'], 'restart':['/api/restart',{},'Odświeżono'], 'update-check':['/api/update/check',{},'Sprawdzanie aktualizacji uruchomione']};
+const ALL={'screen-on':['/api/screen',{on:true},'Ekrany włączone'], 'screen-off':['/api/screen',{on:false},'Ekrany wyłączone'], 'restart':['/api/restart',{},'Odświeżono'], 'update-check':['/api/update/check',{},'Sprawdzanie aktualizacji uruchomione'], 'update-github':['/api/update/github',{},'Aktualizacja z GitHuba uruchomiona']};
 document.querySelectorAll('[data-all]').forEach(b=>b.onclick=()=>{ const a=ALL[b.dataset.all]; all(a[0],a[1],a[2],b); });
 $('deb').onchange=async()=>{ const f=$('deb').files[0]; $('deb').value=''; if(!f) return;
   const on=KIOSKS.filter(k=>(STATE[k.id]||{}).status); if(!confirm('Zainstalować '+f.name+' na '+on.length+' kiosk(ach)? Ustawienia zostają.')) return;

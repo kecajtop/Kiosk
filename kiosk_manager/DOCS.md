@@ -8,6 +8,15 @@ Jeden panel do wszystkich kiosków z pakietem **kiosk-setup**, w menu bocznym Ho
 - **Otwórz panel** — pełny panel wybranego kiosku wewnątrz Home Assistant, bez osobnego logowania. Kiosk musi mieć kiosk-setup **1.0.1 lub nowszy**.
 - Na wszystkich kioskach naraz: komunikat głosowy, dymek, widok, włączenie/wyłączenie ekranów, odświeżenie, aktualizacja z pliku `.deb`.
 - **Szukaj w sieci** — znajduje kioski w sieci lokalnej Home Assistant.
+- **Aktualizacje kiosków:** przy każdym kiosku widać, czy ma najnowszą wersję („↑ dostępna X”, przycisk
+  „Aktualizuj do X”), a „Aktualizuj wszystkie z GitHuba” aktualizuje wszystkie naraz. Każdy kiosk ma też w HA
+  encję „Aktualizacja” (Ustawienia → Aktualizacje) i przełącznik „Automatyczne aktualizacje”.
+
+## Aktualizacja samego dodatku
+
+Nowe wersje dodatku Home Assistant pokazuje w Ustawienia → Aktualizacje (po odświeżeniu sklepu dodatków).
+Na karcie dodatku (Ustawienia → Dodatki → Kioski) możesz włączyć **Automatyczne aktualizacje** — wtedy HA
+instaluje nowe wersje sam. Dodatek pokazuje też pasek, gdy w repozytorium jest nowsza wersja.
 
 ## Dodanie kiosku
 

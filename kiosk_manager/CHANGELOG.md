@@ -1,3 +1,8 @@
+## 1.1.0
+- Wersje kiosków: przy każdym kiosku „aktualna” albo „↑ dostępna X” i przycisk „Aktualizuj do X” (z GitHuba).
+- „Aktualizuj wszystkie z GitHuba” w sekcji Wszystkie kioski naraz.
+- Pasek z informacją, gdy w repozytorium jest nowsza wersja dodatku.
+
 ## 1.0.1
 - Pierwsze wydanie: lista kiosków z wyszukiwaniem w sieci, stan każdego kiosku, panel kiosku
   otwierany w Home Assistant (Ingress), akcje na wszystkie kioski naraz (komunikat, dymek, widok,

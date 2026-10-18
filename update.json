@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.13",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.13_amd64.deb",
-  "sha256": "a492c0add5846699ba45ee86dcd30fff2a06c147fc0fbd7542f5d7da7a3592fa",
-  "size": 23044928,
+  "version": "1:1.0.14",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.14_amd64.deb",
+  "sha256": "02a59a402cb0a7b1a6ec2d5c9d559a86b8e0f36545b03a755dc85547e5038d8a",
+  "size": 23044260,
   "date": "2026-10-18",
-  "notes": "Szybki podgląd ekranu kiosku na żywo (strumień wideo ok. 10 kl./s); VNC tylko do sterowania."
+  "notes": "Aktualizacje kiosku w Home Assistant (encja Aktualizacja, automatyczne aktualizacje), podgląd ekranu jako kamera MJPEG w HA."
 }

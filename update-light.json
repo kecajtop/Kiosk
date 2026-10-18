@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.13",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.13_amd64.deb",
-  "sha256": "834dfa7ee05544295ef63a83d4b83099856c7d0b8891eae35b3ba47d681dd0f8",
-  "size": 423862,
+  "version": "1:1.0.14",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.14_amd64.deb",
+  "sha256": "84271f139ff9db459cb8e443efcfcf0f5b8d7e09a5c350cfcbab3003aab6cb6e",
+  "size": 425542,
   "date": "2026-10-18",
-  "notes": "Szybki podgląd ekranu kiosku na żywo (strumień wideo ok. 10 kl./s); VNC tylko do sterowania."
+  "notes": "Aktualizacje kiosku w Home Assistant (encja Aktualizacja, automatyczne aktualizacje), podgląd ekranu jako kamera MJPEG w HA."
 }

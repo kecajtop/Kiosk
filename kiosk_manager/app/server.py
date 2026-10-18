@@ -30,6 +30,32 @@ HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", 
        "transfer-encoding", "upgrade", "x-frame-options", "www-authenticate", "content-length"}
 HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}$")
 LOCK = threading.Lock()
+ADDON_VERSION = "1.1.0"          # = version w config.yaml
+RAW = "https://raw.githubusercontent.com/kecajtop/Kiosk/main/"
+_LATEST = {"t": 0, "data": None}
+
+
+def latest_versions():
+    """Najnowsze wydania z GitHuba: kiosk-setup (pełna/light) i ten dodatek — pamiętane 1 h."""
+    if _LATEST["data"] and time.time() - _LATEST["t"] < 3600:
+        return _LATEST["data"]
+    out = {"addon_installed": ADDON_VERSION}
+    for key, f in (("full", "update.json"), ("light", "update-light.json")):
+        try:
+            with urllib.request.urlopen(RAW + f, timeout=10) as r:
+                j = json.load(r)
+            out[key] = j.get("version", "")
+            out[key + "_notes"] = j.get("notes", "")
+        except Exception as e:
+            log("najnowsza wersja (%s): %s" % (f, e))
+    try:
+        with urllib.request.urlopen(RAW + "kiosk_manager/config.yaml", timeout=10) as r:
+            m = re.search(r'^version:\s*"?([^"\s]+)', r.read().decode("utf-8", "replace"), re.M)
+        out["addon"] = m.group(1) if m else ""
+    except Exception as e:
+        log("najnowsza wersja dodatku: %s" % e)
+    _LATEST.update(t=time.time(), data=out)
+    return out
 
 
 def log(msg):
@@ -280,6 +306,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.command == "GET" and path in ("/", "/index.html"):
                 with open(os.path.join(APP_DIR, "index.html"), "rb") as f:
                     return self.send(200, f.read(), "text/html; charset=utf-8")
+            if self.command == "GET" and path == "/api/latest":
+                return self.send(200, latest_versions())
             if self.command == "GET" and path == "/api/kiosks":
                 return self.send(200, {"kiosks": [{"id": k["id"], "host": k["host"], "port": k.get("port", 8088)}
                                                   for k in load()]})

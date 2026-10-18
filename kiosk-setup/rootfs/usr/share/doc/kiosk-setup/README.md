@@ -786,7 +786,10 @@ zastosuje.
 
 **W panelu:** Kamery → „▶ Na żywo” — ekran kiosku na żywo w przeglądarce lub aplikacji: strumień wideo
 (MJPEG z ffmpeg, ok. 10 klatek/s, `GET /api/screen/live?w=960&fps=10`), bez instalowania programu VNC.
-„Sterowanie” przełącza na VNC (noVNC) i przekazuje dotyk, mysz i klawiaturę. Połączenie idzie przez
+„Sterowanie” przełącza na VNC (noVNC) i przekazuje dotyk, mysz i klawiaturę.
+**W Home Assistant:** integracja MJPEG IP Camera z adresem `http://<kiosk>:8088/api/screen/live?w=960&fps=5`
+i zdjęciem `http://<kiosk>:8088/api/screenshot` (użytkownik/hasło: konto domownika albo token) — gotowe adresy
+są w panelu: Połączenia → MQTT i Home Assistant. Połączenie idzie przez
 panel (WebSocket → x11vnc na 127.0.0.1:5900) z jednorazowym biletem dla administratora; hasło VNC panel bierze
 z usługi x11vnc (`-passwd` albo plik `-rfbauth`).
 
@@ -919,7 +922,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 - **Przyciski głośności telefonu:** Dźwięk → Głośność i głos → „Przyciski głośności tego
   urządzenia sterują kioskiem”. Chrome na Androidzie zwykle nie przekazuje ich stronom —
   wtedy użyj aplikacji.
-- **Aplikacja Kiosk** (`releases/kiosk-android-1.3.apk`, Android 5.0+): panel na pełnym ekranie,
+- **Aplikacja Kiosk** (`releases/kiosk-android-1.4.apk`, Android 5.0+): panel na pełnym ekranie,
   przyciski głośności telefonu zawsze sterują kioskiem, wyszukiwanie kiosków w sieci, zapamiętany
   token lub konto domownika, HTTPS kiosku (zaufanie po porównaniu odcisku SHA-256), „wstecz”
   cofa zakładki, Ustawienia → „Aplikacja Kiosk” otwiera ustawienia aplikacji. Po otwarciu pokazuje
@@ -942,11 +945,16 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 
 ## Aktualizacja z GitHuba i z gita
 
+- **W Home Assistant:** kiosk ma encję „Aktualizacja” — HA pokazuje zainstalowaną i dostępną wersję
+  w Ustawienia → Aktualizacje, „Zainstaluj” aktualizuje kiosk (z adresu aktualizacji albo z GitHuba),
+  widać postęp. Przełącznik „Automatyczne aktualizacje” włącza nocne aktualizacje, przycisk „Sprawdź
+  aktualizacje” sprawdza od razu (kiosk sprawdza też sam co 6 godzin).
+
 - **Aktualizuj z GitHuba (wydanie)** — najnowsze wydanie tej edycji, bez ustawiania adresu
   (`sudo kiosk-update github`).
 - **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
   github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
-  i go instaluje; wersja np. `1:1.0.13+git20261017.abc1234`. W terminalu:
+  i go instaluje; wersja np. `1:1.0.14+git20261017.abc1234`. W terminalu:
   `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
 
 ## Wersja light (kiosk-setup-light)
@@ -976,6 +984,9 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.14** (18.10.2026) — aktualizacje kiosku w Home Assistant (encja „Aktualizacja”, automatyczne
+  aktualizacje, sprawdzanie), adresy podglądu ekranu dla integracji MJPEG IP Camera; dodatek Kioski 1.1.0
+  (wersje i aktualizacja kiosków); aplikacja Kiosk 1.4 (automatyczna aktualizacja aplikacji).
 - **1.0.13** (18.10.2026) — szybki podgląd ekranu na żywo (strumień MJPEG ok. 10 kl./s), VNC tylko
   do sterowania.
 - **1.0.12** (18.10.2026) — ekran kiosku na żywo w panelu i aplikacji (noVNC przez WebSocket

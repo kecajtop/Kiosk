@@ -13,11 +13,12 @@ Panel kiosku kecaj (kiosk-setup) jako aplikacja na telefon:
 - ustawienia aplikacji: Ustawienia → pierwsza pozycja „Aplikacja Kiosk”,
 - **aktualizacje z GitHuba:** raz dziennie (i przyciskiem „Sprawdź aktualizację aplikacji”) aplikacja czyta
   `android.json` z repozytorium, pobiera nowy APK, sprawdza SHA-256 i uruchamia systemową instalację
-  (Android zapyta raz o zgodę na instalowanie aplikacji z tego źródła),
+  (Android zapyta raz o zgodę na instalowanie aplikacji z tego źródła); przy włączonym „Aktualizuj aplikację
+  automatycznie” nowa wersja instaluje się sama (Android 12+ bez pytania, gdy system na to pozwala),
 - po otwarciu **Pilot**: „Teraz gra”, głośność, kafelki ulubionych stacji, ekran; na dole zakładki Pilot, Kamery,
   Ustawienia; widok po otwarciu do wyboru w ustawieniach aplikacji.
 
-Android 5.0 lub nowszy. Instalacja: skopiuj `releases/kiosk-android-1.3.apk` na telefon i otwórz
+Android 5.0 lub nowszy. Instalacja: skopiuj `releases/kiosk-android-1.4.apk` na telefon i otwórz
 (zgoda na „instalowanie nieznanych aplikacji” dla przeglądarki lub menedżera plików).
 
 ## Budowanie

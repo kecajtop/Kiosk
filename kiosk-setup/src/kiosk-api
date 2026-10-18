@@ -1423,7 +1423,8 @@ def status():
         "brightness": BRIGHT.value,
         "radio": read_radio()["playing"],
         "system": system_sensors(),
-        "version": PKG_VERSION,
+        "version": PKG_VERSION, "edition": "light" if LIGHT else "full",
+        "latest_version": (UPDWATCH.latest if UPDWATCH else None),
         "audio": audio_status(),
         "voice": default_voice(),
         "weather": WEATHER.current if WEATHER else None,
@@ -2689,6 +2690,13 @@ class MqttBridge:
             ("sensor", "person_%d" % i, {"name": "Osoba kamera %d" % i, "icon": "mdi:account-eye",
                                          "state_topic": p + "/person/%d" % i}))
         ] + [
+            ("update", "firmware", {"name": "Aktualizacja", "device_class": "firmware", "entity_category": "config",
+                                    "state_topic": p + "/update/state", "command_topic": p + "/update/set",
+                                    "payload_install": "install"}),
+            ("switch", "auto_update", {"name": "Automatyczne aktualizacje", "icon": "mdi:update", "entity_category": "config",
+                                       "state_topic": p + "/update/auto", "command_topic": p + "/auto_update/set"}),
+            ("button", "update_check", {"name": "Sprawdź aktualizacje", "icon": "mdi:cloud-search", "entity_category": "config",
+                                        "command_topic": p + "/update_check/set", "payload_press": "PRESS"}),
             ("event", "face", {"name": "Twarz", "icon": "mdi:face-recognition", "state_topic": p + "/face/event",
                                "event_types": ["rozpoznana", "nieznana"]}),
             ("camera", "screen", {"name": "Podgląd ekranu", "topic": p + "/screen/image", "icon": "mdi:monitor-eye"}),
@@ -2834,6 +2842,21 @@ def handle_command(cmd, payload):
         return set_default_voice(str(payload))
     if cmd == "play/set":
         return audio_play(v.get("url") if isinstance(v, dict) else payload)
+    if cmd == "update/set":
+        if str(payload).strip().lower() not in ("install", "on", "1", "{}"):
+            raise ValueError("update/set: install")
+        return UPDWATCH.install() if UPDWATCH else start_update("github")
+    if cmd == "update_check/set":
+        if UPDWATCH:
+            UPDWATCH.checked = 0
+            UPDWATCH.wake.set()
+        return "Sprawdzam dostępną wersję"
+    if cmd == "auto_update/set":
+        on = str(payload).strip().upper() in ("ON", "1", "TRUE", "YES")
+        write_updates({"auto": on})
+        if UPDWATCH:
+            UPDWATCH.wake.set()
+        return "Automatyczne aktualizacje: " + ("włączone" if on else "wyłączone")
     if cmd == "stop/set":
         return audio_stop()
     if cmd == "volume/set":
@@ -3540,6 +3563,80 @@ def write_updates(body):
     if os.path.exists("/usr/local/sbin/kiosk-firewall"):
         qrun(["/usr/local/sbin/kiosk-firewall", "refresh"], timeout=60)
     return "Aktualizacje: %s%s" % (url or "bez adresu", ", automatycznie w nocy" if auto and url else "")
+
+
+class UpdateWatch:
+    """Encja „Aktualizacja” w Home Assistant: wersja zainstalowana / dostępna, postęp, instalacja z HA."""
+    CHECK_EVERY = 6 * 3600
+
+    def __init__(self):
+        self.latest, self.notes, self.checked, self.err = None, "", 0, ""
+        self.pub, self.conn = None, None
+        self.wake = threading.Event()
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def check(self):
+        cfg = read_updates()
+        try:
+            if cfg["url"]:
+                r = subprocess.run(["/usr/local/sbin/kiosk-update", "latest"], capture_output=True, text=True, timeout=120)
+                m = re.search(r"^Dostępna: (\S+)", r.stdout, re.M)
+                if not m or m.group(1) == "?":
+                    raise RuntimeError((r.stdout.strip().splitlines() or ["brak odpowiedzi"])[-1][:200])
+                self.latest = m.group(1)
+                n = re.search(r"^Opis: (.*)$", r.stdout, re.M)
+                self.notes = n.group(1).strip() if n else ""
+            else:   # bez adresu: wydania z GitHuba dla tej edycji
+                m = http_json("https://raw.githubusercontent.com/kecajtop/Kiosk/main/%s" %
+                              ("update-light.json" if LIGHT else "update.json"), timeout=20)
+                self.latest, self.notes = str(m.get("version") or "") or None, str(m.get("notes") or "")
+            self.err = ""
+        except Exception as e:
+            self.err = str(e)[:200]
+            log("aktualizacje: nie udało się sprawdzić dostępnej wersji: %s" % self.err)
+        self.checked = time.time()
+
+    def state(self):
+        cfg = read_updates()
+        inst = pkg_version()
+        st = {"installed_version": inst, "latest_version": self.latest or inst,
+              "title": "kiosk-setup-light" if LIGHT else "kiosk-setup",
+              "release_url": "https://github.com/kecajtop/Kiosk/blob/main/CHANGELOG.md",
+              "release_summary": (self.notes or "")[:250], "in_progress": cfg["running"]}
+        pr = cfg["progress"] or {}
+        if cfg["running"] and isinstance(pr.get("percent"), (int, float)):
+            st["update_percentage"] = int(pr["percent"])
+        return st, ("ON" if cfg["auto"] else "OFF")
+
+    def publish(self, force=False):
+        if not BRIDGE or not BRIDGE.connected:
+            return
+        conn = id(BRIDGE.client)
+        st = self.state()
+        if force or st != self.pub or conn != self.conn:
+            self.pub, self.conn = st, conn
+            BRIDGE.publish_raw("update/state", json.dumps(st[0], ensure_ascii=False))
+            BRIDGE.publish_raw("update/auto", st[1])
+
+    def _loop(self):
+        time.sleep(60)
+        while True:
+            try:
+                if time.time() - self.checked > self.CHECK_EVERY:
+                    self.check()
+                self.publish()
+            except Exception as e:
+                log("aktualizacje (HA): %s" % e)
+            if self.wake.wait(10):
+                self.wake.clear()
+
+    def install(self):
+        out = start_update("check" if read_updates()["url"] else "github")
+        self.wake.set()
+        return out
+
+
+UPDWATCH = None
 
 
 def start_update(*args):
@@ -6516,6 +6613,11 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <div id="mdres" class="hint"></div>
 <p class="hint">Home Assistant sam doda kiosk jako urządzenie „Kiosk <span class="kname"></span>” (Ustawienia → Urządzenia i usługi → MQTT), gdy kiosk połączy się z tym samym brokerem. Broker w HA: dodatek <b>Mosquitto broker</b> + integracja <b>MQTT</b>. Login: dowolny użytkownik HA — najlepiej osobny, np. <code>kiosk</code> (Ustawienia → Osoby → Użytkownicy).</p>
 </form>
+<h3>Podgląd ekranu w Home Assistant</h3>
+<p class="hint">Ekran kiosku na żywo jako kamera w HA: Ustawienia → Urządzenia i usługi → Dodaj integrację → <b>MJPEG IP Camera</b>. Najlepiej z kontem domownika (System → Konta i dostęp), które może tylko oglądać i sterować głośnością.</p>
+<div class="field"><span class="lbl">Adres MJPEG</span><code id="hamjpeg" class="mono" style="word-break:break-all"></code></div>
+<div class="field"><span class="lbl">Adres zdjęcia (still image)</span><code id="hastill" class="mono" style="word-break:break-all"></code></div>
+<p class="hint">Użytkownik: nazwa konta domownika (albo dowolna z tokenem jako hasłem), hasło: hasło konta albo token. Przy adresie https wyłącz „Weryfikuj certyfikat SSL”. W HA pojawiają się też encje „Aktualizacja”, „Automatyczne aktualizacje” i „Sprawdź aktualizacje” — kiosk widać w Ustawienia → Aktualizacje.</p>
 </section>
 <section class="card pane" role="tabpanel" id="frigate" aria-labelledby="h-frigate" hidden><h2 id="h-frigate">Frigate / go2rtc</h2>
 <p class="lead">Obraz z mniejszym opóźnieniem i mniejszym obciążeniem kamer: kiosk bierze strumienie z serwera go2rtc albo Frigate (restream rtsp://serwer:8554/nazwa).</p>
@@ -6734,7 +6836,8 @@ $('mdetect').onclick=async()=>{
   }catch(e){ $('mdres').textContent=e.message; }
   finally{ b.disabled=false; }
 };
-async function loadMqtt(){
+function haUrls(){ const b=location.origin+location.pathname.replace(/[^/]*$/,''); $('hamjpeg').textContent=b+'api/screen/live?w=960&fps=5'; $('hastill').textContent=b+'api/screenshot'; }
+async function loadMqtt(){ try{ haUrls(); }catch(e){}
   const m=await api('api/mqtt');
   $('men').checked=m.enabled; $('mhost').value=m.host||''; $('mport').value=m.port||1883; $('muser').value=m.user||'';
   $('mpass').placeholder=m.has_password?'bez zmian (ustawione)':'brak'; $('mprefix').value=m.prefix||'kecaj/kiosk'; $('mdisc').checked=m.discovery!==false;
@@ -7512,7 +7615,7 @@ def cli():
 
 
 def main():
-    global BRIDGE, WEATHER, ANNOUNCER, AUTO, MOTION, FACES, PKG_VERSION, RO
+    global BRIDGE, WEATHER, ANNOUNCER, AUTO, MOTION, FACES, UPDWATCH, PKG_VERSION, RO
     if len(sys.argv) > 1:
         sys.exit(cli())
     if not os.path.exists(TOKEN_FILE):
@@ -7522,6 +7625,7 @@ def main():
     AUTO = Automation()
     MOTION = Motion()
     FACES = Faces()
+    UPDWATCH = UpdateWatch()
     PKG_VERSION = pkg_version()
     try:
         with open(OVERLAY_CONF) as f:
