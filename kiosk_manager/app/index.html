@@ -75,7 +75,7 @@ td{padding:8px 4px;border-bottom:1px solid var(--line)}
 </div></section>
 
 <div class="kiosks" id="kiosks"></div>
-<p class="empty" id="empty" hidden>Nie ma jeszcze kiosków. Kliknij <b>Szukaj w sieci</b> albo <b>Dodaj kiosk</b>.</p>
+<p class="empty" id="empty" hidden>Nie ma jeszcze kiosków. Na kiosku otwórz panel → <b>MQTT i Home Assistant</b> → <b>Paruj z HA</b> — kiosk pojawi się tu sam w ciągu 2 minut (albo od razu po <b>Szukaj w sieci</b>). Można też <b>Dodaj kiosk</b> z tokenem.</p>
 </main>
 
 <dialog id="dlg"><form id="addf" method="dialog">
@@ -187,8 +187,10 @@ $('sclose').onclick=()=>$('sdlg').close();
 $('sgo').onclick=()=>doScan();
 async function doScan(){ $('sinfo').textContent='Szukam… (do kilkunastu sekund)'; $('sres').replaceChildren();
   try{ const r=await post('api/scan',{network:$('snet').value.trim()}); $('sinfo').textContent='Sieci: '+(r.networks.join(', ')||'—')+'. Znalezione kioski: '+r.found.length+'.';
-    $('sres').replaceChildren(...r.found.map(f=>{ const b=el('button',{type:'button', className:f.known?'':'primary', textContent:f.known?'Na liście':'Dodaj'}); b.disabled=f.known; b.onclick=()=>{ $('sdlg').close(); openAdd(f.host); };
-      return el('tr',null, el('td',null, el('b',{textContent:'Kiosk '+(f.name||f.hostname)}), el('div',{className:'hint', textContent:f.host+' · '+(f.version||'?')})), el('td',{style:'text-align:right'}, b)); })); }
+    $('sres').replaceChildren(...r.found.map(f=>{ const b=el('button',{type:'button', className:f.known?'':'primary', textContent:f.paired?'Sparowano':(f.known?'Na liście':'Dodaj z tokenem')}); b.disabled=f.known; b.onclick=()=>{ $('sdlg').close(); openAdd(f.host); };
+      const hint=f.host+' · '+(f.version||'?')+(f.pair_error?' · parowanie: '+f.pair_error:(f.known?'':' · albo na kiosku: Paruj z HA i szukaj ponownie'));
+      return el('tr',null, el('td',null, el('b',{textContent:'Kiosk '+(f.name||f.hostname)}), el('div',{className:'hint', textContent:hint})), el('td',{style:'text-align:right'}, b)); }));
+    if(r.found.some(f=>f.paired)){ toast(r.found.filter(f=>f.paired).map(f=>f.paired).join('\n'),'good'); load(); } }
   catch(e){ $('sinfo').textContent=e.message; } }
-load(); setInterval(()=>Promise.all(KIOSKS.map(refresh)).then(render), 20000);
+load(); setInterval(async()=>{ try{ KIOSKS=(await api('api/kiosks')).kiosks; }catch(e){} await Promise.all(KIOSKS.map(refresh)); render(); }, 20000);
 </script></body></html>

@@ -20,6 +20,12 @@ instaluje nowe wersje sam. Dodatek pokazuje też pasek, gdy w repozytorium jest 
 
 ## Dodanie kiosku
 
+**Parowanie (bez SSH, kiosk-setup 1.0.15 lub nowszy):** w panelu kiosku otwórz **MQTT i Home Assistant** →
+**Paruj z HA**. Przez 5 minut kiosk czeka na dodatek — dodatek szuka kiosków w tle co 2 minuty i doda go sam
+(od razu: **Szukaj w sieci**). Jedno kliknięcie pozwala na jedno sparowanie.
+
+**Ręcznie, tokenem:**
+
 1. Na kiosku (SSH) wypisz token: `sudo kiosk-mode api-token`.
 2. W panelu **Kioski** kliknij **Szukaj w sieci** → **Dodaj** przy kiosku (albo **Dodaj kiosk** i wpisz adres).
 3. Wklej token. Dodatek sprawdzi go i zapamięta.
