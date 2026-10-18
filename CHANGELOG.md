@@ -1,5 +1,16 @@
 # Zmiany
 
+## 1.0.16 (2026-10-18) · aplikacja Kiosk 1.5
+- **Odtwarzacz w Androidzie (aplikacja 1.5):** powiadomienie z okładką, tytułem i stacją, przyciski ⏮ ⏯ ⏭ — także na
+  ekranie blokady, w słuchawkach i na zegarku. Głośność kiosku z przycisków telefonu działa też w tle i przy
+  zablokowanym ekranie (jak przy Chromecaście). Włączane w ustawieniach aplikacji („Odtwarzacz w powiadomieniu”).
+- **Pilot w panelu jak odtwarzacz:** okładka, tytuł, wykonawca i stacja, przyciski ⏮ ⏯ ⏭ i głośność −/+.
+- **API:** `POST /api/audio/toggle` (graj/pauza — wznawia ostatnią stację), `POST /api/radio/step {"dir": 1|-1}`
+  (następna/poprzednia ulubiona), `GET /api/nowplaying/art` (okładka); MQTT `radio_next/set`, `radio_prev/set`
+  i przyciski „Następna stacja” / „Poprzednia stacja” w HA. Dostępne też dla kont domowników.
+- Gotowe pakiety: `releases/kiosk-setup_1.0.16_amd64.deb`, `releases/kiosk-setup-light_1.0.16_amd64.deb`,
+  `releases/kiosk-android-1.5.apk`.
+
 ## 1.0.15 (2026-10-18) · dodatek Kioski 1.2.0
 - **Paruj z HA:** przycisk w panelu kiosku (MQTT i Home Assistant) otwiera parowanie na 5 minut — dodatek Kioski
   sam znajduje kiosk w sieci i dodaje go do listy, bez SSH i przepisywania tokenu. Jedno kliknięcie = jedno

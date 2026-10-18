@@ -259,9 +259,12 @@ public class MainActivity extends Activity {
         try { return new JSONArray(prefs.getString("kiosks", "[]")); } catch (Exception e) { return new JSONArray(); }
     }
 
-    JSONObject current() {
+    JSONObject current() { return currentKiosk(prefs); }
+
+    static JSONObject currentKiosk(SharedPreferences prefs) {
         String u = prefs.getString("current", null);
-        JSONArray a = saved();
+        JSONArray a;
+        try { a = new JSONArray(prefs.getString("kiosks", "[]")); } catch (Exception e) { a = new JSONArray(); }
         for (int i = 0; i < a.length(); i++) {
             JSONObject k = a.optJSONObject(i);
             if (k != null && k.optString("url").equals(u)) return k;
@@ -305,7 +308,7 @@ public class MainActivity extends Activity {
         return sch + "://" + (host.contains(":") ? "[" + host + "]" : host) + ":" + port + path;
     }
 
-    String authHeader(JSONObject k) {
+    static String authHeader(JSONObject k) {
         String user = k.optString("user", "kiosk");
         if (user.isEmpty()) user = "kiosk";
         String raw = user + ":" + k.optString("token");
@@ -325,7 +328,7 @@ public class MainActivity extends Activity {
             s.setJavaScriptEnabled(true);
             s.setDomStorageEnabled(true);
             s.setMediaPlaybackRequiresUserGesture(false);
-            s.setUserAgentString(s.getUserAgentString() + " KioskApp/1.4");
+            s.setUserAgentString(s.getUserAgentString() + " KioskApp/1.5");
             web.addJavascriptInterface(new Bridge(), "KioskApp");
             web.setWebChromeClient(new WebChromeClient() {
                 @Override
@@ -389,7 +392,28 @@ public class MainActivity extends Activity {
             } });
         }
         if (web.getParent() == null) setContentView(web);
+        startPlayer();
         web.loadUrl(base + "#/" + prefs.getString("start", "start"));   // widok startowy (domyślnie Pilot: radio i głośność)
+    }
+
+    /** Odtwarzacz w powiadomieniu (MediaService): okładka, ⏮ ⏯ ⏭, głośność kiosku z przycisków telefonu w tle. */
+    void startPlayer() {
+        if (!prefs.getBoolean("player", true)) return;
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            try {
+                if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED
+                        && !prefs.getBoolean("askedNotif", false)) {
+                    prefs.edit().putBoolean("askedNotif", true).apply();
+                    requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 5);
+                }
+            } catch (Exception ignored) { }
+        }
+        MediaService.start(this);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
+        if (req == 5) MediaService.start(this);
     }
 
     void showError(String msg) {
@@ -444,8 +468,30 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------------ HTTP (API kiosku)
 
     JSONObject http(JSONObject k, String path, String body, int timeout) throws Exception {
+        return httpS(prefs, k, path, body, timeout);
+    }
+
+    /** Surowe bajty z API kiosku (np. okładka); null przy błędzie HTTP. */
+    static byte[] getBytes(SharedPreferences prefs, JSONObject k, String path, int timeout, int limit) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(k.optString("url") + path).openConnection();
-        pinTls(c, Uri.parse(k.optString("url")).getHost());
+        pinTls(prefs, c, Uri.parse(k.optString("url")).getHost());
+        c.setConnectTimeout(timeout);
+        c.setReadTimeout(timeout);
+        if (k.has("token")) c.setRequestProperty("Authorization", authHeader(k));
+        if (c.getResponseCode() != 200) { c.disconnect(); return null; }
+        InputStream in = c.getInputStream();
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        byte[] b = new byte[16384];
+        int n;
+        while ((n = in.read(b)) > 0) { buf.write(b, 0, n); if (buf.size() > limit) break; }
+        in.close();
+        c.disconnect();
+        return buf.size() > limit ? null : buf.toByteArray();
+    }
+
+    static JSONObject httpS(SharedPreferences prefs, JSONObject k, String path, String body, int timeout) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(k.optString("url") + path).openConnection();
+        pinTls(prefs, c, Uri.parse(k.optString("url")).getHost());
         c.setConnectTimeout(timeout);
         c.setReadTimeout(timeout);
         if (k.has("token")) c.setRequestProperty("Authorization", authHeader(k));
@@ -477,7 +523,7 @@ public class MainActivity extends Activity {
     }
 
     /** HTTPS z własnym certyfikatem kiosku: przyjmuj tylko certyfikat o zapamiętanym odcisku. */
-    void pinTls(HttpURLConnection c, final String host) throws Exception {
+    static void pinTls(SharedPreferences prefs, HttpURLConnection c, final String host) throws Exception {
         if (!(c instanceof HttpsURLConnection)) return;
         final String pin = prefs.getString("pin:" + host, null);
         if (pin == null) return;   // bez zapamiętanego odcisku: zwykła weryfikacja systemowa
@@ -593,6 +639,17 @@ public class MainActivity extends Activity {
         vk.setChecked(volKeys);
         vk.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(android.widget.CompoundButton cb, boolean on) { volKeys = on; prefs.edit().putBoolean("volkeys", on).apply(); } });
         box.addView(vk);
+
+        final CheckBox pl = new CheckBox(this);
+        pl.setText("Odtwarzacz w powiadomieniu i na ekranie blokady (okładka, ⏮ ⏯ ⏭, głośność kiosku w tle)");
+        pl.setTextColor(TEXT);
+        pl.setChecked(prefs.getBoolean("player", true));
+        pl.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(android.widget.CompoundButton cb, boolean on) {
+                prefs.edit().putBoolean("player", on).apply();
+                if (on) { if (current() != null) startPlayer(); } else MediaService.stop(MainActivity.this);
+            } });
+        box.addView(pl);
 
         box.addView(label("Widok po otwarciu"));
         final String[][] views = {{"start", "Pilot — radio, głośność, ekran"}, {"kamery", "Kamery"}, {"radio", "Radio i muzyka (wyszukiwarka stacji)"}, {"ustawienia", "Ustawienia"}};

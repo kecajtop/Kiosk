@@ -2666,6 +2666,10 @@ class MqttBridge:
             ("select", "radio", dict(st, name="Radio", icon="mdi:radio", command_topic=p + "/radio/set",
                                      options=["Wyłączone"] + [x["name"] for x in read_radio()["stations"]][:40],
                                      value_template="{{ value_json.radio if value_json.radio else 'Wyłączone' }}")),
+            ("button", "radio_next", {"name": "Następna stacja", "icon": "mdi:skip-next",
+                                      "command_topic": p + "/radio_next/set", "payload_press": "PRESS"}),
+            ("button", "radio_prev", {"name": "Poprzednia stacja", "icon": "mdi:skip-previous",
+                                      "command_topic": p + "/radio_prev/set", "payload_press": "PRESS"}),
             ("sensor", "cpu_temp", dict(st, name="Temperatura procesora", device_class="temperature", unit_of_measurement="°C",
                                         state_class="measurement", entity_category="diagnostic",
                                         value_template="{{ value_json.system.cpu_temp | default(0, true) }}")),
@@ -2842,6 +2846,10 @@ def handle_command(cmd, payload):
         return set_default_voice(str(payload))
     if cmd == "play/set":
         return audio_play(v.get("url") if isinstance(v, dict) else payload)
+    if cmd == "radio_next/set":
+        return radio_step(1)
+    if cmd == "radio_prev/set":
+        return radio_step(-1)
     if cmd == "update/set":
         if str(payload).strip().lower() not in ("install", "on", "1", "{}"):
             raise ValueError("update/set: install")
@@ -4323,7 +4331,7 @@ def read_radio():
     r = read_json(RADIO_FILE, {})
     st = r.get("stations") if isinstance(r.get("stations"), list) else DEFAULT_RADIO
     return {"stations": [s for s in st if isinstance(s, dict) and s.get("name") and AUDIO_RE.match(str(s.get("url", "")))],
-            "playing": r.get("playing", "")}
+            "playing": r.get("playing", ""), "last": r.get("last", "")}
 
 
 def radio_search(q):
@@ -4344,7 +4352,7 @@ def radio_play(name_or_url, fade_in=False):
     s = str(name_or_url or "").strip()
     if s.upper() in ("OFF", "STOP", "", "WYŁĄCZONE"):
         audio_stop()
-        write_json(RADIO_FILE, {"stations": r["stations"], "playing": ""}, 0o644)
+        write_json(RADIO_FILE, {"stations": r["stations"], "playing": "", "last": r.get("last") or r.get("playing", "")}, 0o644)
         return "Radio wyłączone"
     st = next((x for x in r["stations"] if x["name"].lower() == s.lower()), None)
     url = st["url"] if st else s
@@ -4354,10 +4362,37 @@ def radio_play(name_or_url, fade_in=False):
     if fade_in:
         mpc("volume", "5")
     out = audio_play(url)
-    write_json(RADIO_FILE, {"stations": r["stations"], "playing": st["name"] if st else url}, 0o644)
+    write_json(RADIO_FILE, {"stations": r["stations"], "playing": st["name"] if st else url,
+                            "last": st["name"] if st else r.get("last", "")}, 0o644)
     if fade_in:
         threading.Thread(target=fade, args=(lambda x: mpc("volume", str(x)), 5, target, 30, 2.0), daemon=True).start()
     return out.replace("Odtwarzam:", "Radio:") if not st else "Radio: " + st["name"]
+
+
+def radio_step(d):
+    """Poprzednia / następna stacja z ulubionych (odtwarzacz w telefonie, pilot)."""
+    r = read_radio()
+    names = [x["name"] for x in r["stations"]]
+    if not names:
+        raise ValueError("brak ulubionych stacji")
+    cur = r.get("playing") or r.get("last") or ""
+    i = names.index(cur) if cur in names else (-1 if d > 0 else 0)
+    return radio_play(names[(i + (1 if d > 0 else -1)) % len(names)])
+
+
+def audio_toggle():
+    """Graj / pauza: gdy coś gra — zatrzymaj; gdy cisza — wznów ostatnią stację (albo pierwszą z ulubionych)."""
+    if audio_status().get("state") == "playing" or NOWP_LAST.get("state") == "playing":
+        radio_play("OFF")
+        return "Zatrzymano"
+    r = read_radio()
+    names = [x["name"] for x in r["stations"]]
+    last = r.get("last") or r.get("playing") or ""
+    if last in names:
+        return radio_play(last)
+    if names:
+        return radio_play(names[0])
+    raise ValueError("brak ulubionych stacji — dodaj je w Radio i muzyka")
 
 
 # ---------------------------------------------------------------- konta, kioski w sieci, powiadomienia
@@ -4381,8 +4416,10 @@ def check_user(name, pw):
     return u.get("role", "user") if hmac.compare_digest(h, u.get("hash", "")) else None
 
 
-USER_GET = ("/", "/logo.png", "/api/status", "/api/views", "/api/me", "/api/voices", "/api/radio", "/api/screenshot", "/api/screen/live")
+USER_GET = ("/", "/logo.png", "/api/status", "/api/views", "/api/me", "/api/voices", "/api/radio", "/api/screenshot", "/api/screen/live",
+            "/api/nowplaying/art")
 USER_POST = ("/api/view", "/api/bubble", "/api/say", "/api/audio", "/api/screen", "/api/radio/play", "/api/alert/stop",
+             "/api/radio/step", "/api/audio/toggle",
              "/api/time", "/api/weather/say", "/api/message", "/api/brightness")
 
 
@@ -4987,6 +5024,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, f.read(), "image/png")
         if path == "/api/screen/live":
             return self.screen_live()
+        if path == "/api/nowplaying/art":
+            if not NOWP_LAST.get("art") or not os.path.exists(NOWP_ART):
+                return self.send(404, {"error": "brak okładki"})
+            with open(NOWP_ART, "rb") as fh:
+                data = fh.read()
+            ct = "image/png" if data[:4] == b"\x89PNG" else "image/jpeg"
+            return self.send(200, data, ct)
         if path == "/api/status":
             return self.send(200, status())
         if path == "/api/config":
@@ -5550,10 +5594,14 @@ class Handler(BaseHTTPRequestHandler):
                 if not name or not AUDIO_RE.match(url):
                     raise ValueError("stacja: nazwa i adres http(s)://")
                 st.append({"name": name, "url": url})
-            write_json(RADIO_FILE, {"stations": st[:60], "playing": read_radio()["playing"]}, 0o644)
+            write_json(RADIO_FILE, {"stations": st[:60], "playing": read_radio()["playing"], "last": read_radio()["last"]}, 0o644)
             if BRIDGE:
                 threading.Thread(target=BRIDGE.publish_discovery, daemon=True).start()
             return "Ulubione stacje: %d" % len(st)
+        if path == "/api/radio/step":
+            return radio_step(to_int(body.get("dir", 1), -1, 1, "dir") or 1)
+        if path == "/api/audio/toggle":
+            return audio_toggle()
         if path == "/api/radio/play":
             return radio_play(body.get("station") or body.get("url") or "OFF", fade_in=bool(body.get("fade")))
         if path == "/api/brightness":
@@ -6171,7 +6219,18 @@ body{touch-action:manipulation;overscroll-behavior-y:contain;-webkit-tap-highlig
 .pnow .rdnow{margin:0}
 .block .rdnow{border:0;background:none;padding:2px 2px 6px;min-height:40px;margin-top:0}
 .block .rdnow .rdtt{font-size:17px}
-.pvol{display:grid;grid-template-columns:56px 1fr 56px auto;gap:8px;align-items:center}
+.pvol{display:grid;grid-template-columns:56px 1fr 56px;gap:8px;align-items:center}
+.npcard{display:flex;gap:14px;align-items:center;min-width:0}
+.npart{flex:0 0 auto;width:76px;height:76px;border-radius:var(--r);background:var(--block);border:1px solid var(--line);overflow:hidden;display:flex;align-items:center;justify-content:center}
+.npart img{width:100%;height:100%;object-fit:cover;display:none}
+.npart.has img{display:block}.npart.has .npph{display:none}
+.npph{font-size:30px;color:var(--muted)}
+.nptext{min-width:0;flex:1}
+.pnow .nptext .rdnow{border:0;background:none;padding:0;min-height:0;margin:0}
+.pnow .nptext .rdtt{font-size:18px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.npsub{color:var(--muted);font-size:14px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:34px}
+.ptrans{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:8px}
+.ptrans button{min-height:58px;font-size:24px;padding:0}
 @media (min-width:861px){ .pnow{max-width:560px} }
 .pvol button{min-height:52px;font-size:20px;padding:0}
 .pvol #pstop{font-size:15px;padding:0 16px}
@@ -6249,8 +6308,10 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 </div>
 <section class="card pane" role="tabpanel" id="start" aria-labelledby="h-start" hidden><h2 id="h-start">Pilot</h2>
 <div class="pnow">
-<div class="rdnow" aria-live="polite"><span class="rdst">■</span><span class="rdtt">—</span></div>
-<div class="pvol"><button type="button" id="pvd" aria-label="Ciszej">−</button><span id="pvol" class="pvolv" aria-live="polite">—</span><button type="button" id="pvu" aria-label="Głośniej">+</button><button type="button" id="pstop">■ Stop</button></div>
+<div class="npcard"><div class="npart" id="npartbox"><img id="npart" alt=""><span class="npph">♪</span></div>
+<div class="nptext"><div class="rdnow" aria-live="polite"><span class="rdst">■</span><span class="rdtt">—</span></div><div class="npsub" id="npsub"></div></div></div>
+<div class="ptrans"><button type="button" id="pprev" aria-label="Poprzednia stacja">⏮</button><button type="button" id="ptog" class="primary" aria-label="Graj / pauza">▶</button><button type="button" id="pnext" aria-label="Następna stacja">⏭</button></div>
+<div class="pvol"><button type="button" id="pvd" aria-label="Ciszej">−</button><span id="pvol" class="pvolv" aria-live="polite">—</span><button type="button" id="pvu" aria-label="Głośniej">+</button><button type="button" id="pstop" hidden>■ Stop</button></div>
 </div>
 <h3>Radio</h3>
 <div class="tiles" data-radio></div>
@@ -6819,7 +6880,7 @@ async function loadStatus(){
     $('host').replaceChildren('Kiosk '+(s.name||s.hostname), Object.assign(document.createElement('small'),{textContent:s.hostname+' · '+s.time})); if(s.name){ document.querySelectorAll('.kname').forEach(e=>{ e.textContent=s.name; }); document.title='Kiosk '+s.name+' — panel'; }
     if(s.device_id && DID!==s.device_id){ DID=s.device_id; fillHelp($('mprefix').value||'kecaj/kiosk', $('mhost').value||'192.168.0.1'); } if(host!==s.hostname.replace(/[^A-Za-z0-9_]/g,'_')){ host=s.hostname.replace(/[^A-Za-z0-9_]/g,'_'); loadMqtt().catch(()=>{}); }
     const a=s.audio||{};
-    rdNow(a); if(RADIO && a.state==='stopped' && RADIO.playing){ RADIO.playing=null; rdTiles(); }
+    rdNow(a); npUpdate(s.now_playing, a); if(RADIO && a.state==='stopped' && RADIO.playing){ RADIO.playing=null; rdTiles(); }
     if(a.volume!=null) $('pvol').textContent=a.volume+'%'; SCR=s.screen; $('pscr').classList.toggle('on', s.screen==='on'); $('pscr').textContent=s.screen==='off'?'⏻ Włącz ekran':'⏻ Wyłącz ekran';
     $('stat').replaceChildren(
       cell('Tryb', (names[s.mode]||s.mode)+(s.view?' · '+s.view:'')),
@@ -6929,6 +6990,8 @@ if(APP){ volKeys=false; document.documentElement.classList.add('inapp');
 // ---- Pilot (także dla kont domowników)
 let SCR='unknown';
 $('pvd').onclick=()=>volStep(-5); $('pvu').onclick=()=>volStep(5);
+const npAct=(path,body)=>post(path,body||{}).then(r=>{ toast(r.output||'Gotowe','okm'); loadRadio().catch(()=>{}); setTimeout(loadStatus,1200); setTimeout(loadStatus,3500); }).catch(e=>toast(e.message,'err'));
+$('ptog').onclick=()=>npAct('api/audio/toggle'); $('pnext').onclick=()=>npAct('api/radio/step',{dir:1}); $('pprev').onclick=()=>npAct('api/radio/step',{dir:-1});
 $('pstop').onclick=()=>post('api/audio',{stop:true}).then(r=>{ toast(r.output||'Zatrzymano','okm'); if(RADIO){ RADIO.playing=null; rdTiles(); } setTimeout(loadStatus,1200); }).catch(e=>toast(e.message,'err'));
 $('pscr').onclick=()=>{ const on=SCR==='off'; post('api/screen',{on}).then(()=>{ toast(on?'Ekran włączony':'Ekran wyłączony','okm'); setTimeout(loadStatus,1500); }).catch(e=>toast(e.message,'err')); };
 let volT; $('vol').addEventListener('input', ()=>{ volTouched=true; $('volv').textContent=$('vol').value; clearTimeout(volT); volT=setTimeout(()=>{ post('api/audio',{volume:Number($('vol').value)}).catch(e=>toast(e.message,'err')).finally(()=>{volTouched=false;}); }, 300); });
@@ -7399,6 +7462,16 @@ function rdTiles(){ if(!RADIO) return; document.querySelectorAll('#rdtiles,.tile
     b.onclick=()=>{ const off=RADIO.playing===st.name; post('api/radio/play',{station:off?'OFF':st.name}).then(r=>{ RADIO.playing=off?null:st.name; rdTiles(); toast(r.output||(off?'Zatrzymano':st.name),'okm'); setTimeout(loadStatus,1500); }).catch(e=>toast(e.message,'err')); };
     return b; }));
   if(!RADIO.stations.length) box.textContent=box.id==='rdtiles'?'Brak ulubionych — znajdź stację wyszukiwarką niżej i dodaj „Do ulubionych”.':'Brak ulubionych stacji — dodaj je w Ustawienia → Radio i muzyka.'; }); }
+let NPKEY='';
+function npUpdate(np, a){ np=np||{}; const play=np.state==='playing' || (a&&a.state==='playing');
+  const title=np.title&&!/^[a-z]+:\/\//i.test(np.title)?np.title:'';
+  const sub=[np.artist, np.station||np.source].filter(Boolean).filter((x,i,arr)=>arr.indexOf(x)===i).join(' · ');
+  if($('npsub')) $('npsub').textContent=play?sub:'';
+  if($('ptog')){ $('ptog').textContent=play?'❚❚':'▶'; $('ptog').setAttribute('aria-label', play?'Pauza':'Graj'); }
+  const key=play&&np.art?(np.title||'')+'|'+(np.ts?Math.floor(np.ts/30):''):'';
+  const box=$('npartbox'); if(box && key!==NPKEY){ NPKEY=key; if(key){ $('npart').onload=()=>box.classList.add('has'); $('npart').onerror=()=>box.classList.remove('has'); $('npart').src='api/nowplaying/art?k='+encodeURIComponent(key); } else box.classList.remove('has'); }
+  if(play && (title||np.station)){ const txt=title||np.station; document.querySelectorAll('.rdnow .rdtt').forEach(el=>{ el.textContent=txt; }); document.querySelectorAll('.rdnow .rdst').forEach(el=>{ el.textContent='▶'; }); return true; }
+  return false; }
 function rdNow(a){ const play=a&&a.state==='playing';
   document.querySelectorAll('.rdnow').forEach(el=>{ el.querySelector('.rdst').textContent=play?'▶':(a&&a.state==='paused'?'❚❚':'■'); });
   const t=a&&a.title&&!/^[a-z]+:\/\//i.test(a.title)?a.title:'', st=RADIO&&RADIO.playing;

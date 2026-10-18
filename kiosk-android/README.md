@@ -2,7 +2,8 @@
 
 Panel kiosku kecaj (kiosk-setup) jako aplikacja na telefon:
 
-- **fizyczne przyciski głośności** telefonu sterują głośnością kiosku (szybkie naciśnięcia
+- **odtwarzacz w powiadomieniu i na ekranie blokady**: okładka, tytuł, stacja, ⏮ ⏯ ⏭ (muzyka gra na kiosku),
+- **fizyczne przyciski głośności** telefonu sterują głośnością kiosku (także w tle, przy zablokowanym ekranie) (szybkie naciśnięcia
   łączą się w jeden krok; wyłączysz to w ustawieniach aplikacji albo w panelu: Dźwięk → Głośność),
 - **wyszukiwanie kiosków** w sieci Wi-Fi (port 8088, `/api/ping`), kilka zapisanych kiosków,
 - zapamiętany **token** administratora albo konto domownika — bez logowania przy każdym otwarciu,
@@ -18,7 +19,7 @@ Panel kiosku kecaj (kiosk-setup) jako aplikacja na telefon:
 - po otwarciu **Pilot**: „Teraz gra”, głośność, kafelki ulubionych stacji, ekran; na dole zakładki Pilot, Kamery,
   Ustawienia; widok po otwarciu do wyboru w ustawieniach aplikacji.
 
-Android 5.0 lub nowszy. Instalacja: skopiuj `releases/kiosk-android-1.4.apk` na telefon i otwórz
+Android 5.0 lub nowszy. Instalacja: skopiuj `releases/kiosk-android-1.5.apk` na telefon i otwórz
 (zgoda na „instalowanie nieznanych aplikacji” dla przeglądarki lub menedżera plików).
 
 ## Budowanie

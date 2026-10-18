@@ -1,9 +1,9 @@
 {
   "package": "pl.kecaj.kiosk",
-  "versionCode": 5,
-  "versionName": "1.4",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-android-1.4.apk",
-  "sha256": "de9459d65c0bf3d0114f95befc3b11be33d940b85cc9f39ca3cac81bd8a5bb42",
-  "size": 41763,
-  "notes": "Automatyczna aktualizacja aplikacji (Android 12+ bez pytania, gdy system pozwala); ekran kiosku na żywo w zakładce Kamery."
+  "versionCode": 6,
+  "versionName": "1.5",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-android-1.5.apk",
+  "sha256": "a02045da03a3657070ccc5cea874dd06345f60d27cf4e2d00471d9007ce9c9f3",
+  "size": 49955,
+  "notes": "Odtwarzacz kiosku w Androidzie: powiadomienie i ekran blokady z okładką i przyciskami ⏮ ⏯ ⏭, głośność kiosku z przycisków telefonu także w tle."
 }

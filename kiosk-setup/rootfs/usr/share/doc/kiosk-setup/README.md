@@ -928,7 +928,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 - **Przyciski głośności telefonu:** Dźwięk → Głośność i głos → „Przyciski głośności tego
   urządzenia sterują kioskiem”. Chrome na Androidzie zwykle nie przekazuje ich stronom —
   wtedy użyj aplikacji.
-- **Aplikacja Kiosk** (`releases/kiosk-android-1.4.apk`, Android 5.0+): panel na pełnym ekranie,
+- **Aplikacja Kiosk** (`releases/kiosk-android-1.5.apk`, Android 5.0+): panel na pełnym ekranie,
   przyciski głośności telefonu zawsze sterują kioskiem, wyszukiwanie kiosków w sieci, zapamiętany
   token lub konto domownika, HTTPS kiosku (zaufanie po porównaniu odcisku SHA-256), „wstecz”
   cofa zakładki, Ustawienia → „Aplikacja Kiosk” otwiera ustawienia aplikacji. Po otwarciu pokazuje
@@ -936,6 +936,9 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
   telefon i otwórz (zezwól na instalowanie aplikacji z tego źródła). Kolejne wersje aplikacja
   pobiera sama z GitHuba (`android.json`; raz dziennie albo „Sprawdź aktualizację aplikacji”).
 - API: `POST /api/audio {"volume_step": 5}` (albo `-5`), MQTT `<prefiks>/volume/step`.
+- **Odtwarzacz w Androidzie** (aplikacja 1.5+): powiadomienie z okładką i przyciskami ⏮ ⏯ ⏭, także na ekranie
+  blokady; głośność kiosku z przycisków telefonu także w tle. API: `POST /api/audio/toggle`,
+  `POST /api/radio/step {"dir": 1}`, `GET /api/nowplaying/art`.
 
 ## Wi-Fi (panel → Połączenia → Wi-Fi i sieć)
 
@@ -960,7 +963,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
   (`sudo kiosk-update github`).
 - **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
   github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
-  i go instaluje; wersja np. `1:1.0.15+git20261017.abc1234`. W terminalu:
+  i go instaluje; wersja np. `1:1.0.16+git20261017.abc1234`. W terminalu:
   `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
 
 ## Wersja light (kiosk-setup-light)
@@ -990,6 +993,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.16** (18.10.2026) — Pilot jak odtwarzacz (okładka, ⏮ ⏯ ⏭), API graj/pauza, następna/poprzednia
+  stacja i okładka; aplikacja Kiosk 1.5 z odtwarzaczem w powiadomieniu i na ekranie blokady.
 - **1.0.15** (18.10.2026) — „Paruj z HA”: parowanie kiosku z dodatkiem Kioski bez tokenu (okno 5 min,
   jedno sparowanie); dodatek Kioski 1.2.0 szuka i paruje kioski sam.
 - **1.0.14** (18.10.2026) — aktualizacje kiosku w Home Assistant (encja „Aktualizacja”, automatyczne
