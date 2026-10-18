@@ -1,5 +1,10 @@
 # Zmiany
 
+## 1.0.19 (2026-10-18)
+- Naprawa: kiosk po aktualizacji pokazywał pustą wersję (ping, panel, dodatek Kioski, encja „Aktualizacja” w HA bez
+  zainstalowanej wersji). postinst restartuje kiosk-api, gdy dpkg ma pakiet jeszcze jako „half-configured” — teraz
+  ta wersja też się liczy.
+
 ## 1.0.18 (2026-10-18)
 - **Automatyczna jasność wg położenia słońca:** Ustawienia → Jasność i wyłączanie. Jasność rośnie o świcie i
   maleje o zmierzchu; wysokość słońca z encji `sun.sun` w Home Assistant, a bez HA — obliczona z
