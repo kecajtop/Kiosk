@@ -16,6 +16,7 @@ import socket
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,7 +31,7 @@ HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", 
        "transfer-encoding", "upgrade", "x-frame-options", "www-authenticate", "content-length"}
 HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.1.0"          # = version w config.yaml
+ADDON_VERSION = "1.2.0"          # = version w config.yaml
 RAW = "https://raw.githubusercontent.com/kecajtop/Kiosk/main/"
 _LATEST = {"t": 0, "data": None}
 
@@ -120,7 +121,7 @@ def ping(host, port=8088, timeout=0.8):
             j = json.loads(r.read(4096))
         if isinstance(j, dict) and j.get("kecaj"):
             return {"host": host, "port": port, "name": j.get("name", ""), "hostname": j.get("hostname", ""),
-                    "version": j.get("version", "")}
+                    "version": j.get("version", ""), "pair": bool(j.get("pair"))}
     except Exception:
         pass
     return None
@@ -156,7 +157,7 @@ def local_networks():
     return nets
 
 
-def scan(extra=None):
+def scan(extra=None, quiet=False):
     nets = local_networks()
     if extra:
         n = ipaddress.ip_network(extra, strict=False)
@@ -167,13 +168,49 @@ def scan(extra=None):
     for n in nets:
         hosts += [str(h) for h in n.hosts()]
     known = {k["host"] for k in load()}
-    log("szukam kiosków: sieci %s (%d adresów, port 8088)" % (", ".join(str(n) for n in nets) or "brak", len(hosts)))
+    if not quiet:
+        log("szukam kiosków: sieci %s (%d adresów, port 8088)" % (", ".join(str(n) for n in nets) or "brak", len(hosts)))
     with ThreadPoolExecutor(64) as ex:
         found = [r for r in ex.map(ping, hosts) if r]
-    log("znalezione kioski: %s" % (", ".join(f["host"] for f in found) or "brak"))
+    if not quiet:
+        log("znalezione kioski: %s" % (", ".join(f["host"] for f in found) or "brak"))
     for f in found:
         f["known"] = f["host"] in known
+        if f["pair"]:   # administrator kliknął na kiosku „Paruj z HA” — dodajemy sami
+            try:
+                f["paired"] = pair_claim(f["host"], f["port"])["output"]
+                f["known"] = True
+            except Exception as e:
+                f["pair_error"] = str(e)
+                log("parowanie %s: %s" % (f["host"], e))
     return {"networks": [str(n) for n in nets], "found": found}
+
+
+def pair_claim(host, port=8088):
+    """Token z kiosku z otwartym parowaniem (POST /api/pair/claim), potem zwykłe dodanie do listy."""
+    req = urllib.request.Request("http://%s:%d/api/pair/claim" % (host, port),
+                                 json.dumps({"name": "Home Assistant (Kioski)"}).encode(),
+                                 {"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            j = json.loads(r.read(65536) or b"{}")
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(json.loads(e.read(4096) or b"{}").get("error") or "kiosk odpowiedział %d" % e.code)
+    if not j.get("token"):
+        raise RuntimeError("kiosk nie oddał tokenu")
+    out = add_kiosk({"host": host, "port": port, "token": j["token"]})
+    log("sparowano: %s" % out["output"])
+    return out
+
+
+def auto_scan():
+    """W tle co 2 minuty: kioski z otwartym parowaniem trafiają na listę same."""
+    while True:
+        time.sleep(120)
+        try:
+            scan(quiet=True)
+        except Exception as e:
+            log("szukanie w tle: %s" % e)
 
 
 def add_kiosk(body):
@@ -417,6 +454,7 @@ def main():
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     srv.daemon_threads = True
     log("Kioski: panel na porcie %d, kiosków: %d" % (PORT, len(load())))
+    threading.Thread(target=auto_scan, daemon=True).start()
     srv.serve_forever()
 
 

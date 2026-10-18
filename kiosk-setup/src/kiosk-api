@@ -4561,6 +4561,36 @@ def vnc_ticket():
     return {"ticket": t, "password": vnc_password() or ""}
 
 
+# Parowanie z dodatkiem Kioski (HA) bez SSH: administrator klika w panelu kiosku „Paruj z HA”
+# (POST /api/pair/open), przez 5 minut pierwszy, kto zawoła POST /api/pair/claim, dostaje token.
+# Jedno otwarcie = jedno sparowanie; /api/ping mówi, czy parowanie jest otwarte (dodatek paruje sam).
+PAIR_TTL = 300
+_PAIR = {"until": 0}
+_PAIR_LOCK = threading.Lock()
+
+
+def pair_is_open():
+    return time.time() < _PAIR["until"]
+
+
+def pair_open():
+    with _PAIR_LOCK:
+        _PAIR["until"] = time.time() + PAIR_TTL
+    log("parowanie z HA: otwarte na %d min" % (PAIR_TTL // 60))
+    return "Parowanie otwarte na 5 minut — dodatek Kioski w Home Assistant doda ten kiosk sam (albo kliknij tam Szukaj w sieci)"
+
+
+def pair_claim(client, body):
+    who = re.sub(r"[^\w .,()-]", "", str(body.get("name") or "Home Assistant"), flags=re.U)[:60] or "Home Assistant"
+    with _PAIR_LOCK:
+        if not pair_is_open():
+            raise ValueError("parowanie zamknięte — w panelu kiosku kliknij „Paruj z HA”")
+        _PAIR["until"] = 0
+    log("parowanie z HA: sparowano z %s (%s)" % (who, client))
+    BUBBLE.show({"title": "Sparowano", "text": "%s (%s) ma teraz dostęp do kiosku." % (who, client), "level": "info", "seconds": 15})
+    return {"token": read_token(), "name": kiosk_name()}
+
+
 def satellite_info():
     st = qrun(["systemctl", "is-active", "kiosk-satellite"]).strip()
     return {"installed": os.path.exists("/opt/kiosk-satellite/bin/python"), "state": st or "inactive",
@@ -4873,6 +4903,21 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write("Wymagane logowanie: hasło = token z: sudo kiosk-mode api-token\n".encode())
 
+    def pair(self):
+        """POST /api/pair/claim — bez logowania, tylko gdy administrator otworzył parowanie (pair_open)."""
+        if self.headers.get("Origin"):   # tylko programy (dodatek HA), nie strony w przeglądarce
+            return self.send(403, {"error": "parowanie tylko z dodatku Kioski"})
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > 4096:
+                return self.send(413, {"error": "za duże żądanie"})
+            body = json.loads(self.rfile.read(n) or b"{}") if n else {}
+            if not isinstance(body, dict):
+                raise ValueError("oczekiwany obiekt JSON")
+            return self.send(200, pair_claim(self.client_address[0], body))
+        except (ValueError, TypeError) as e:
+            return self.send(403, {"error": str(e)})
+
     def do_GET(self):
         path = self.path.split("?")[0]
         if path == "/favicon.ico":
@@ -4896,7 +4941,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/vnc/ws":   # logowanie jednorazowym biletem z POST /api/vnc/ticket (WebSocket nie przenosi hasła)
             return self.vnc_ws()
         if path == "/api/ping":   # bez logowania: wykrywanie kiosków w sieci (bez danych)
-            return self.send(200, {"kecaj": True, "name": kiosk_name(), "hostname": os.uname().nodename, "version": PKG_VERSION})
+            return self.send(200, {"kecaj": True, "name": kiosk_name(), "hostname": os.uname().nodename, "version": PKG_VERSION,
+                                   "pair": pair_is_open()})
         if not self.authorized():
             return self.deny()
         if not self.allowed("GET", path):
@@ -5078,6 +5124,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(200, {"ok": True, "views": sorted(views)})
 
     def do_POST(self):
+        if self.path.split("?")[0] == "/api/pair/claim":
+            return self.pair()
         if not self.authorized():
             return self.deny()
         if not self.allowed("POST", self.path.split("?")[0]):
@@ -5448,6 +5496,8 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=BRIDGE.publish_discovery, daemon=True).start()
             return "Rozpoznawanie twarzy: " + ("kamery " + ", ".join(map(str, cfg["cameras"]))
                                                if cfg["enabled"] and cfg["cameras"] else "wyłączone")
+        if path == "/api/pair/open":
+            return pair_open()
         if path == "/api/vnc/ticket":
             return json.dumps(vnc_ticket())
         if path == "/api/faces/install":
@@ -6618,6 +6668,9 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <div class="field"><span class="lbl">Adres MJPEG</span><code id="hamjpeg" class="mono" style="word-break:break-all"></code></div>
 <div class="field"><span class="lbl">Adres zdjęcia (still image)</span><code id="hastill" class="mono" style="word-break:break-all"></code></div>
 <p class="hint">Użytkownik: nazwa konta domownika (albo dowolna z tokenem jako hasłem), hasło: hasło konta albo token. Przy adresie https wyłącz „Weryfikuj certyfikat SSL”. W HA pojawiają się też encje „Aktualizacja”, „Automatyczne aktualizacje” i „Sprawdź aktualizacje” — kiosk widać w Ustawienia → Aktualizacje.</p>
+<h3>Dodatek Kioski w Home Assistant</h3>
+<p class="hint">„Paruj z HA” otwiera parowanie na 5 minut: dodatek Kioski sam znajdzie ten kiosk w sieci i doda go do listy (bez tokenu i SSH). Jedno kliknięcie = jedno sparowanie.</p>
+<div class="row"><button type="button" class="primary" id="hapair">Paruj z HA</button></div>
 </section>
 <section class="card pane" role="tabpanel" id="frigate" aria-labelledby="h-frigate" hidden><h2 id="h-frigate">Frigate / go2rtc</h2>
 <p class="lead">Obraz z mniejszym opóźnieniem i mniejszym obciążeniem kamer: kiosk bierze strumienie z serwera go2rtc albo Frigate (restream rtsp://serwer:8554/nazwa).</p>
@@ -7386,6 +7439,7 @@ function peerRow(p, known){ const tr=document.createElement('tr'); const a=docum
   c.append(w); tr.append(a,b,c); return tr; }
 async function loadPeers(){ const r=await api('api/peers'); $('petab').replaceChildren(...r.peers.map(p=>peerRow(p,true))); }
 $('perefresh').onclick=()=>loadPeers().catch(e=>toast(e.message,'err'));
+$('hapair').onclick=async()=>{ try{ const r=await post('api/pair/open',{}); toast(r.output,'okm'); } catch(e){ toast(e.message,'err'); } };
 $('pescan').onclick=async()=>{ toast('Szukam kiosków w sieci…','okm'); try{ const r=await api('api/peers/scan'); const known=[...$('petab').querySelectorAll('a')].map(a=>a.textContent);
   r.found.filter(p=>!known.includes(p.host)).forEach(p=>$('petab').append(peerRow(p,false))); toast('Znaleziono: '+r.found.length,'okm'); }catch(e){ toast(e.message,'err'); } };
 $('pef').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/peers',{host:$('pehost').value.trim(), token:$('petok').value.trim()})).then(()=>{ $('petok').value=''; loadPeers(); }); });
