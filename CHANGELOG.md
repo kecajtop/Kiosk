@@ -7,6 +7,9 @@
 - **Czas do automatycznego wyłączenia:** `shutdown_in_s` w `/api/status`, w panelu „Wyłączenie … (za X h Y min)”,
   w HA sensor „Do wyłączenia” (min).
 - `ethtool` w Recommends (stan WOL karty sieciowej).
+- **Dodatek Kioski 1.3.0:** włączanie i wyłączanie kiosków przekaźnikiem z HA i przez Wake-on-LAN (pojedynczo
+  i wszystkie naraz); 1.2.1 — poprawione szukanie kiosków w tle (token Supervisora).
+- Gotowe pakiety: `releases/kiosk-setup_1.0.17_amd64.deb`, `releases/kiosk-setup-light_1.0.17_amd64.deb`.
 
 ## 1.0.16 (2026-10-18) · aplikacja Kiosk 1.5
 - **Odtwarzacz w Androidzie (aplikacja 1.5):** powiadomienie z okładką, tytułem i stacją, przyciski ⏮ ⏯ ⏭ — także na

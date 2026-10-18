@@ -6,7 +6,7 @@
 
 ## Przegląd
 
-kiosk-setup (wersja 1.0.16) zamienia komputer z Ubuntu w kiosk: pokazuje kamery, stronę Home Assistant albo jedno i drugie, mówi, gra radio i reaguje na Home Assistant. Sterujesz nim z panelu WWW, z Home Assistant (MQTT), z API HTTP, z menu w terminalu albo dla wielu kiosków naraz z dodatku HA „Kioski”.
+kiosk-setup (wersja 1.0.17) zamienia komputer z Ubuntu w kiosk: pokazuje kamery, stronę Home Assistant albo jedno i drugie, mówi, gra radio i reaguje na Home Assistant. Sterujesz nim z panelu WWW, z Home Assistant (MQTT), z API HTTP, z menu w terminalu albo dla wielu kiosków naraz z dodatku HA „Kioski”.
 
 ![Panel WWW kiosku — Pilot](img/panel-start.png)
 
@@ -17,7 +17,7 @@ Panel WWW: menu sekcji po lewej (Pilot, Kamery, Ekran, Komunikaty, Dźwięk, Aut
 | Kiosk | kecaj, 192.168.0.214, użytkownik `kecaj` |
 | Home Assistant | 192.168.0.1:8123 |
 | Kamera | rtsp://admin:…@192.168.0.203:554/ |
-| Pakiet | kiosk-setup\_1.0.16\_amd64.deb (wersja 1:1.0.16, amd64, ok. 22 MB, zawiera Piper TTS); kod i wydania: github.com/kecajtop/Kiosk |
+| Pakiet | kiosk-setup\_1.0.17\_amd64.deb (wersja 1:1.0.17, amd64, ok. 22 MB, zawiera Piper TTS); kod i wydania: github.com/kecajtop/Kiosk |
 
 **Wymagania:** Ubuntu (Server albo z pulpitem), GRUB, procesor x86-64, monitor (do dwóch wyjść: HDMI, DisplayPort, VGA), sieć lokalna. Opcjonalnie: głośnik, mikrofon (interkom, asystent głosowy), monitor z DDC/CI (sterowanie podświetleniem).
 
@@ -48,7 +48,7 @@ Pierwsza instalacja to jedno polecenie i kreator; każda kolejna wersja zachowuj
 
    ```bash
    sudo apt update
-   sudo apt install ./kiosk-setup_1.0.16_amd64.deb
+   sudo apt install ./kiosk-setup_1.0.17_amd64.deb
    ```
 3. Kreator zapyta o: użytkownika (`kecaj`), ekran (**desktop** = pulpit + kiosk na drugim monitorze, **kiosk** = cały komputer), tryb (web/rtsp/mix/usb), adres strony lub kamer, logo, firewall (przy pulpicie: **nie**), wyłączanie ekranu i komputera, MQTT, dostęp SSH/VNC.
 4. Ustaw strefę czasową i uruchom ponownie: `sudo timedatectl set-timezone Europe/Warsaw`, potem `sudo reboot`.
@@ -81,13 +81,15 @@ Przy adresie z GitHuba zapora kiosku sama przepuszcza serwery GitHuba. „Jaka w
 
 **Aktualizacje w Home Assistant.** Kiosk ma encję „Aktualizacja”: HA pokazuje zainstalowaną i dostępną wersję w Ustawienia → Aktualizacje, „Zainstaluj” aktualizuje kiosk, widać postęp. Przełącznik „Automatyczne aktualizacje” włącza nocne aktualizacje, przycisk „Sprawdź aktualizacje” sprawdza od razu (kiosk sprawdza też sam co 6 godzin). Dodatek Kioski pokazuje wersje wszystkich kiosków i aktualizuje je jednym przyciskiem; sam dodatek aktualizuje się przez HA (Ustawienia → Aktualizacje, na karcie dodatku przełącznik „Automatyczne aktualizacje”).
 
+**Zasilanie z dodatku Kioski (1.3.0+).** Przy kiosku „Ustaw zasilanie…”: przekaźnik (encja HA) i Wake-on-LAN — MAC kiosk podaje sam. „Włącz” załącza przekaźnik i wysyła pakiety WOL, „Wyłącz” zamyka system kiosku, potem odcina prąd; są też „Włącz / Wyłącz wszystkie”. WOL trzeba włączyć w BIOS-ie/UEFI komputera.
+
 **Paruj z HA.** W panelu kiosku: Połączenia → MQTT i Home Assistant → „Paruj z HA” otwiera parowanie na 5 minut; dodatek Kioski (1.2.0+) sam znajduje kiosk w sieci i dodaje go do listy, bez przepisywania tokenu. Jedno kliknięcie = jedno sparowanie.
 
 **Podgląd ekranu w Home Assistant.** Integracja MJPEG IP Camera z adresem `http://<kiosk>:8088/api/screen/live?w=960&fps=5` i zdjęciem `http://<kiosk>:8088/api/screenshot` (konto domownika albo token) — gotowe adresy są w panelu: Połączenia → MQTT i Home Assistant. „Jaka wersja jest dostępna?” w panelu albo `sudo kiosk-update latest` tylko sprawdza, nic nie instaluje.
 
-Bez ustawiania adresu: **Aktualizuj z GitHuba (wydanie)** instaluje najnowsze wydanie tej edycji (`sudo kiosk-update github`). **Aktualizuj z gita (najnowszy kod)** pobiera kod z gałęzi `main`, buduje na kiosku pakiet jego edycji (pełnej z głosami Piper albo light) i go instaluje — wersja np. `1:1.0.16+git20261018.abc1234` (`sudo kiosk-update git [gałąź]`). Na czas pobierania zapora dopuszcza serwery GitHuba.
+Bez ustawiania adresu: **Aktualizuj z GitHuba (wydanie)** instaluje najnowsze wydanie tej edycji (`sudo kiosk-update github`). **Aktualizuj z gita (najnowszy kod)** pobiera kod z gałęzi `main`, buduje na kiosku pakiet jego edycji (pełnej z głosami Piper albo light) i go instaluje — wersja np. `1:1.0.17+git20261018.abc1234` (`sudo kiosk-update git [gałąź]`). Na czas pobierania zapora dopuszcza serwery GitHuba.
 
-**Numeracja.** Pakiet ma numer wersji `1:1.0.16`.
+**Numeracja.** Pakiet ma numer wersji `1:1.0.17`.
 
 **Szybkie aktualizacje.** `update-grub` i `update-initramfs` uruchamiają się tylko po zmianie linii startowej (logo wł./wył.) albo motywu startowego (logo); wymuszenie: `sudo kiosk-bootlogo initramfs --force`.
 
@@ -105,7 +107,7 @@ Pakiet `kiosk-setup-light` to lżejsza edycja kiosku dla słabszych komputerów:
 | Panel WWW, MQTT i auto-wykrycie w Home Assistant, automatyka ekranu, aktualizacje | Interkom i wiadomości głosowe |
 | Muzyka: MPD, radio, odtwarzacz DLNA, głośność, karta „Teraz gra” | Asystent głosowy (Assist) |
 
-Instalacja: `sudo apt install ./kiosk-setup-light_1.0.16_amd64.deb`. Pakiet zastępuje pełny (i odwrotnie), ustawienia zostają. Panel chowa zakładki z mową, a w Home Assistant znikają encje mowy.
+Instalacja: `sudo apt install ./kiosk-setup-light_1.0.17_amd64.deb`. Pakiet zastępuje pełny (i odwrotnie), ustawienia zostają. Panel chowa zakładki z mową, a w Home Assistant znikają encje mowy.
 
 Aktualizacje z GitHuba mają osobny plik: `https://raw.githubusercontent.com/kecajtop/Kiosk/main/update-light.json`; przycisk „Użyj GitHub” w wersji light wpisuje go sam. Kiosk nie zmienia edycji automatycznie — tylko przy ręcznej instalacji pliku albo przełączeniu edycji. Budowanie: `./build.sh --light`.
 
@@ -583,10 +585,11 @@ Kopia zapasowa z panelu (System → Kopia) obejmuje cały ten katalog.
 
 ## Historia wersji kiosk-setup
 
-Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, 1.0.5 — wersję light, 1.0.6 — Wi-Fi w panelu i aktualizację z gita, 1.0.7 — przełączanie edycji pełna/light z panelu, 1.0.8 — lokalne rozpoznawanie twarzy, 1.0.9 — aplikację na Androida, 1.0.10 — aplikację startującą od radia, 1.0.11 — nowy układ panelu z Pilotem, 1.0.12 — ekran kiosku na żywo w panelu, 1.0.13 — szybszy podgląd ekranu (strumień wideo), 1.0.14 — aktualizacje kiosku w Home Assistant, 1.0.15 — parowanie z dodatkiem Kioski bez tokenu, a 1.0.16 — odtwarzacz w telefonie i Pilot jak odtwarzacz.
+Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, 1.0.5 — wersję light, 1.0.6 — Wi-Fi w panelu i aktualizację z gita, 1.0.7 — przełączanie edycji pełna/light z panelu, 1.0.8 — lokalne rozpoznawanie twarzy, 1.0.9 — aplikację na Androida, 1.0.10 — aplikację startującą od radia, 1.0.11 — nowy układ panelu z Pilotem, 1.0.12 — ekran kiosku na żywo w panelu, 1.0.13 — szybszy podgląd ekranu (strumień wideo), 1.0.14 — aktualizacje kiosku w Home Assistant, 1.0.15 — parowanie z dodatkiem Kioski bez tokenu, 1.0.16 — odtwarzacz w telefonie i Pilot jak odtwarzacz, a 1.0.17 — MAC i Wake-on-LAN (włączanie kiosków z dodatku Kioski).
 
 | Wersja | Data | Zawartość |
 | --- | --- | --- |
+| 1.0.17 | 18.10.2026 | Adres MAC, Wake-on-LAN i czas do wyłączenia w stanie kiosku (czujniki HA „Adres MAC”, „Do wyłączenia”); dodatek Kioski 1.3.0 włącza i wyłącza kioski przekaźnikiem i przez Wake-on-LAN |
 | 1.0.16 | 18.10.2026 | Pilot jak odtwarzacz (okładka, ⏮ ⏯ ⏭), API graj/pauza, następna/poprzednia stacja i okładka; aplikacja Kiosk 1.5 z odtwarzaczem w powiadomieniu i na ekranie blokady |
 | 1.0.15 | 18.10.2026 | „Paruj z HA”: parowanie kiosku z dodatkiem Kioski bez tokenu (okno 5 min, jedno sparowanie); dodatek Kioski 1.2.0 szuka i paruje kioski sam |
 | 1.0.14 | 18.10.2026 | Aktualizacje kiosku w Home Assistant (encja „Aktualizacja”, automatyczne aktualizacje, sprawdzanie), adresy podglądu ekranu dla MJPEG IP Camera; dodatek Kioski 1.1.0; aplikacja Kiosk 1.4 z automatyczną aktualizacją |

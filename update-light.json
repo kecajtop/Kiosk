@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.16",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.16_amd64.deb",
-  "sha256": "6375efda3049c9b7d93f58e91f383faae96dfa577ddfc96a9b2361188ba65300",
-  "size": 427502,
+  "version": "1:1.0.17",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.17_amd64.deb",
+  "sha256": "ec3cf6d4c420e1b83f39d09f405a36275b7a5fc7d4b6330342b0ce75ec694b2f",
+  "size": 428432,
   "date": "2026-10-18",
-  "notes": "Pilot jak odtwarzacz (okładka, ⏮ ⏯ ⏭); odtwarzacz kiosku w Androidzie (aplikacja 1.5)."
+  "notes": "MAC i Wake-on-LAN w stanie kiosku, czas do wyłączenia; dodatek Kioski 1.3.0 włącza i wyłącza kioski."
 }

@@ -47,7 +47,7 @@ d = sys.argv[1]
 c = open(d + "/control").read()
 c = c.replace("Package: kiosk-setup\n", "Package: kiosk-setup-light\n")
 c = re.sub(r"^Depends: .*$", lambda m: m.group(0).replace(" espeak-ng,", ""), c, flags=re.M)
-c = re.sub(r"^Recommends: .*$", "Recommends: gmediarender, ddcutil", c, flags=re.M)
+c = re.sub(r"^Recommends: .*$", "Recommends: gmediarender, ddcutil, ethtool", c, flags=re.M)
 c = re.sub(r"^Conflicts: .*\n|^Replaces: .*\n", "", c, flags=re.M)
 c = c.replace("Suggests:", "Conflicts: kiosk-setup\nReplaces: kiosk-setup\nSuggests:", 1)
 c = re.sub(r"^(Description: .*)$", r"\1 — wersja light (bez mowy)", c, count=1, flags=re.M)

@@ -907,6 +907,11 @@ czas zmian. Instalacja asystenta głosowego wymaga wyłączenia trybu.
 
 ## Panel administracyjny w Home Assistant (dodatek „Kioski”)
 
+**Zasilanie (dodatek 1.3.0+):** przy kiosku „Ustaw zasilanie…” — przekaźnik (encja HA: switch, light,
+input_boolean, np. ESP32 / Sonoff) i Wake-on-LAN (MAC kiosk podaje sam, `network_hw` w `/api/status`).
+„Włącz” załącza przekaźnik i wysyła pakiety WOL, „Wyłącz” zamyka system kiosku, a potem odcina prąd.
+WOL musi być włączony w BIOS-ie/UEFI komputera (stan karty: `ethtool`, pakiet w zaleceniach).
+
 **Paruj z HA:** panel kiosku → Połączenia → MQTT i Home Assistant → „Paruj z HA” otwiera parowanie
 na 5 minut. Dodatek Kioski (1.2.0+) sam znajduje kiosk w sieci (szuka co 2 minuty) i dodaje go do listy —
 bez SSH i przepisywania tokenu. Jedno kliknięcie = jedno sparowanie. API: `POST /api/pair/open`
@@ -963,7 +968,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
   (`sudo kiosk-update github`).
 - **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
   github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
-  i go instaluje; wersja np. `1:1.0.16+git20261017.abc1234`. W terminalu:
+  i go instaluje; wersja np. `1:1.0.17+git20261017.abc1234`. W terminalu:
   `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
 
 ## Wersja light (kiosk-setup-light)
@@ -993,6 +998,9 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.17** (18.10.2026) — adres MAC, karta sieciowa i Wake-on-LAN oraz czas do automatycznego wyłączenia
+  w stanie kiosku (panel, czujniki HA „Adres MAC” i „Do wyłączenia”); dodatek Kioski 1.3.0 włącza i wyłącza
+  kioski przekaźnikiem i przez Wake-on-LAN.
 - **1.0.16** (18.10.2026) — Pilot jak odtwarzacz (okładka, ⏮ ⏯ ⏭), API graj/pauza, następna/poprzednia
   stacja i okładka; aplikacja Kiosk 1.5 z odtwarzaczem w powiadomieniu i na ekranie blokady.
 - **1.0.15** (18.10.2026) — „Paruj z HA”: parowanie kiosku z dodatkiem Kioski bez tokenu (okno 5 min,
