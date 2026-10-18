@@ -1,5 +1,12 @@
 # Zmiany
 
+## 1.0.10 (2026-10-18)
+- **Aplikacja Kiosk 1.1** (`releases/kiosk-android-1.1.apk`): otwiera się od razu na sterowaniu radiem; w ustawieniach
+  aplikacji wybór widoku po otwarciu (Radio, Start, Głośność, Co wyświetla kiosk). Instaluje się na wersję 1.0.
+- **Radio w panelu:** „Teraz gra” (stacja i utwór) i duże kafelki ulubionych stacji — stuknięcie gra, ponowne zatrzymuje;
+  na telefonie lista rozwijana chowa się, gdy są kafelki.
+- Gotowe pakiety: `releases/kiosk-setup_1.0.10_amd64.deb`, `releases/kiosk-setup-light_1.0.10_amd64.deb`.
+
 ## 1.0.9 (2026-10-18)
 - **Aplikacja na Androida** (`releases/kiosk-android-1.0.apk`, kod w `kiosk-android/`): panel kiosku na pełnym
   ekranie, fizyczne przyciski głośności telefonu sterują głośnością kiosku, wyszukiwanie kiosków w sieci,

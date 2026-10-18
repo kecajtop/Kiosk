@@ -6,7 +6,7 @@
 
 ## Przegląd
 
-kiosk-setup (wersja 1.0.9) zamienia komputer z Ubuntu w kiosk: pokazuje kamery, stronę Home Assistant albo jedno i drugie, mówi, gra radio i reaguje na Home Assistant. Sterujesz nim z panelu WWW, z Home Assistant (MQTT), z API HTTP, z menu w terminalu albo dla wielu kiosków naraz z dodatku HA „Kioski”.
+kiosk-setup (wersja 1.0.10) zamienia komputer z Ubuntu w kiosk: pokazuje kamery, stronę Home Assistant albo jedno i drugie, mówi, gra radio i reaguje na Home Assistant. Sterujesz nim z panelu WWW, z Home Assistant (MQTT), z API HTTP, z menu w terminalu albo dla wielu kiosków naraz z dodatku HA „Kioski”.
 
 ![Panel WWW kiosku — strona Start](img/panel-start.png)
 
@@ -17,7 +17,7 @@ Panel WWW: menu sekcji po lewej (Start, Ekran, Komunikaty, Dźwięk, Automatyka,
 | Kiosk | kecaj, 192.168.0.214, użytkownik `kecaj` |
 | Home Assistant | 192.168.0.1:8123 |
 | Kamera | rtsp://admin:…@192.168.0.203:554/ |
-| Pakiet | kiosk-setup\_1.0.9\_amd64.deb (wersja 1:1.0.9, amd64, ok. 22 MB, zawiera Piper TTS); kod i wydania: github.com/kecajtop/Kiosk |
+| Pakiet | kiosk-setup\_1.0.10\_amd64.deb (wersja 1:1.0.10, amd64, ok. 22 MB, zawiera Piper TTS); kod i wydania: github.com/kecajtop/Kiosk |
 
 **Wymagania:** Ubuntu (Server albo z pulpitem), GRUB, procesor x86-64, monitor (do dwóch wyjść: HDMI, DisplayPort, VGA), sieć lokalna. Opcjonalnie: głośnik, mikrofon (interkom, asystent głosowy), monitor z DDC/CI (sterowanie podświetleniem).
 
@@ -35,7 +35,7 @@ Panel WWW: menu sekcji po lewej (Start, Ekran, Komunikaty, Dźwięk, Automatyka,
 
 **Logowanie do panelu:** dowolna nazwa użytkownika, hasło = token z `sudo kiosk-mode api-token`. Możesz też dodać konta (System → Konta).
 
-**Na telefonie.** Panel ma na dole pasek pilota: głośność −/+, stop dźwięku i ekran kiosku wł./wył. Menu przeglądarki → „Dodaj do ekranu głównego” dodaje ikonę kiosku. **Aplikacja Kiosk na Androida** (`releases/kiosk-android-1.0.apk`, Android 5.0+) otwiera panel na pełnym ekranie, a fizyczne przyciski głośności telefonu sterują głośnością kiosku (przeglądarka zwykle ich nie przekazuje). Aplikacja sama znajduje kioski w sieci Wi-Fi, pamięta token lub konto domownika, a przy HTTPS prosi o potwierdzenie odcisku certyfikatu kiosku (System → Konta i dostęp). ⚙ na pasku pilota otwiera jej ustawienia.
+**Na telefonie.** Panel ma na dole pasek pilota: głośność −/+, stop dźwięku i ekran kiosku wł./wył. Menu przeglądarki → „Dodaj do ekranu głównego” dodaje ikonę kiosku. **Aplikacja Kiosk na Androida** (`releases/kiosk-android-1.1.apk`, Android 5.0+) otwiera panel na pełnym ekranie, a fizyczne przyciski głośności telefonu sterują głośnością kiosku (przeglądarka zwykle ich nie przekazuje). Aplikacja sama znajduje kioski w sieci Wi-Fi, pamięta token lub konto domownika, a przy HTTPS prosi o potwierdzenie odcisku certyfikatu kiosku (System → Konta i dostęp). ⚙ na pasku pilota otwiera jej ustawienia. Po otwarciu aplikacja pokazuje radio: „Teraz gra” i kafelki ulubionych stacji (widok po otwarciu można zmienić w ustawieniach aplikacji).
 
 ## Instalacja i aktualizacja
 
@@ -48,7 +48,7 @@ Pierwsza instalacja to jedno polecenie i kreator; każda kolejna wersja zachowuj
 
    ```bash
    sudo apt update
-   sudo apt install ./kiosk-setup_1.0.9_amd64.deb
+   sudo apt install ./kiosk-setup_1.0.10_amd64.deb
    ```
 3. Kreator zapyta o: użytkownika (`kecaj`), ekran (**desktop** = pulpit + kiosk na drugim monitorze, **kiosk** = cały komputer), tryb (web/rtsp/mix/usb), adres strony lub kamer, logo, firewall (przy pulpicie: **nie**), wyłączanie ekranu i komputera, MQTT, dostęp SSH/VNC.
 4. Ustaw strefę czasową i uruchom ponownie: `sudo timedatectl set-timezone Europe/Warsaw`, potem `sudo reboot`.
@@ -79,9 +79,9 @@ Kod, gotowy pakiet i plik aktualizacji są w [github.com/kecajtop/Kiosk](https:/
 
 Przy adresie z GitHuba zapora kiosku sama przepuszcza serwery GitHuba. „Jaka wersja jest dostępna?” w panelu albo `sudo kiosk-update latest` tylko sprawdza, nic nie instaluje.
 
-Bez ustawiania adresu: **Aktualizuj z GitHuba (wydanie)** instaluje najnowsze wydanie tej edycji (`sudo kiosk-update github`). **Aktualizuj z gita (najnowszy kod)** pobiera kod z gałęzi `main`, buduje na kiosku pakiet jego edycji (pełnej z głosami Piper albo light) i go instaluje — wersja np. `1:1.0.9+git20261018.abc1234` (`sudo kiosk-update git [gałąź]`). Na czas pobierania zapora dopuszcza serwery GitHuba.
+Bez ustawiania adresu: **Aktualizuj z GitHuba (wydanie)** instaluje najnowsze wydanie tej edycji (`sudo kiosk-update github`). **Aktualizuj z gita (najnowszy kod)** pobiera kod z gałęzi `main`, buduje na kiosku pakiet jego edycji (pełnej z głosami Piper albo light) i go instaluje — wersja np. `1:1.0.10+git20261018.abc1234` (`sudo kiosk-update git [gałąź]`). Na czas pobierania zapora dopuszcza serwery GitHuba.
 
-**Numeracja.** Pakiet ma numer wersji `1:1.0.9`.
+**Numeracja.** Pakiet ma numer wersji `1:1.0.10`.
 
 **Szybkie aktualizacje.** `update-grub` i `update-initramfs` uruchamiają się tylko po zmianie linii startowej (logo wł./wył.) albo motywu startowego (logo); wymuszenie: `sudo kiosk-bootlogo initramfs --force`.
 
@@ -99,7 +99,7 @@ Pakiet `kiosk-setup-light` to lżejsza edycja kiosku dla słabszych komputerów:
 | Panel WWW, MQTT i auto-wykrycie w Home Assistant, automatyka ekranu, aktualizacje | Interkom i wiadomości głosowe |
 | Muzyka: MPD, radio, odtwarzacz DLNA, głośność, karta „Teraz gra” | Asystent głosowy (Assist) |
 
-Instalacja: `sudo apt install ./kiosk-setup-light_1.0.9_amd64.deb`. Pakiet zastępuje pełny (i odwrotnie), ustawienia zostają. Panel chowa zakładki z mową, a w Home Assistant znikają encje mowy.
+Instalacja: `sudo apt install ./kiosk-setup-light_1.0.10_amd64.deb`. Pakiet zastępuje pełny (i odwrotnie), ustawienia zostają. Panel chowa zakładki z mową, a w Home Assistant znikają encje mowy.
 
 Aktualizacje z GitHuba mają osobny plik: `https://raw.githubusercontent.com/kecajtop/Kiosk/main/update-light.json`; przycisk „Użyj GitHub” w wersji light wpisuje go sam. Kiosk nie zmienia edycji automatycznie — tylko przy ręcznej instalacji pliku albo przełączeniu edycji. Budowanie: `./build.sh --light`.
 
@@ -577,10 +577,11 @@ Kopia zapasowa z panelu (System → Kopia) obejmuje cały ten katalog.
 
 ## Historia wersji kiosk-setup
 
-Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, 1.0.5 — wersję light, 1.0.6 — Wi-Fi w panelu i aktualizację z gita, 1.0.7 — przełączanie edycji pełna/light z panelu, 1.0.8 — lokalne rozpoznawanie twarzy, a 1.0.9 — aplikację na Androida.
+Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, 1.0.5 — wersję light, 1.0.6 — Wi-Fi w panelu i aktualizację z gita, 1.0.7 — przełączanie edycji pełna/light z panelu, 1.0.8 — lokalne rozpoznawanie twarzy, 1.0.9 — aplikację na Androida, a 1.0.10 — aplikację startującą od radia.
 
 | Wersja | Data | Zawartość |
 | --- | --- | --- |
+| 1.0.10 | 18.10.2026 | Aplikacja Kiosk 1.1 startuje od sterowania radiem (widok po otwarciu do wyboru); w panelu „Teraz gra” i kafelki ulubionych stacji |
 | 1.0.9 | 18.10.2026 | Aplikacja Kiosk na Androida (przyciski głośności telefonu sterują kioskiem, wyszukiwanie kiosków, HTTPS z odciskiem certyfikatu); panel na telefonie: pasek pilota, większe pola dotyku, ikona na ekran główny; volume_step w API i MQTT |
 | 1.0.8 | 18.10.2026 | Rozpoznawanie twarzy lokalnie na kiosku (YuNet + SFace, OpenCV): osoby ze zdjęć albo z kamery, czujniki i zdarzenie w HA, powitanie głosem, alarm i nagranie przy nieznanej osobie; update-grub i update-initramfs tylko po zmianie logo lub linii startowej |
 | 1.0.7 | 18.10.2026 | Przełączanie edycji pełna/light z panelu i kiosk-update switch; poprawki aktualizacji przez panel (wgrywanie porcjami, pakiet light, adres zapisywany sam, błędy widoczne w panelu, ponowna próba po apt-get update); pasek informacyjny nie zapętla się po lewej stronie |

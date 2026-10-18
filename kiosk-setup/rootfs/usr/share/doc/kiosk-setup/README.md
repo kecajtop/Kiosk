@@ -543,8 +543,8 @@ i wpisy na pasku informacyjnym; odświeżane co 5 min. Adres i token HA jak dla 
   Rozpoznawanie twarzy. Usunięcie: „Odinstaluj” / `sudo kiosk-faces remove` (zdjęcia osób zostają).
 
 ### Radio
-Dźwięk → Radio internetowe: wyszukiwarka stacji (radio-browser.info), ulubione,
-graj/stop. W HA lista „Radio” (`radio/set` nazwa albo `OFF`). Budzik:
+Dźwięk → Radio internetowe: „Teraz gra”, kafelki ulubionych stacji (stuknięcie gra,
+ponowne zatrzymuje), wyszukiwarka stacji (radio-browser.info). W HA lista „Radio” (`radio/set` nazwa albo `OFF`). Budzik:
 harmonogram → „Radio (budzik)” — głośność narasta przez minutę.
 
 ### Interkom i asystent głosowy
@@ -910,10 +910,11 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 - **Przyciski głośności telefonu:** Dźwięk → Głośność i głos → „Przyciski głośności tego
   urządzenia sterują kioskiem”. Chrome na Androidzie zwykle nie przekazuje ich stronom —
   wtedy użyj aplikacji.
-- **Aplikacja Kiosk** (`releases/kiosk-android-1.0.apk`, Android 5.0+): panel na pełnym ekranie,
+- **Aplikacja Kiosk** (`releases/kiosk-android-1.1.apk`, Android 5.0+): panel na pełnym ekranie,
   przyciski głośności telefonu zawsze sterują kioskiem, wyszukiwanie kiosków w sieci, zapamiętany
   token lub konto domownika, HTTPS kiosku (zaufanie po porównaniu odcisku SHA-256), „wstecz”
-  cofa zakładki, ⚙ na pasku pilota otwiera ustawienia aplikacji. Instalacja: skopiuj plik na
+  cofa zakładki, ⚙ na pasku pilota otwiera ustawienia aplikacji. Po otwarciu pokazuje radio
+  (w ustawieniach aplikacji: widok po otwarciu — Radio, Start, Głośność, Co wyświetla kiosk). Instalacja: skopiuj plik na
   telefon i otwórz (zezwól na instalowanie aplikacji z tego źródła).
 - API: `POST /api/audio {"volume_step": 5}` (albo `-5`), MQTT `<prefiks>/volume/step`.
 
@@ -935,7 +936,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
   (`sudo kiosk-update github`).
 - **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
   github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
-  i go instaluje; wersja np. `1:1.0.9+git20261017.abc1234`. W terminalu:
+  i go instaluje; wersja np. `1:1.0.10+git20261017.abc1234`. W terminalu:
   `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
 
 ## Wersja light (kiosk-setup-light)
@@ -965,6 +966,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.10** (18.10.2026) — aplikacja Kiosk 1.1 startuje od radia (widok po otwarciu do wyboru);
+  w panelu „Teraz gra” i kafelki ulubionych stacji.
 - **1.0.9** (18.10.2026) — aplikacja Kiosk na Androida (przyciski głośności telefonu sterują
   kioskiem, wyszukiwanie kiosków, HTTPS z odciskiem certyfikatu); panel na telefonie: pasek
   pilota, większe pola dotyku, ikona na ekran główny; `volume_step` w API i MQTT.

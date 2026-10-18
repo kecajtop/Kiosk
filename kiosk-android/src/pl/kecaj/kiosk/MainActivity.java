@@ -200,7 +200,7 @@ public class MainActivity extends Activity {
             s.setJavaScriptEnabled(true);
             s.setDomStorageEnabled(true);
             s.setMediaPlaybackRequiresUserGesture(false);
-            s.setUserAgentString(s.getUserAgentString() + " KioskApp/1.0");
+            s.setUserAgentString(s.getUserAgentString() + " KioskApp/1.1");
             web.addJavascriptInterface(new Bridge(), "KioskApp");
             web.setWebChromeClient(new WebChromeClient() {
                 @Override
@@ -264,7 +264,7 @@ public class MainActivity extends Activity {
             } });
         }
         if (web.getParent() == null) setContentView(web);
-        web.loadUrl(base);
+        web.loadUrl(base + "#/" + prefs.getString("start", "radio"));   // widok startowy (domyślnie radio)
     }
 
     void showError(String msg) {
@@ -290,7 +290,7 @@ public class MainActivity extends Activity {
             volKeys = on;
             prefs.edit().putBoolean("volkeys", on).apply();
         }
-        @JavascriptInterface public String version() { return "1.0"; }
+        @JavascriptInterface public String version() { return "1.1"; }
     }
 
     // ------------------------------------------------------------------ głośność przyciskami
@@ -468,6 +468,28 @@ public class MainActivity extends Activity {
         vk.setChecked(volKeys);
         vk.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() { public void onCheckedChanged(android.widget.CompoundButton cb, boolean on) { volKeys = on; prefs.edit().putBoolean("volkeys", on).apply(); } });
         box.addView(vk);
+
+        box.addView(label("Widok po otwarciu"));
+        final String[][] views = {{"radio", "Radio i muzyka"}, {"start", "Start (podsumowanie)"}, {"glos", "Głośność i głos"}, {"tryb", "Co wyświetla kiosk"}};
+        android.widget.RadioGroup rg = new android.widget.RadioGroup(this);
+        String curStart = prefs.getString("start", "radio");
+        for (int i = 0; i < views.length; i++) {
+            android.widget.RadioButton rb = new android.widget.RadioButton(this);
+            rb.setId(1000 + i);
+            rb.setText(views[i][1]);
+            rb.setTextColor(TEXT);
+            rb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            rb.setMinHeight(dp(44));
+            rg.addView(rb);
+            if (views[i][0].equals(curStart)) rg.check(1000 + i);
+        }
+        rg.setOnCheckedChangeListener(new android.widget.RadioGroup.OnCheckedChangeListener() {
+            public void onCheckedChanged(android.widget.RadioGroup g, int id) {
+                int i = id - 1000;
+                if (i >= 0 && i < views.length) prefs.edit().putString("start", views[i][0]).apply();
+            }
+        });
+        box.addView(rg);
 
         Button go = button("Połącz", true);
         go.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { connect(); } });

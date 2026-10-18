@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.9",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.9_amd64.deb",
-  "sha256": "54cacbbfef907c00be278e3123ae4039a6e4b58a4699684c4bf192fc29f0000b",
-  "size": 366006,
+  "version": "1:1.0.10",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.10_amd64.deb",
+  "sha256": "1a71ec48fd247ed166b596a5de44d7f0bb3a6bff5988a29d76d542005a92a50d",
+  "size": 366746,
   "date": "2026-10-18",
-  "notes": "Aplikacja Kiosk na Androida (przyciski głośności telefonu), panel na telefonie: pasek pilota, większe pola dotyku, ikona na ekran główny."
+  "notes": "Radio w panelu: Teraz gra i kafelki ulubionych stacji; aplikacja Kiosk 1.1 startuje od radia."
 }

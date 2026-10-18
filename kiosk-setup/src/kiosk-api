@@ -5794,6 +5794,15 @@ details.more summary{color:var(--blue)}
 .hint b,.lead b{color:var(--ink)}
 a{color:var(--blue)}
 #toast{border-radius:var(--r)}
+/* Radio: kafelki ulubionych stacji i „Teraz gra” */
+.rdnow{display:flex;gap:12px;align-items:center;margin-top:16px;margin-bottom:12px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--block);min-height:56px}
+.rdnow .rdst{color:var(--amber);font-size:20px;width:22px;text-align:center}
+.rdnow .rdtt{color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:14px}
+.tiles button{min-height:68px;white-space:normal;line-height:1.25;text-align:left;justify-content:flex-start;padding:8px 12px}
+.tiles button.on{color:var(--amber);border-color:var(--amberline);background:var(--amberbg)}
+.tiles button.on::before{content:"▶ "}
+@media (max-width:600px){ .tiles{grid-template-columns:1fr 1fr} .tiles:not(:empty)+.field .rdselrow{display:none} }
 /* Telefon: pilot na dole ekranu, większe pola dotyku, bez opóźnienia podwójnego dotknięcia */
 html{-webkit-text-size-adjust:100%}
 body{touch-action:manipulation;overscroll-behavior-y:contain;-webkit-tap-highlight-color:transparent}
@@ -6059,8 +6068,10 @@ body{touch-action:manipulation;overscroll-behavior-y:contain;-webkit-tap-highlig
 <div class="hint">100% = bez przyciszania, 0% = cisza. Dotyczy muzyki/radia z kiosku i odtwarzacza DLNA (Home Assistant).</div></div>
 </section>
 <section class="card pane" role="tabpanel" id="radio" aria-labelledby="h-radio" hidden><h2 id="h-radio">Radio i muzyka</h2>
+<div id="rdnow" class="rdnow" aria-live="polite"><span class="rdst">■</span><span class="rdtt">—</span></div>
+<div id="rdtiles" class="tiles"></div>
 <div class="field">
-<div class="row"><select id="rdsel" style="flex:1;min-width:180px"></select><button type="button" id="rdplay" class="primary">Graj</button><button type="button" id="rdstop">Stop</button></div>
+<div class="row rdselrow"><select id="rdsel" style="flex:1;min-width:180px"></select><button type="button" id="rdplay" class="primary">Graj</button><button type="button" id="rdstop">Stop</button></div>
 <div class="row" style="margin-top:8px"><input type="text" id="rdq" placeholder="Szukaj stacji (np. Trójka, RMF, Jazz)" style="flex:1;min-width:180px"><button type="button" id="rdfind">Szukaj</button></div>
 <div id="rdres"></div>
 <div class="hint">Ulubione stacje są też w HA (lista „Radio”) i w harmonogramie (budzik z radiem, głośność narasta przez minutę). Wyszukiwarka: radio-browser.info.</div></div>
@@ -6379,6 +6390,7 @@ async function loadStatus(){
     $('host').replaceChildren('Kiosk '+(s.name||s.hostname), Object.assign(document.createElement('small'),{textContent:s.hostname+' · '+s.time})); if(s.name){ document.querySelectorAll('.kname').forEach(e=>{ e.textContent=s.name; }); document.title='Kiosk '+s.name+' — panel'; }
     if(s.device_id && DID!==s.device_id){ DID=s.device_id; fillHelp($('mprefix').value||'kecaj/kiosk', $('mhost').value||'192.168.0.1'); } if(host!==s.hostname.replace(/[^A-Za-z0-9_]/g,'_')){ host=s.hostname.replace(/[^A-Za-z0-9_]/g,'_'); loadMqtt().catch(()=>{}); }
     const a=s.audio||{};
+    rdNow(a); if(RADIO && a.state==='stopped' && RADIO.playing){ RADIO.playing=null; rdTiles(); }
     if(a.volume!=null) $('rmvol').textContent=a.volume+'%'; SCR=s.screen; $('rmscr').classList.toggle('on', s.screen==='on'); $('rmscr').title=s.screen==='off'?'Włącz ekran kiosku':'Wyłącz ekran kiosku';
     $('stat').replaceChildren(
       cell('Tryb', (names[s.mode]||s.mode)+(s.view?' · '+s.view:'')),
@@ -6900,9 +6912,18 @@ $('frfind').onclick=async()=>{ try{ const r=await post('api/cameras/import',{hos
   if(!d.cameras.length) $('frlist').textContent=d.source+': brak kamer'; else toast(d.source+': '+d.cameras.length+' kamer','okm'); }catch(e){ toast(e.message,'err'); } };
 // radio
 let RADIO={stations:[]};
-async function loadRadio(){ RADIO=await api('api/radio'); $('rdsel').replaceChildren(...RADIO.stations.map(s=>opt(s.name,s.name))); if(!RADIO.stations.length) $('rdsel').append(opt('','(dodaj stacje wyszukiwarką)')); if(RADIO.playing) $('rdsel').value=RADIO.playing; }
-$('rdplay').onclick=()=>{ if(!$('rdsel').value) return toast('Najpierw dodaj stację','err'); act(()=>post('api/radio/play',{station:$('rdsel').value})); };
-$('rdstop').onclick=()=>act(()=>post('api/radio/play',{station:'OFF'}));
+function rdTiles(){ const box=$('rdtiles'); if(!RADIO) return;
+  box.replaceChildren(...RADIO.stations.map(st=>{ const b=document.createElement('button'); b.type='button'; b.textContent=st.name; b.classList.toggle('on', RADIO.playing===st.name);
+    b.onclick=()=>{ const off=RADIO.playing===st.name; post('api/radio/play',{station:off?'OFF':st.name}).then(r=>{ RADIO.playing=off?null:st.name; rdTiles(); toast(r.output||(off?'Zatrzymano':st.name),'okm'); setTimeout(loadStatus,1500); }).catch(e=>toast(e.message,'err')); };
+    return b; }));
+  if(!RADIO.stations.length) box.textContent='Brak ulubionych — znajdź stację wyszukiwarką niżej i dodaj „Do ulubionych”.'; }
+function rdNow(a){ if(!$('rdnow')) return; const play=a&&a.state==='playing';
+  $('rdnow').querySelector('.rdst').textContent=play?'▶':(a&&a.state==='paused'?'❚❚':'■');
+  const t=a&&a.title&&!/^[a-z]+:\/\//i.test(a.title)?a.title:'', st=RADIO&&RADIO.playing;
+  $('rdnow').querySelector('.rdtt').textContent=!play?'Cisza':(st&&t&&t!==st?st+' — '+t:(st||t||'Gra')); }
+async function loadRadio(){ RADIO=await api('api/radio'); rdTiles(); $('rdsel').replaceChildren(...RADIO.stations.map(s=>opt(s.name,s.name))); if(!RADIO.stations.length) $('rdsel').append(opt('','(dodaj stacje wyszukiwarką)')); if(RADIO.playing) $('rdsel').value=RADIO.playing; }
+$('rdplay').onclick=()=>{ if(!$('rdsel').value) return toast('Najpierw dodaj stację','err'); act(()=>post('api/radio/play',{station:$('rdsel').value})).then(loadRadio); };
+$('rdstop').onclick=()=>act(()=>post('api/radio/play',{station:'OFF'})).then(loadRadio);
 $('rdfind').onclick=async()=>{ try{ const r=await api('api/radio/search?q='+encodeURIComponent($('rdq').value.trim()));
   $('rdres').replaceChildren(...r.results.slice(0,15).map(s=>{ const row=document.createElement('div'); row.className='row'; row.style.margin='6px 0';
     const t=document.createElement('span'); t.style.flex='1'; t.textContent=s.name+' · '+(s.country||'')+' '+(s.codec||'')+(s.bitrate?' '+s.bitrate+' kb/s':'');
