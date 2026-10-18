@@ -4404,6 +4404,43 @@ def tls_fingerprint():
     return _TLS_FP.get("fp")
 
 
+# ---------------------------------------------------------------- ekran kiosku na żywo (noVNC → WebSocket → x11vnc)
+
+X11VNC_UNIT = "/etc/systemd/system/x11vnc.service"
+VNC_PORT = 5900
+_VNC_TICKETS = {}
+
+
+def vnc_password():
+    """Hasło x11vnc z usługi (-passwd X) albo z pliku -rfbauth (stały klucz DES protokołu VNC)."""
+    try:
+        unit = open(X11VNC_UNIT).read()
+    except OSError:
+        return None
+    m = re.search(r"-passwd\s+(\S+)", unit)
+    if m:
+        return m.group(1)
+    m = re.search(r"-rfbauth\s+(\S+)", unit)
+    if m and os.path.exists(m.group(1)):
+        for extra in ([], ["-provider", "legacy", "-provider", "default"]):
+            r = subprocess.run(["openssl", "enc", "-d", "-des-ecb", "-nopad", "-nosalt", "-K", "e84ad660c4721ae0"] + extra,
+                               input=open(m.group(1), "rb").read()[:8], capture_output=True, timeout=5)
+            if r.returncode == 0 and r.stdout:
+                return r.stdout.rstrip(b"\0").decode("latin-1")
+    return None
+
+
+def vnc_ticket():
+    if not tcp_ok("127.0.0.1", VNC_PORT, 1.5)[0]:
+        raise RuntimeError("VNC kiosku nie działa (usługa x11vnc) — sprawdź Diagnostykę")
+    now = time.time()
+    for k in [k for k, t in _VNC_TICKETS.items() if t < now]:
+        _VNC_TICKETS.pop(k, None)
+    t = base64.urlsafe_b64encode(os.urandom(24)).decode().rstrip("=")
+    _VNC_TICKETS[t] = now + 60
+    return {"ticket": t, "password": vnc_password() or ""}
+
+
 def satellite_info():
     st = qrun(["systemctl", "is-active", "kiosk-satellite"]).strip()
     return {"installed": os.path.exists("/opt/kiosk-satellite/bin/python"), "state": st or "inactive",
@@ -4736,6 +4773,8 @@ class Handler(BaseHTTPRequestHandler):
                                    "icons": [{"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
                                              {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}]},
                              "application/manifest+json; charset=utf-8")
+        if path == "/api/vnc/ws":   # logowanie jednorazowym biletem z POST /api/vnc/ticket (WebSocket nie przenosi hasła)
+            return self.vnc_ws()
         if path == "/api/ping":   # bez logowania: wykrywanie kiosków w sieci (bez danych)
             return self.send(200, {"kecaj": True, "name": kiosk_name(), "hostname": os.uname().nodename, "version": PKG_VERSION})
         if not self.authorized():
@@ -4764,6 +4803,19 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, PAGE.replace("<title>Panel kiosku</title>",
                                                "<title>Kiosk %s — panel</title>" % html.escape(kiosk_name()), 1),
                              "text/html; charset=utf-8")
+        if path == "/novnc/rfb.js":
+            f = os.path.join(os.path.dirname(LOGO), "novnc", "rfb.js")
+            if not os.path.exists(f):
+                return self.send(404, {"error": "brak noVNC"})
+            with open(f, "rb") as fh:
+                data = fh.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "max-age=86400")
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if path == "/logo.png":
             with open(LOGO, "rb") as f:
                 return self.send(200, f.read(), "image/png")
@@ -4935,6 +4987,91 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {"error": str(e)})
         except Exception as e:
             return self.send(500, {"error": str(e)})
+
+    def vnc_ws(self):
+        """WebSocket (RFC 6455) ↔ TCP 127.0.0.1:5900 — dla noVNC w panelu."""
+        from urllib.parse import parse_qs
+        t = parse_qs(self.path.partition("?")[2]).get("t", [""])[0]
+        if not t or _VNC_TICKETS.pop(t, 0) < time.time():
+            return self.send(403, {"error": "bilet VNC nieważny"})
+        key = self.headers.get("Sec-WebSocket-Key")
+        if not key or "websocket" not in (self.headers.get("Upgrade") or "").lower():
+            return self.send(400, {"error": "oczekiwane połączenie WebSocket"})
+        import hashlib
+        try:
+            vnc = socket.create_connection(("127.0.0.1", VNC_PORT), timeout=5)
+        except OSError as e:
+            return self.send(502, {"error": "VNC: %s" % e})
+        vnc.settimeout(None)
+        acc = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()).decode()
+        self.send_response(101)
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", acc)
+        proto = (self.headers.get("Sec-WebSocket-Protocol") or "").split(",")[0].strip()
+        if proto:
+            self.send_header("Sec-WebSocket-Protocol", proto)
+        self.end_headers()
+        self.wfile.flush()
+        self.close_connection = True
+        self.connection.settimeout(None)
+        lock, done = threading.Lock(), threading.Event()
+        log("VNC: podgląd ekranu z %s" % self.client_address[0])
+
+        def send_frame(op, data):
+            n = len(data)
+            hdr = bytes([0x80 | op]) + (bytes([n]) if n < 126 else
+                                         (bytes([126]) + struct.pack(">H", n) if n < 65536 else bytes([127]) + struct.pack(">Q", n)))
+            with lock:
+                self.wfile.write(hdr + data)
+                self.wfile.flush()
+
+        def vnc_to_ws():
+            try:
+                while not done.is_set():
+                    data = vnc.recv(65536)
+                    if not data:
+                        break
+                    send_frame(2, data)
+            except OSError:
+                pass
+            done.set()
+            try:
+                send_frame(8, b"")
+            except Exception:
+                pass
+
+        threading.Thread(target=vnc_to_ws, daemon=True).start()
+        rf = self.rfile
+        try:
+            while not done.is_set():
+                h = rf.read(2)
+                if len(h) < 2:
+                    break
+                op, ln = h[0] & 0x0F, h[1] & 0x7F
+                if ln == 126:
+                    ln = struct.unpack(">H", rf.read(2))[0]
+                elif ln == 127:
+                    ln = struct.unpack(">Q", rf.read(8))[0]
+                if ln > 16 * 1024 * 1024:
+                    break
+                mask = rf.read(4) if h[1] & 0x80 else b""
+                data = rf.read(ln)
+                if mask:
+                    data = bytes(b ^ mask[i & 3] for i, b in enumerate(data))
+                if op == 8:
+                    break
+                if op == 9:
+                    send_frame(10, data)
+                elif op in (0, 1, 2):
+                    vnc.sendall(data)
+        except (OSError, ValueError, struct.error):
+            pass
+        done.set()
+        try:
+            vnc.close()
+        except OSError:
+            pass
 
     def send_file(self, path, ctype):
         """Plik z obsługą Range (przewijanie nagrań w przeglądarce)."""
@@ -5141,6 +5278,8 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=BRIDGE.publish_discovery, daemon=True).start()
             return "Rozpoznawanie twarzy: " + ("kamery " + ", ".join(map(str, cfg["cameras"]))
                                                if cfg["enabled"] and cfg["cameras"] else "wyłączone")
+        if path == "/api/vnc/ticket":
+            return json.dumps(vnc_ticket())
         if path == "/api/faces/install":
             a = body.get("action")
             if a not in ("install", "remove"):
@@ -5828,6 +5967,12 @@ body{touch-action:manipulation;overscroll-behavior-y:contain;-webkit-tap-highlig
 .mlist a:hover,.mlist button:hover{background:var(--btnh)}
 .mlist .chev{color:var(--muted);font-size:20px}
 .mlist small{color:var(--muted);font-size:12px;margin-left:10px}
+#vncov{position:fixed;inset:0;z-index:30;background:#000;display:flex;flex-direction:column}
+#vncov[hidden]{display:none}
+.vncbar{display:flex;gap:12px;align-items:center;padding:8px 12px calc(8px);padding-top:calc(8px + env(safe-area-inset-top));background:var(--card);border-bottom:1px solid var(--line)}
+.vncbar label.check{margin:0}
+#vncst{color:var(--muted);font-size:13px;margin-left:auto;text-align:right}
+#vncscreen{flex:1;min-height:0;overflow:hidden}
 img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--line);background:#000;aspect-ratio:16/9;object-fit:contain}
 @media (max-width:860px){
   /* Telefon: dolne zakładki Pilot / Kamery / Ustawienia zamiast dwóch pasków u góry */
@@ -5908,7 +6053,7 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <section class="card pane" role="tabpanel" id="kamery" aria-labelledby="h-kamery" hidden><h2 id="h-kamery">Kamery</h2>
 <h3>Ekran kiosku</h3>
 <img id="kmshot" class="shot" alt="Podgląd ekranu kiosku">
-<div class="row" style="margin-top:8px"><button type="button" id="kmshotb">Odśwież</button><span class="hint" id="kmshott" style="align-self:center"></span></div>
+<div class="row" style="margin-top:8px"><button type="button" id="kmlive" class="primary adm">▶ Na żywo</button><button type="button" id="kmshotb">Odśwież</button><span class="hint" id="kmshott" style="align-self:center"></span></div>
 <h3 class="adm">Pokaż kamerę na kiosku</h3>
 <div class="adm"><div id="kmcams" class="quick"></div><div class="row" style="margin-top:8px"><button type="button" data-proxy="alstop">Zakończ alarm</button></div></div>
 </section>
@@ -6416,6 +6561,7 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 </div></div>
 </main>
 <div id="toast" role="status" aria-live="polite" hidden></div>
+<div id="vncov" hidden role="dialog" aria-label="Ekran kiosku na żywo"><div class="vncbar"><button type="button" id="vncclose">✕ Zamknij</button><label class="check"><input type="checkbox" id="vncctl"> Sterowanie</label><span id="vncst"></span></div><div id="vncscreen"></div></div>
 <nav id="tabbar" aria-label="Główne zakładki">
 <a href="#/start" data-tab="start"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v18H7zM12 7.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM10 16h4"/></svg><span>Pilot</span></a>
 <a href="#/kamery" data-tab="kamery"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h12v10H3zM15 10l6-3v10l-6-3"/></svg><span>Kamery</span></a>
@@ -6882,6 +7028,26 @@ async function loadKamery(){ kmShot(); if(ME!=='admin') return;
     $('kmcams').replaceChildren(...cams.map((u,i)=>{ const b=document.createElement('button'); b.type='button'; b.textContent='Kamera '+(i+1); b.onclick=()=>act(()=>post('api/alert',{camera:i+1, seconds:30, title:'Kamera '+(i+1)})).then(()=>setTimeout(kmShot,2500)); return b; }));
     if(!cams.length) $('kmcams').textContent='Brak kamer — dodaj je w Ustawienia → Co wyświetla kiosk.'; }catch(e){} }
 $('kmshotb').onclick=kmShot;
+// ---- ekran kiosku na żywo: noVNC przez WebSocket (bilet jednorazowy), domyślnie tylko podgląd
+let VNC=null, RFB=null;
+async function vncOpen(){ try{ history.pushState({vnc:1},'',location.hash); }catch(e){} $('vncov').hidden=false; $('vncst').textContent='Łączę…'; $('vncctl').checked=false;
+  try{
+    if(!RFB) RFB=(await import(new URL('novnc/rfb.js', location.href.replace(/[#?].*$/,'')).href)).default;
+    const r=await post('api/vnc/ticket',{}); const tk=JSON.parse(r.output);
+    const url=new URL('api/vnc/ws?t='+encodeURIComponent(tk.ticket), location.href.replace(/[#?].*$/,'')).href.replace(/^http/,'ws');
+    VNC=new RFB($('vncscreen'), url, {credentials:{password:tk.password||''}, wsProtocols:['binary']});
+    VNC.scaleViewport=true; VNC.resizeSession=false; VNC.viewOnly=true; VNC.background='#000'; VNC.showDotCursor=true;
+    VNC.addEventListener('connect', ()=>{ $('vncst').textContent='Na żywo'; });
+    VNC.addEventListener('disconnect', e=>{ $('vncst').textContent=e.detail&&e.detail.clean?'Rozłączono':'Połączenie przerwane'; VNC=null; });
+    VNC.addEventListener('credentialsrequired', ()=>{ const p=prompt('Hasło VNC kiosku'); if(p!==null) VNC.sendCredentials({password:p}); });
+    VNC.addEventListener('securityfailure', e=>{ $('vncst').textContent='Złe hasło VNC'+(e.detail&&e.detail.reason?': '+e.detail.reason:''); });
+  }catch(e){ $('vncst').textContent='Błąd: '+e.message; } }
+function vncClose(fromPop){ const open=!$('vncov').hidden; try{ if(VNC) VNC.disconnect(); }catch(e){} VNC=null; $('vncscreen').replaceChildren(); $('vncov').hidden=true;
+  if(open && !fromPop && history.state && history.state.vnc){ try{ history.back(); }catch(e){} } }
+window.addEventListener('popstate', ()=>{ if(!$('vncov').hidden) vncClose(true); });
+$('kmlive').onclick=vncOpen; $('vncclose').onclick=()=>vncClose();
+$('vncctl').onchange=()=>{ if(VNC){ VNC.viewOnly=!$('vncctl').checked; VNC.focus(); } };
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('vncov').hidden && !$('vncctl').checked) vncClose(); });
 // ---- rozpoznawanie twarzy
 let FCTIMER=0, FCSIG='';
 const fcName=()=>$('fcname').value.trim();

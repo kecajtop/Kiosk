@@ -166,7 +166,7 @@ menu z siedmioma sekcjami, a w każdej sekcji kilka zakładek:
 | Sekcja | Zakładki |
 |---|---|
 | **Pilot** | „Teraz gra”, głośność −/+ i stop, kafelki ulubionych stacji, widoki i ekran (wł./wył., noc, odśwież, alarm), jasność, „Powiedz” |
-| **Kamery** | podgląd ekranu kiosku, kamera na kiosku na żądanie (30 s) |
+| **Kamery** | ekran kiosku na żywo (VNC w panelu, podgląd albo sterowanie), zrzut ekranu, kamera na kiosku na żądanie (30 s) |
 | **Ekran** | Co wyświetla kiosk · Widoki (z rotacją) · Monitory · Jasność i wyłączanie |
 | **Komunikaty** | Dymek · Powiedz na głos (z mówiącym zegarem) · Alarm na ekranie · Pasek informacyjny |
 | **Dźwięk** | Głośność i głos · Radio i muzyka · Wiadomość i interkom · Asystent głosowy |
@@ -784,6 +784,11 @@ zastosuje.
 
 ## VNC (podgląd ekranu kiosku)
 
+**W panelu:** Kamery → „▶ Na żywo” — ekran kiosku na żywo w przeglądarce lub aplikacji (noVNC, bez instalowania
+programu VNC). Domyślnie tylko podgląd; „Sterowanie” przekazuje dotyk, mysz i klawiaturę. Połączenie idzie przez
+panel (WebSocket → x11vnc na 127.0.0.1:5900) z jednorazowym biletem dla administratora; hasło VNC panel bierze
+z usługi x11vnc (`-passwd` albo plik `-rfbauth`).
+
 `x11vnc` udostępnia na porcie **5900** dokładnie tę sesję Xorg, którą
 widać na ekranie kiosku (nie osobny wirtualny pulpit).
 
@@ -940,7 +945,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
   (`sudo kiosk-update github`).
 - **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
   github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
-  i go instaluje; wersja np. `1:1.0.11+git20261017.abc1234`. W terminalu:
+  i go instaluje; wersja np. `1:1.0.12+git20261017.abc1234`. W terminalu:
   `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
 
 ## Wersja light (kiosk-setup-light)
@@ -970,6 +975,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.12** (18.10.2026) — ekran kiosku na żywo w panelu i aplikacji (noVNC przez WebSocket
+  do x11vnc), podgląd albo sterowanie.
 - **1.0.11** (18.10.2026) — nowy układ panelu: Pilot jako strona główna, zakładka Kamery,
   na telefonie dolne zakładki i Ustawienia jako lista; aplikacja Kiosk 1.2 otwiera się na Pilocie.
 - **1.0.10** (18.10.2026) — aplikacja Kiosk 1.1 startuje od radia (widok po otwarciu do wyboru);

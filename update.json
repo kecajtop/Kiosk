@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.11",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.11_amd64.deb",
-  "sha256": "b0610339cfa016d771409f3242c3c3aa48a40af2a70522989d976e81b8caddfd",
-  "size": 22986720,
+  "version": "1:1.0.12",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.12_amd64.deb",
+  "sha256": "8170daafa94f54650ed16e8ad0f1a822bae915e6f42b131cb98863235e3e2f4c",
+  "size": 23041426,
   "date": "2026-10-18",
-  "notes": "Nowy układ panelu: Pilot (radio, głośność, ekran), zakładka Kamery, na telefonie dolne zakładki i Ustawienia jako lista."
+  "notes": "Ekran kiosku na żywo w panelu i aplikacji (Kamery → Na żywo), podgląd albo sterowanie."
 }

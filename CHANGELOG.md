@@ -1,5 +1,12 @@
 # Zmiany
 
+## 1.0.12 (2026-10-18)
+- **Ekran kiosku na żywo (VNC w panelu):** Kamery → „▶ Na żywo” — płynny podgląd ekranu kiosku w przeglądarce
+  i w aplikacji, bez osobnego programu VNC. Domyślnie tylko podgląd; „Sterowanie” pozwala klikać i pisać na kiosku.
+  noVNC 1.7.0 w panelu, połączenie WebSocket → x11vnc (127.0.0.1:5900) z jednorazowym biletem (tylko administrator),
+  działa też przez HTTPS. „Wstecz” w telefonie zamyka podgląd.
+- Gotowe pakiety: `releases/kiosk-setup_1.0.12_amd64.deb`, `releases/kiosk-setup-light_1.0.12_amd64.deb`.
+
 ## Aplikacja Kiosk 1.3 (2026-10-18)
 - **Aktualizacja aplikacji z GitHuba:** aplikacja raz dziennie sprawdza `android.json` w repozytorium (i przyciskiem
   „Sprawdź aktualizację aplikacji” w jej ustawieniach), pobiera nowy APK, sprawdza SHA-256 i uruchamia systemową
