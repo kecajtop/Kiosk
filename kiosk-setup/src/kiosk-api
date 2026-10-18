@@ -3471,7 +3471,7 @@ def read_updates():
         out = subprocess.run(["sh", "-c", script], capture_output=True, text=True, timeout=5).stdout.split("\0")
         if len(out) == 2:
             vals = {"UPDATE_URL": out[0], "UPDATE_AUTO": out[1] or "no"}
-    return {"url": vals["UPDATE_URL"], "auto": vals["UPDATE_AUTO"] == "yes",
+    return {"url": vals["UPDATE_URL"], "auto": vals["UPDATE_AUTO"] == "yes", "edition": "light" if LIGHT else "full",
             "version": pkg_version(),
             "running": bool(qrun(["systemctl", "list-units", "--no-legend", "--state=active", "kiosk-update-*"]).strip()),
             "progress": read_json("/run/kiosk-update.json", {}),
@@ -4598,7 +4598,11 @@ class Handler(BaseHTTPRequestHandler):
             n = int(self.headers.get("Content-Length") or 0)
             if n > 65536:
                 return self.send(413, {"error": "za duże żądanie"})
-            body = json.loads(self.rfile.read(n) or b"{}") if n else {}
+            if not n and self.chunked():
+                raw = self.read_chunked(65536)
+            else:
+                raw = self.rfile.read(n) if n else b""
+            body = json.loads(raw or b"{}")
             if not isinstance(body, dict):
                 raise ValueError("oczekiwany obiekt JSON")
             out = self.route(path, body)
@@ -4882,20 +4886,59 @@ class Handler(BaseHTTPRequestHandler):
                     "remove": "Usuwam asystenta głosowego", "restart": "Restart asystenta głosowego"}[a]
         return None
 
+    def chunked(self):
+        return "chunked" in (self.headers.get("Transfer-Encoding") or "").lower()
+
+    def read_chunked(self, limit, out=None):
+        """Treść przesyłana porcjami (Transfer-Encoding: chunked — np. przez pośrednika albo Ingress)."""
+        data, total = [], 0
+        while True:
+            line = self.rfile.readline(1024)
+            if not line:
+                raise ValueError("przerwane przesyłanie")
+            size = int(line.split(b";")[0].strip() or b"0", 16)
+            if size == 0:
+                while self.rfile.readline(1024) not in (b"\r\n", b"\n", b""):
+                    pass
+                break
+            total += size
+            if total > limit:
+                raise OverflowError("plik za duży (najwyżej %d MB)" % (limit // 1_000_000))
+            left = size
+            while left > 0:
+                chunk = self.rfile.read(min(left, 1 << 20))
+                if not chunk:
+                    raise ValueError("przerwane przesyłanie")
+                (out.write(chunk) if out else data.append(chunk))
+                left -= len(chunk)
+            self.rfile.readline(16)
+        return total if out else b"".join(data)
+
     def upload(self, path):
         """Przesyłanie pliku (surowe body): wiadomość głosowa, kopia ustawień, pakiet aktualizacji."""
         try:
             n = int(self.headers.get("Content-Length") or 0)
             limit = UPLOADS[path]
-            if n <= 0:
+            chunked = not n and self.chunked()
+            if n <= 0 and not chunked:
                 return self.send(400, {"error": "pusty plik"})
             if n > limit:
                 return self.send(413, {"error": "plik za duży (najwyżej %d MB)" % (limit // 1_000_000)})
             os.makedirs(UPDATE_DIR, exist_ok=True)
             tmp = os.path.join(UPDATE_DIR, "upload-%d.part" % int(time.time() * 1000))
             with open(tmp, "wb") as f:
-                left = n
-                while left > 0:
+                if chunked:
+                    try:
+                        n = self.read_chunked(limit, f)
+                    except OverflowError as e:
+                        f.close()
+                        os.unlink(tmp)
+                        self.close_connection = True
+                        return self.send(413, {"error": str(e)})
+                    left = 0 if n else 1
+                else:
+                    left = n
+                while left > 0 and not chunked:
                     chunk = self.rfile.read(min(left, 1 << 20))
                     if not chunk:
                         break
@@ -4926,9 +4969,9 @@ class Handler(BaseHTTPRequestHandler):
                 deb = os.path.join(UPDATE_DIR, "kiosk-setup-upload.deb")
                 os.replace(tmp, deb)
                 pkg = qrun(["dpkg-deb", "-f", deb, "Package"]).strip()
-                if pkg != "kiosk-setup":
+                if pkg not in PKG_NAMES:
                     os.unlink(deb)
-                    return self.send(400, {"error": "to nie jest pakiet kiosk-setup (.deb)"})
+                    return self.send(400, {"error": "to nie jest pakiet kiosk-setup ani kiosk-setup-light (.deb)"})
                 ver = qrun(["dpkg-deb", "-f", deb, "Version"]).strip()
                 out = "Pakiet %s przesłany. " % ver + start_update("file", deb)
             log("przesłano %s (%d kB)" % (path, n // 1024))
@@ -5004,6 +5047,11 @@ class Handler(BaseHTTPRequestHandler):
             if r.returncode != 0:
                 raise RuntimeError("Nie udało się sprawdzić: " + (" ".join(lines[-2:]) or r.stderr.strip() or "błąd"))
             return " · ".join(l for l in lines if l.startswith(("Zainstalowana", "Dostępna")))
+        if path == "/api/update/switch":
+            ed = str(body.get("edition") or "")
+            if ed not in ("light", "full"):
+                raise ValueError("edycja: light albo full")
+            return start_update("switch", ed)
         if path == "/api/update/github":
             return start_update("github")
         if path == "/api/update/git":
@@ -5777,6 +5825,7 @@ a{color:var(--blue)}
 </section>
 <section class="card pane" role="tabpanel" id="aktualizacje" aria-labelledby="h-aktualizacje" hidden><h2 id="h-aktualizacje">Aktualizacje i kopia</h2>
 <p id="upver" class="lead"></p>
+<div class="row" style="align-items:center"><span id="uped" class="hint" style="margin:0"></span><button type="button" id="upswitch"></button></div>
 <div class="row"><label class="btn" style="cursor:pointer"><input type="file" id="updeb" accept=".deb" hidden> Wgraj nową wersję (.deb)…</label></div>
 <form id="upf"><div class="field"><label for="upurl">Adres aktualizacji</label><input type="text" class="mono" id="upurl" placeholder="https://raw.githubusercontent.com/kecajtop/Kiosk/main/update.json">
 <div class="row"><button type="button" id="upgh">Użyj GitHub (kecajtop/Kiosk)</button></div>
@@ -6157,9 +6206,27 @@ $('rsfile').onchange=()=>{ const f=$('rsfile').files[0]; $('rsfile').value=''; i
 // ---- aktualizacje
 let UPT=null;
 async function loadUpdate(){ const r=await api('api/update'); const pg=r.progress||{};
+  showEdition(r);
   $('upver').textContent='Zainstalowana wersja: '+(r.version||'?')+(r.running?' — trwa aktualizacja'+(pg.percent!=null&&['download','install'].includes(pg.state)?': '+pg.percent+'%'+(pg.step?' · '+pg.step:''):'…'):''); $('upurl').value=r.url||''; $('upauto').checked=r.auto; $('uplog').textContent=r.log||''; $('uplog').hidden=!r.log; $('uplog').scrollTop=$('uplog').scrollHeight; return r; }
-function watchUpdate(){ clearInterval(UPT); const t0=Date.now(); let seen=false;
-  UPT=setInterval(async()=>{ try{ const r=await loadUpdate(); if(r.running) seen=true; else if(seen||Date.now()-t0>20000){ clearInterval(UPT); toast('Aktualizacja zakończona: '+r.version,'okm'); setTimeout(()=>location.reload(),3000); } }catch(e){ /* panel restartuje się podczas instalacji */ } }, 3000); }
+function watchUpdate(){ clearInterval(UPT); const t0=Date.now(); let seen=false; const v0=($('upver').textContent||'');
+  UPT=setInterval(async()=>{ try{ const r=await loadUpdate(); const pg=r.progress||{};
+    if(r.running){ seen=true; return; }
+    if(!(seen||Date.now()-t0>20000)) return;
+    clearInterval(UPT);
+    if(pg.state==='error') toast('Aktualizacja nieudana: '+(pg.step||'szczegóły w dzienniku poniżej'),'err');
+    else if(pg.state==='idle' && !pg.step) toast('Brak nowszej wersji — zainstalowana: '+r.version,'okm');
+    else { toast('Aktualizacja zakończona: '+r.version,'okm'); if(!v0.includes(r.version)) setTimeout(()=>location.reload(),3000); }
+  }catch(e){ /* panel restartuje się podczas instalacji */ } }, 3000); }
+// Edycja: pełna / light — przełączenie pobiera pakiet drugiej edycji z GitHuba (ustawienia zostają).
+function showEdition(r){ const light=r.edition==='light';
+  $('uped').textContent='Edycja: '+(light?'light (bez mowy: syntezy głosu, interkomu i asystenta)':'pełna (z mową, interkomem i asystentem głosowym)');
+  $('upswitch').textContent=light?'Przełącz na wersję pełną':'Przełącz na wersję light'; $('upswitch').dataset.to=light?'full':'light'; }
+$('upswitch').onclick=()=>{ const to=$('upswitch').dataset.to;
+  const msg = to==='light' ? 'Przełączyć na wersję light? Zniknie mowa (synteza głosu, mówiący zegar, czytanie komunikatów), interkom i asystent głosowy; muzyka, radio, ekran, panel i MQTT zostają. Pakiet zostanie pobrany z GitHuba, ustawienia zostają.'
+                           : 'Przełączyć na wersję pełną? Wróci mowa, interkom i asystent głosowy (pakiet ok. 22 MB z GitHuba, plus głosy). Ustawienia zostają.';
+  if(!confirm(msg)) return; act(()=>post('api/update/switch',{edition:to})).then(watchUpdate); };
+// Adres z pola zapisany przed sprawdzeniem — „Użyj GitHub” bez „Zapisz” też działa.
+function saveUpd(){ return post('api/updates',{url:$('upurl').value.trim(), auto:$('upauto').checked}); }
 $('updeb').onchange=()=>{ const f=$('updeb').files[0]; $('updeb').value=''; if(!f) return; if(!confirm('Zainstalować '+f.name+'? Ustawienia zostają, ekran kiosku może na chwilę się odświeżyć.')) return; upload('api/update/upload', f).then(watchUpdate).catch(()=>{}); };
 $('upf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/updates',{url:$('upurl').value.trim(), auto:$('upauto').checked})).then(()=>loadUpdate().catch(()=>{})); });
 
@@ -6189,10 +6256,10 @@ $('wff').addEventListener('submit', e=>{ e.preventDefault();
   act(()=>post('api/wifi', b)).then(()=>{ $('wfpass').value=''; setTimeout(()=>loadWifi().catch(()=>{}), 2500); }); });
 $('wfok').onclick=()=>act(()=>post('api/wifi/confirm')).then(()=>loadWifi().catch(()=>{}));
 $('upgh').onclick=()=>{ $('upurl').value='https://raw.githubusercontent.com/kecajtop/Kiosk/main/update'+(LIGHT?'-light':'')+'.json'; toast('Adres wpisany — kliknij Zapisz','okm'); };
-$('uplatest').onclick=()=>act(()=>post('api/update/latest'));
+$('uplatest').onclick=()=>act(()=>saveUpd().then(()=>post('api/update/latest')));
 $('upghnow').onclick=()=>act(()=>post('api/update/github')).then(watchUpdate);
 $('upgit').onclick=()=>{ if(!confirm('Pobrać najnowszy kod z gita (gałąź main), zbudować pakiet na kiosku i zainstalować? To wersja rozwojowa — może zawierać zmiany jeszcze niewydane.')) return; act(()=>post('api/update/git',{branch:'main'})).then(watchUpdate); };
-$('upcheck').onclick=()=>act(()=>post('api/update/check')).then(watchUpdate);
+$('upcheck').onclick=()=>act(()=>saveUpd().then(()=>post('api/update/check'))).then(watchUpdate);
 // ---- zrzut ekranu
 $('shotb').onclick=async()=>{ const b=$('shotb'); b.disabled=true; try{ const r=await fetch('api/screenshot'); if(!r.ok){ const j=await r.json().catch(()=>({})); throw new Error(j.error||('Błąd '+r.status)); }
   const url=URL.createObjectURL(await r.blob()); $('shot').src=url; $('shot').hidden=false; $('shotdl').href=url; $('shotdl').hidden=false; }catch(e){ toast(e.message,'err'); } finally{ b.disabled=false; } };

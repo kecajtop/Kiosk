@@ -6,6 +6,7 @@
 #   sudo kiosk-update latest                                   - tylko pokaż, jaka wersja jest dostępna
 #   sudo kiosk-update github                                   - najnowsze wydanie z GitHuba (bez ustawiania adresu)
 #   sudo kiosk-update git [gałąź]                              - zbuduj i zainstaluj najnowszy kod z gita (domyślnie main)
+#   sudo kiosk-update switch light|full                        - przełącz edycję (light: bez mowy / pełna) z GitHuba
 # Adres: panel WWW → System, albo /etc/kiosk-setup/updates.conf (UPDATE_URL=…). Może to być:
 #   plik .deb, plik update.json (np. z GitHuba) albo API wydań GitHub (…/releases/latest).
 set -u
@@ -58,6 +59,14 @@ apt_install() {   # apt_install PLIK [polecenie-przed] — instalacja z postępe
         esac
     done
     rc=${PIPESTATUS[0]}
+    if [ "$rc" != 0 ] && [ -z "${APT_RETRIED:-}" ]; then
+        # Najczęściej: nowa wersja wymaga pakietu, którego nie ma w nieaktualnych listach apt.
+        APT_RETRIED=1
+        echo "Instalacja nieudana — odświeżam listy pakietów (apt-get update) i próbuję ponownie..."
+        progress install "$PSTART" "Odświeżanie list pakietów…"
+        "$@" apt-get update -q 2>&1 | tail -n 3
+        apt_install "$deb" "$@"; rc=$?
+    fi
     return "$rc"
 }
 
@@ -119,7 +128,7 @@ resolve() {
     local out
     REL_VER=""; REL_URL=""; REL_SHA=""; REL_NOTES=""
     [ -n "$UPDATE_URL" ] || { echo "Brak adresu aktualizacji (panel WWW → System)." >&2; return 1; }
-    out=$(python3 - "$UPDATE_URL" "$(edition)" <<'EOF'
+    out=$(python3 - "$UPDATE_URL" "${TARGET_ED:-$(edition)}" <<'EOF'
 import json, re, sys, urllib.request
 url, edition = sys.argv[1], sys.argv[2]
 def emit(ver, deb, sha="", notes=""):
@@ -240,9 +249,33 @@ fetch_and_install() {
 
 # Całość w funkcji wywołanej w jednej linii: bash wczytuje ją przed wykonaniem,
 # więc podmiana tego pliku przez instalowany pakiet nie przeszkadza.
-github_manifest() {
-    if [ "$(edition)" = kiosk-setup-light ]; then f=update-light.json; else f=update.json; fi
+github_manifest() {   # github_manifest [edycja]
+    if [ "${1:-$(edition)}" = kiosk-setup-light ]; then f=update-light.json; else f=update.json; fi
     echo "https://raw.githubusercontent.com/$GIT_REPO/main/$f"
+}
+
+# Zmiana edycji: pobiera z GitHuba pakiet drugiej edycji i instaluje go (ustawienia zostają).
+# Jeśli adres aktualizacji wskazywał plik GitHuba starej edycji — przestawia go na nową.
+switch_edition() {
+    local want cur f
+    case "${1:-}" in
+        light|kiosk-setup-light) want=kiosk-setup-light ;;
+        full|pełna|pelna|kiosk-setup) want=kiosk-setup ;;
+        *) echo "Podaj edycję: light albo full"; return 1 ;;
+    esac
+    cur=$(edition)
+    [ "$want" = "$cur" ] && { echo "Już zainstalowana edycja: $cur"; progress idle 0 ""; return 0; }
+    echo "Zmiana edycji: $cur → $want"
+    [ -x /usr/local/sbin/kiosk-firewall ] && /usr/local/sbin/kiosk-firewall allow-github >/dev/null 2>&1
+    UPDATE_URL=$(github_manifest "$want"); TARGET_ED=$want
+    resolve || { progress error 0 "Nie udało się pobrać informacji o edycji $want"; return 1; }
+    f=$(download | tail -n 1) && [ -f "$f" ] || return 1
+    install_deb "$f" || return 1
+    if [ -r "$CONF" ] && grep -q "raw.githubusercontent.com/.*/update\(-light\)\?\.json" "$CONF"; then
+        sed -i "s#^UPDATE_URL=.*#UPDATE_URL='$(github_manifest "$want")'#" "$CONF"
+        [ -x /usr/local/sbin/kiosk-firewall ] && /usr/local/sbin/kiosk-firewall refresh >/dev/null 2>&1
+        echo "Adres aktualizacji: $(github_manifest "$want")"
+    fi
 }
 
 # Aktualizacja prosto z kodu w gicie: pobiera archiwum gałęzi, buduje pakiet tej samej edycji
@@ -307,6 +340,7 @@ case "${1:-}" in
            [ -x /usr/local/sbin/kiosk-firewall ] && /usr/local/sbin/kiosk-firewall allow-github >/dev/null 2>&1
            fetch_and_install ;;
     git)   from_git "${2:-}" ;;
+    switch) switch_edition "${2:-}" ;;
     file)  [ -f "${2:-}" ] || { echo "Podaj plik .deb"; exit 1; }
            install_deb "$2" ;;
     check) fetch_and_install ;;

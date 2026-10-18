@@ -889,7 +889,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
   (`sudo kiosk-update github`).
 - **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
   github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
-  i go instaluje; wersja np. `1:1.0.6+git20261017.abc1234`. W terminalu:
+  i go instaluje; wersja np. `1:1.0.7+git20261017.abc1234`. W terminalu:
   `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
 
 ## Wersja light (kiosk-setup-light)
@@ -904,11 +904,25 @@ i asystenta głosowego. Pakiet ma ok. 0,3 MB zamiast ok. 22 MB i nie instaluje e
   (i odwrotnie), ustawienia zostają.
 - Aktualizacje z GitHuba: `https://raw.githubusercontent.com/kecajtop/Kiosk/main/update-light.json`
   (przycisk „Użyj GitHub” w wersji light wpisuje ten adres sam). Kiosk nie zmieni edycji
-  automatycznie — tylko przy ręcznej instalacji pliku.
+  automatycznie — tylko przy ręcznej instalacji pliku albo przełączeniu edycji.
 - Budowanie: `./build.sh --light`.
+
+### Przełączanie edycji
+
+W panelu: **System → Aktualizacje** pokazuje zainstalowaną edycję i przycisk „Przełącz na wersję
+light” albo „Przełącz na wersję pełną”. Kiosk pobiera z GitHuba najnowszy pakiet drugiej edycji
+(zapora na ten czas dopuszcza GitHub), sprawdza sumę SHA-256 i go instaluje; ustawienia zostają.
+Jeśli adres aktualizacji wskazywał `update.json` / `update-light.json` z GitHuba, zostaje
+przestawiony na plik nowej edycji. W terminalu: `sudo kiosk-update switch light` albo
+`sudo kiosk-update switch full`. Przejście na light usuwa głosy Piper (ok. 22 MB); powrót
+na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.7** (18.10.2026) — przełączanie edycji pełna/light z panelu i `kiosk-update switch`;
+  poprawki aktualizacji przez panel (wgrywanie porcjami, pakiet light, adres zapisywany sam,
+  błędy widoczne w panelu, ponowna próba po `apt-get update`); pasek informacyjny nie zapętla
+  się po lewej stronie.
 - **1.0.6** (17.10.2026) — Wi-Fi w panelu (skanowanie, połączenie, DHCP/stały adres, cofnięcie
   zmian bez potwierdzenia), wyłączone oszczędzanie energii Wi-Fi, `wpasupplicant` i `iw` w
   zależnościach, stan Wi-Fi w Diagnostyce; aktualizacja z GitHuba jednym przyciskiem i prosto

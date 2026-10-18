@@ -1,5 +1,17 @@
 # Zmiany
 
+## 1.0.7 (2026-10-18)
+- **Przełączanie edycji:** System → Aktualizacje → „Przełącz na wersję light” / „Przełącz na wersję pełną” —
+  kiosk pobiera z GitHuba pakiet drugiej edycji, instaluje go (ustawienia zostają) i przestawia adres
+  aktualizacji na `update.json` albo `update-light.json`. W terminalu: `sudo kiosk-update switch light|full`.
+- **Aktualizacja przez panel WWW:** wgrywanie pakietu działa też przy przesyłaniu porcjami (chunked) i przyjmuje
+  pakiet light; „Jaka wersja jest dostępna?” i „Aktualizuj z GitHuba” zapisują adres same (bez „Zapisz”);
+  panel pokazuje błąd aktualizacji zamiast komunikatu o sukcesie i „Brak nowszej wersji”, gdy nic nie zainstalowano;
+  przy nieudanej instalacji kiosk odświeża listy pakietów (`apt-get update`) i próbuje ponownie (nowe zależności).
+- **Pasek informacyjny:** przewijany tekst nie zapętla się już po lewej stronie — krótki tekst wychodzi w całości
+  za lewą krawędź i wjeżdża z prawej, długi płynie w dwóch kopiach z odstępem.
+- Gotowe pakiety: `releases/kiosk-setup_1.0.7_amd64.deb`, `releases/kiosk-setup-light_1.0.7_amd64.deb`.
+
 ## 1.0.6 (2026-10-17)
 - **Wi-Fi:** zakładka Połączenia → Wi-Fi i sieć — stan kart, skanowanie sieci, połączenie (DHCP albo stały adres)
   z automatycznym cofnięciem po 2 min bez potwierdzenia; oszczędzanie energii Wi-Fi wyłączone (kiosk zawsze

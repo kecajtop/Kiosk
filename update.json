@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.6",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.6_amd64.deb",
-  "sha256": "375dc55d090eccb7d0faf6487ee2ebdacc463fcaa64bf3daebcfa4a7d2a362b1",
-  "size": 22950368,
-  "date": "2026-10-17",
-  "notes": "Wi-Fi w panelu, wyłączone oszczędzanie energii Wi-Fi, aktualizacja z GitHuba i prosto z gita."
+  "version": "1:1.0.7",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.7_amd64.deb",
+  "sha256": "ac4a96ba45e95748809105c95d4a099eb1c2f89e8fac3ce4ee2b7e966d34d747",
+  "size": 22952194,
+  "date": "2026-10-18",
+  "notes": "Przełączanie edycji pełna/light z panelu, poprawki aktualizacji przez panel WWW, pasek informacyjny bez zapętlania po lewej."
 }

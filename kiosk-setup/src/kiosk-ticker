@@ -75,20 +75,25 @@ def main():
             print("pasek: %s" % e, flush=True)
             return
         state["img"], state["iw"] = img, img.width()
-        # Dwie kopie obok siebie: płynne zawijanie bez przerwy.
-        state["items"] = [cv.create_image(w, 2, image=img, anchor="nw"),
-                          cv.create_image(w + img.width() + GAP, 2, image=img, anchor="nw")]
+        # Tekst krótszy niż ekran: jedna kopia, po zniknięciu z lewej wjeżdża z prawej krawędzi.
+        # Dłuższy: dwie kopie jedna za drugą (z odstępem GAP), żeby pasek nie był pusty.
+        n = 2 if img.width() + GAP >= w else 1
+        state["items"] = [cv.create_image(w + i * (img.width() + GAP), 2, image=img, anchor="nw") for i in range(n)]
 
     def tick():
         now = time.time()
         if now - state["checked"] > 2:
             state["checked"] = now
             load()
-        span = state["iw"] + GAP
-        for it in state["items"]:
+        iw, items = state["iw"], state["items"]
+        for it in items:
             cv.move(it, -speed, 0)
-            if cv.coords(it)[0] < -state["iw"]:
-                cv.move(it, 2 * span, 0)
+        for it in items:
+            if cv.coords(it)[0] <= -iw:          # cały tekst wyszedł za lewą krawędź
+                # następna pozycja: za ostatnią kopią (z odstępem), ale nigdy przed prawą krawędzią
+                last = max(cv.coords(o)[0] for o in items)
+                nx = max(w, last + iw + GAP) if len(items) > 1 else w
+                cv.coords(it, nx, 2)
         root.after(FRAME_MS, tick)
 
     def on_top():
