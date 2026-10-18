@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.12",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.12_amd64.deb",
-  "sha256": "f611ff0ae0a498cac1e5ab756351b8628bb5f5122aa5911dbfe5e5f3ed8a3dd4",
-  "size": 422912,
+  "version": "1:1.0.13",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.13_amd64.deb",
+  "sha256": "834dfa7ee05544295ef63a83d4b83099856c7d0b8891eae35b3ba47d681dd0f8",
+  "size": 423862,
   "date": "2026-10-18",
-  "notes": "Ekran kiosku na żywo w panelu i aplikacji (Kamery → Na żywo), podgląd albo sterowanie."
+  "notes": "Szybki podgląd ekranu kiosku na żywo (strumień wideo ok. 10 kl./s); VNC tylko do sterowania."
 }

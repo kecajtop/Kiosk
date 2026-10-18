@@ -784,8 +784,9 @@ zastosuje.
 
 ## VNC (podgląd ekranu kiosku)
 
-**W panelu:** Kamery → „▶ Na żywo” — ekran kiosku na żywo w przeglądarce lub aplikacji (noVNC, bez instalowania
-programu VNC). Domyślnie tylko podgląd; „Sterowanie” przekazuje dotyk, mysz i klawiaturę. Połączenie idzie przez
+**W panelu:** Kamery → „▶ Na żywo” — ekran kiosku na żywo w przeglądarce lub aplikacji: strumień wideo
+(MJPEG z ffmpeg, ok. 10 klatek/s, `GET /api/screen/live?w=960&fps=10`), bez instalowania programu VNC.
+„Sterowanie” przełącza na VNC (noVNC) i przekazuje dotyk, mysz i klawiaturę. Połączenie idzie przez
 panel (WebSocket → x11vnc na 127.0.0.1:5900) z jednorazowym biletem dla administratora; hasło VNC panel bierze
 z usługi x11vnc (`-passwd` albo plik `-rfbauth`).
 
@@ -945,7 +946,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
   (`sudo kiosk-update github`).
 - **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
   github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
-  i go instaluje; wersja np. `1:1.0.12+git20261017.abc1234`. W terminalu:
+  i go instaluje; wersja np. `1:1.0.13+git20261017.abc1234`. W terminalu:
   `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
 
 ## Wersja light (kiosk-setup-light)
@@ -975,6 +976,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.13** (18.10.2026) — szybki podgląd ekranu na żywo (strumień MJPEG ok. 10 kl./s), VNC tylko
+  do sterowania.
 - **1.0.12** (18.10.2026) — ekran kiosku na żywo w panelu i aplikacji (noVNC przez WebSocket
   do x11vnc), podgląd albo sterowanie.
 - **1.0.11** (18.10.2026) — nowy układ panelu: Pilot jako strona główna, zakładka Kamery,

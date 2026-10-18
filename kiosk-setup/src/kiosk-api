@@ -3389,6 +3389,29 @@ def screenshot_jpeg(max_w=1280, quality=72):
     return r.stdout
 
 
+_LIVE = {"n": 0}
+_LIVE_LOCK = threading.Lock()
+
+
+def screen_live_cmd(width, fps):
+    """ffmpeg: ekran kiosku jako strumień MJPEG (w trybie z pulpitem tylko monitor kiosku)."""
+    user = read_conf()["user"]
+    if not user:
+        raise RuntimeError("brak KIOSK_USER")
+    src, size = ":0", []
+    if session_mode() == "desktop":
+        area = display_areas().get("main_area", "")
+        m = re.match(r"^(\d+)x(\d+)\+(\d+)\+(\d+)$", area)
+        if not m:
+            raise RuntimeError("monitor kiosku jest odłączony albo wyłączony")
+        size = ["-video_size", "%sx%s" % (m.group(1), m.group(2))]
+        src = ":0+%s,%s" % (m.group(3), m.group(4))
+    return ["runuser", "-u", user, "--", "env", "DISPLAY=:0", "XAUTHORITY=%s/.Xauthority" % user_home(),
+            "ffmpeg", "-nostdin", "-v", "error", "-f", "x11grab", "-draw_mouse", "0", "-framerate", str(fps)] + size + [
+            "-i", src, "-vf", "scale='min(%d,iw)':-2:flags=fast_bilinear" % width, "-q:v", "7",
+            "-f", "mpjpeg", "-boundary_tag", "kioskframe", "-"]
+
+
 def announce_audio(src, chime=True):
     """Plik albo adres z nagraniem -> komunikat (gong, przyciszenie muzyki)."""
     os.makedirs(TTS_DIR, exist_ok=True)
@@ -4261,7 +4284,7 @@ def check_user(name, pw):
     return u.get("role", "user") if hmac.compare_digest(h, u.get("hash", "")) else None
 
 
-USER_GET = ("/", "/logo.png", "/api/status", "/api/views", "/api/me", "/api/voices", "/api/radio", "/api/screenshot")
+USER_GET = ("/", "/logo.png", "/api/status", "/api/views", "/api/me", "/api/voices", "/api/radio", "/api/screenshot", "/api/screen/live")
 USER_POST = ("/api/view", "/api/bubble", "/api/say", "/api/audio", "/api/screen", "/api/radio/play", "/api/alert/stop",
              "/api/time", "/api/weather/say", "/api/message", "/api/brightness")
 
@@ -4819,6 +4842,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/logo.png":
             with open(LOGO, "rb") as f:
                 return self.send(200, f.read(), "image/png")
+        if path == "/api/screen/live":
+            return self.screen_live()
         if path == "/api/status":
             return self.send(200, status())
         if path == "/api/config":
@@ -4987,6 +5012,54 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(400, {"error": str(e)})
         except Exception as e:
             return self.send(500, {"error": str(e)})
+
+    def screen_live(self):
+        """GET /api/screen/live?w=960&fps=10 — ekran kiosku na żywo (multipart MJPEG do <img>)."""
+        from urllib.parse import parse_qs
+        q = parse_qs(self.path.partition("?")[2])
+        try:
+            w = max(320, min(1920, int(q.get("w", ["960"])[0])))
+            fps = max(1, min(20, int(q.get("fps", ["10"])[0])))
+        except ValueError:
+            w, fps = 960, 10
+        with _LIVE_LOCK:
+            if _LIVE["n"] >= 3:
+                return self.send(429, {"error": "za dużo podglądów naraz (najwyżej 3)"})
+            _LIVE["n"] += 1
+        p = None
+        try:
+            p = subprocess.Popen(screen_live_cmd(w, fps), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            first = p.stdout.read1(65536)
+            if not first:
+                err = p.stderr.read().decode("utf-8", "replace").strip()[-200:]
+                return self.send(500, {"error": "podgląd ekranu: " + (err or "ffmpeg nie ruszył")})
+            self.send_response(200)
+            self.send_header("Content-Type", "multipart/x-mixed-replace;boundary=kioskframe")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.close_connection = True
+            self.connection.settimeout(30)
+            self.wfile.write(first)
+            end = time.time() + 900          # najwyżej 15 min — panel łączy się ponownie
+            while time.time() < end:
+                data = p.stdout.read1(65536) if hasattr(p.stdout, "read1") else p.stdout.read(65536)
+                if not data:
+                    break
+                self.wfile.write(data)
+        except (OSError, ValueError):
+            pass                              # przeglądarka zamknęła podgląd
+        except RuntimeError as e:
+            return self.send(409, {"error": str(e)})
+        finally:
+            if p:
+                try:
+                    p.kill()
+                    p.wait(timeout=5)
+                except Exception:
+                    pass
+            with _LIVE_LOCK:
+                _LIVE["n"] -= 1
 
     def vnc_ws(self):
         """WebSocket (RFC 6455) ↔ TCP 127.0.0.1:5900 — dla noVNC w panelu."""
@@ -5972,7 +6045,8 @@ body{touch-action:manipulation;overscroll-behavior-y:contain;-webkit-tap-highlig
 .vncbar{display:flex;gap:12px;align-items:center;padding:8px 12px calc(8px);padding-top:calc(8px + env(safe-area-inset-top));background:var(--card);border-bottom:1px solid var(--line)}
 .vncbar label.check{margin:0}
 #vncst{color:var(--muted);font-size:13px;margin-left:auto;text-align:right}
-#vncscreen{flex:1;min-height:0;overflow:hidden}
+#vncscreen{flex:1;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:center}
+#vncimg{max-width:100%;max-height:100%;object-fit:contain;display:block}
 img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--line);background:#000;aspect-ratio:16/9;object-fit:contain}
 @media (max-width:860px){
   /* Telefon: dolne zakładki Pilot / Kamery / Ustawienia zamiast dwóch pasków u góry */
@@ -6561,7 +6635,7 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 </div></div>
 </main>
 <div id="toast" role="status" aria-live="polite" hidden></div>
-<div id="vncov" hidden role="dialog" aria-label="Ekran kiosku na żywo"><div class="vncbar"><button type="button" id="vncclose">✕ Zamknij</button><label class="check"><input type="checkbox" id="vncctl"> Sterowanie</label><span id="vncst"></span></div><div id="vncscreen"></div></div>
+<div id="vncov" hidden role="dialog" aria-label="Ekran kiosku na żywo"><div class="vncbar"><button type="button" id="vncclose">✕ Zamknij</button><label class="check"><input type="checkbox" id="vncctl"> Sterowanie</label><span id="vncst"></span></div><div id="vncscreen"><img id="vncimg" alt="Ekran kiosku na żywo"></div></div>
 <nav id="tabbar" aria-label="Główne zakładki">
 <a href="#/start" data-tab="start"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v18H7zM12 7.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM10 16h4"/></svg><span>Pilot</span></a>
 <a href="#/kamery" data-tab="kamery"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h12v10H3zM15 10l6-3v10l-6-3"/></svg><span>Kamery</span></a>
@@ -7028,25 +7102,36 @@ async function loadKamery(){ kmShot(); if(ME!=='admin') return;
     $('kmcams').replaceChildren(...cams.map((u,i)=>{ const b=document.createElement('button'); b.type='button'; b.textContent='Kamera '+(i+1); b.onclick=()=>act(()=>post('api/alert',{camera:i+1, seconds:30, title:'Kamera '+(i+1)})).then(()=>setTimeout(kmShot,2500)); return b; }));
     if(!cams.length) $('kmcams').textContent='Brak kamer — dodaj je w Ustawienia → Co wyświetla kiosk.'; }catch(e){} }
 $('kmshotb').onclick=kmShot;
-// ---- ekran kiosku na żywo: noVNC przez WebSocket (bilet jednorazowy), domyślnie tylko podgląd
+// ---- ekran kiosku na żywo: podgląd = strumień MJPEG (płynny, lekki); „Sterowanie” = noVNC przez WebSocket
 let VNC=null, RFB=null;
-async function vncOpen(){ try{ history.pushState({vnc:1},'',location.hash); }catch(e){} $('vncov').hidden=false; $('vncst').textContent='Łączę…'; $('vncctl').checked=false;
+const baseUrl=()=>location.href.replace(/[#?].*$/,'');
+function liveImg(){ const img=document.createElement('img'); img.id='vncimg'; img.alt='Ekran kiosku na żywo';
+  const w=Math.min(1600, Math.round(Math.max(screen.width,screen.height)*(window.devicePixelRatio||1)/1.5));
+  img.onload=()=>{ $('vncst').textContent='Na żywo'; }; img.onerror=()=>{ $('vncst').textContent='Brak obrazu — ekran kiosku wyłączony albo kiosk nie odpowiada'; };
+  img.src=new URL('api/screen/live?w='+w+'&fps=10&t='+Date.now(), baseUrl()).href; return img; }
+function liveStop(){ const i=$('vncimg'); if(i){ i.removeAttribute('src'); i.remove(); } }
+async function vncStart(){ liveStop(); $('vncst').textContent='Łączę sterowanie…';
   try{
-    if(!RFB) RFB=(await import(new URL('novnc/rfb.js', location.href.replace(/[#?].*$/,'')).href)).default;
+    if(!RFB) RFB=(await import(new URL('novnc/rfb.js', baseUrl()).href)).default;
     const r=await post('api/vnc/ticket',{}); const tk=JSON.parse(r.output);
-    const url=new URL('api/vnc/ws?t='+encodeURIComponent(tk.ticket), location.href.replace(/[#?].*$/,'')).href.replace(/^http/,'ws');
+    const url=new URL('api/vnc/ws?t='+encodeURIComponent(tk.ticket), baseUrl()).href.replace(/^http/,'ws');
     VNC=new RFB($('vncscreen'), url, {credentials:{password:tk.password||''}, wsProtocols:['binary']});
-    VNC.scaleViewport=true; VNC.resizeSession=false; VNC.viewOnly=true; VNC.background='#000'; VNC.showDotCursor=true;
-    VNC.addEventListener('connect', ()=>{ $('vncst').textContent='Na żywo'; });
-    VNC.addEventListener('disconnect', e=>{ $('vncst').textContent=e.detail&&e.detail.clean?'Rozłączono':'Połączenie przerwane'; VNC=null; });
+    VNC.scaleViewport=true; VNC.resizeSession=false; VNC.viewOnly=false; VNC.background='#000'; VNC.showDotCursor=true;
+    VNC.qualityLevel=4; VNC.compressionLevel=6;
+    VNC.addEventListener('connect', ()=>{ $('vncst').textContent='Sterowanie (VNC)'; VNC.focus(); });
+    VNC.addEventListener('disconnect', e=>{ VNC=null; if(!$('vncov').hidden && $('vncctl').checked) $('vncst').textContent='Połączenie przerwane'; });
     VNC.addEventListener('credentialsrequired', ()=>{ const p=prompt('Hasło VNC kiosku'); if(p!==null) VNC.sendCredentials({password:p}); });
     VNC.addEventListener('securityfailure', e=>{ $('vncst').textContent='Złe hasło VNC'+(e.detail&&e.detail.reason?': '+e.detail.reason:''); });
   }catch(e){ $('vncst').textContent='Błąd: '+e.message; } }
-function vncClose(fromPop){ const open=!$('vncov').hidden; try{ if(VNC) VNC.disconnect(); }catch(e){} VNC=null; $('vncscreen').replaceChildren(); $('vncov').hidden=true;
+function vncStop(){ try{ if(VNC) VNC.disconnect(); }catch(e){} VNC=null; $('vncscreen').replaceChildren(); }
+function vncOpen(){ try{ history.pushState({vnc:1},'',location.hash); }catch(e){} $('vncov').hidden=false; $('vncctl').checked=false;
+  $('vncst').textContent='Łączę…'; vncStop(); $('vncscreen').append(liveImg()); }
+function vncClose(fromPop){ const open=!$('vncov').hidden; liveStop(); vncStop(); $('vncov').hidden=true;
   if(open && !fromPop && history.state && history.state.vnc){ try{ history.back(); }catch(e){} } }
 window.addEventListener('popstate', ()=>{ if(!$('vncov').hidden) vncClose(true); });
+document.addEventListener('visibilitychange', ()=>{ if($('vncov').hidden || $('vncctl').checked) return; if(document.hidden) liveStop(); else if(!$('vncimg')) $('vncscreen').append(liveImg()); });
 $('kmlive').onclick=vncOpen; $('vncclose').onclick=()=>vncClose();
-$('vncctl').onchange=()=>{ if(VNC){ VNC.viewOnly=!$('vncctl').checked; VNC.focus(); } };
+$('vncctl').onchange=()=>{ if($('vncctl').checked) vncStart(); else { vncStop(); $('vncst').textContent='Łączę…'; $('vncscreen').append(liveImg()); } };
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('vncov').hidden && !$('vncctl').checked) vncClose(); });
 // ---- rozpoznawanie twarzy
 let FCTIMER=0, FCSIG='';

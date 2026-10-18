@@ -1,5 +1,11 @@
 # Zmiany
 
+## 1.0.13 (2026-10-18)
+- **Szybki podgląd ekranu na żywo:** Kamery → „▶ Na żywo” pokazuje teraz strumień wideo ekranu kiosku (MJPEG z ffmpeg,
+  ok. 10 klatek/s, obraz dopasowany do telefonu, ok. 20% jednego rdzenia tylko podczas oglądania) zamiast wolnego VNC.
+  „Sterowanie” przełącza na VNC (z mocniejszą kompresją) do klikania i pisania. Podgląd dostępny też dla domowników.
+- Gotowe pakiety: `releases/kiosk-setup_1.0.13_amd64.deb`, `releases/kiosk-setup-light_1.0.13_amd64.deb`.
+
 ## 1.0.12 (2026-10-18)
 - **Ekran kiosku na żywo (VNC w panelu):** Kamery → „▶ Na żywo” — płynny podgląd ekranu kiosku w przeglądarce
   i w aplikacji, bez osobnego programu VNC. Domyślnie tylko podgląd; „Sterowanie” pozwala klikać i pisać na kiosku.
