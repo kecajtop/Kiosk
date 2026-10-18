@@ -998,6 +998,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.19** (18.10.2026) — naprawa: po aktualizacji panel/ping/dodatek Kioski pokazywały pustą wersję aż do
+  kolejnego restartu kiosk-api (postinst restartuje go, gdy dpkg ma pakiet jeszcze jako „half-configured”).
 - **1.0.18** (18.10.2026) — automatyczna jasność ekranu wg położenia słońca (sun.sun w Home Assistant albo
   szerokość/długość geograficzna); porządek w panelu na telefonie: opisy sekcji schowane pod „ⓘ Co to jest”,
   drugorzędne przyciski Pilota pod „Więcej”, mniejsze przyciski, „Na żywo”/„Odśwież” na Kamerach jako ikonki.

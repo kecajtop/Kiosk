@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.18",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.18_amd64.deb",
-  "sha256": "727306813ad8fa1bfcf85c504f0dcbce9d4f5e149e40c4b6c9e39efccec1dd96",
-  "size": 23050916,
+  "version": "1:1.0.19",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.19_amd64.deb",
+  "sha256": "1813252bf95a58d00f754f3079f3183b9fb435a9be76a075384cac1b3c7d5ec9",
+  "size": 23048494,
   "date": "2026-10-18",
-  "notes": "Automatyczna jasność ekranu wg położenia słońca; porządek w panelu na telefonie."
+  "notes": "Naprawa: kiosk po aktualizacji pokazywał pustą wersję do kolejnego restartu."
 }
