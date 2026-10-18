@@ -1,5 +1,11 @@
 # Zmiany
 
+## 1.0.20 (2026-10-18)
+- Naprawa: gdy dpkg zostało przerwane wcześniej (np. restart w trakcie instalacji), każda kolejna aktualizacja
+  kończyła się błędem „dpkg został przerwany, należy wykonać ręcznie dpkg --configure -a”, mimo ponawiania
+  próby. `kiosk-update` wykrywa teraz taki stan (`dpkg --audit`) i sam kończy przerwaną konfigurację przed
+  ponowną próbą instalacji.
+
 ## 1.0.19 (2026-10-18)
 - Naprawa: kiosk po aktualizacji pokazywał pustą wersję (ping, panel, dodatek Kioski, encja „Aktualizacja” w HA bez
   zainstalowanej wersji). postinst restartuje kiosk-api, gdy dpkg ma pakiet jeszcze jako „half-configured” — teraz

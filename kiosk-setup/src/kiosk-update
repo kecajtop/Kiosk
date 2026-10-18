@@ -60,8 +60,15 @@ apt_install() {   # apt_install PLIK [polecenie-przed] — instalacja z postępe
     done
     rc=${PIPESTATUS[0]}
     if [ "$rc" != 0 ] && [ -z "${APT_RETRIED:-}" ]; then
-        # Najczęściej: nowa wersja wymaga pakietu, którego nie ma w nieaktualnych listach apt.
         APT_RETRIED=1
+        # dpkg przerwane wcześniej (np. restart w trakcie instalacji) blokuje każdą kolejną
+        # instalację, dopóki nie dokończy się konfiguracji — apt sam o to prosi w komunikacie.
+        if "$@" dpkg --audit 2>/dev/null | grep -q .; then
+            echo "dpkg był przerwany — kończę konfigurację (dpkg --configure -a) i próbuję ponownie..."
+            progress install "$PSTART" "Naprawa przerwanej instalacji…"
+            "$@" env DEBIAN_FRONTEND=noninteractive dpkg --configure -a 2>&1 | tail -n 10
+        fi
+        # Najczęściej: nowa wersja wymaga pakietu, którego nie ma w nieaktualnych listach apt.
         echo "Instalacja nieudana — odświeżam listy pakietów (apt-get update) i próbuję ponownie..."
         progress install "$PSTART" "Odświeżanie list pakietów…"
         "$@" apt-get update -q 2>&1 | tail -n 3

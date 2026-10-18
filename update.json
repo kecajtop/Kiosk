@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.19",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.19_amd64.deb",
-  "sha256": "1813252bf95a58d00f754f3079f3183b9fb435a9be76a075384cac1b3c7d5ec9",
-  "size": 23048494,
+  "version": "1:1.0.20",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.20_amd64.deb",
+  "sha256": "e752b9c6ab8d98841d7b80f3a33a6a8b40a549adcce83b3e9b82efc15afca266",
+  "size": 23048998,
   "date": "2026-10-18",
-  "notes": "Naprawa: kiosk po aktualizacji pokazywał pustą wersję do kolejnego restartu."
+  "notes": "Naprawa: automatyczna naprawa przerwanego dpkg przed ponowną instalacją aktualizacji."
 }

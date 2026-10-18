@@ -998,6 +998,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.20** (18.10.2026) — naprawa: przerwane wcześniej dpkg (np. restart w trakcie instalacji) blokowało
+  każdą kolejną aktualizację — `kiosk-update` wykrywa to i sam kończy przerwaną konfigurację przed ponowną próbą.
 - **1.0.19** (18.10.2026) — naprawa: po aktualizacji panel/ping/dodatek Kioski pokazywały pustą wersję aż do
   kolejnego restartu kiosk-api (postinst restartuje go, gdy dpkg ma pakiet jeszcze jako „half-configured”).
 - **1.0.18** (18.10.2026) — automatyczna jasność ekranu wg położenia słońca (sun.sun w Home Assistant albo

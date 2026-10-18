@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.19",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.19_amd64.deb",
-  "sha256": "eb09bbdf7be38234280ca987b4271977223543e900331790bb2a850e6f09c178",
-  "size": 430294,
+  "version": "1:1.0.20",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.20_amd64.deb",
+  "sha256": "f2c4e319e071daa5414f58f8f98af79691b0577eef7b39dd3646e2504c54490c",
+  "size": 430636,
   "date": "2026-10-18",
-  "notes": "Naprawa: kiosk po aktualizacji pokazywał pustą wersję do kolejnego restartu."
+  "notes": "Naprawa: automatyczna naprawa przerwanego dpkg przed ponowną instalacją aktualizacji."
 }
