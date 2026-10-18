@@ -31,7 +31,7 @@ HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", 
        "transfer-encoding", "upgrade", "x-frame-options", "www-authenticate", "content-length"}
 HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.2.0"          # = version w config.yaml
+ADDON_VERSION = "1.2.1"          # = version w config.yaml
 RAW = "https://raw.githubusercontent.com/kecajtop/Kiosk/main/"
 _LATEST = {"t": 0, "data": None}
 
@@ -127,10 +127,28 @@ def ping(host, port=8088, timeout=0.8):
     return None
 
 
+def supervisor_token():
+    """s6-overlay (/init z obrazu bazowego) nie przekazuje zmiennych kontenera do CMD — czytamy też z pliku."""
+    tok = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
+    for name in ("SUPERVISOR_TOKEN", "HASSIO_TOKEN"):
+        if tok:
+            break
+        try:
+            with open("/run/s6/container_environment/" + name) as f:
+                tok = f.read().strip()
+        except OSError:
+            pass
+    return tok
+
+
+_NO_TOKEN_LOGGED = False
+
+
 def local_networks():
     """Sieci do przeszukania: z Supervisora (interfejsy HA), inaczej z adresów znanych kiosków."""
+    global _NO_TOKEN_LOGGED
     nets = []
-    tok = os.environ.get("SUPERVISOR_TOKEN")
+    tok = supervisor_token()
     if tok:
         try:
             req = urllib.request.Request("http://supervisor/network/info", headers={"Authorization": "Bearer " + tok})
@@ -145,7 +163,8 @@ def local_networks():
                         nets.append(n)
         except Exception as e:
             log("network/info (Supervisor): %s" % e)
-    else:
+    elif not _NO_TOKEN_LOGGED:
+        _NO_TOKEN_LOGGED = True
         log("brak SUPERVISOR_TOKEN — sieci tylko z listy kiosków albo wpisane ręcznie")
     for k in load():
         try:
