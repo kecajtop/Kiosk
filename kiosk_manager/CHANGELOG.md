@@ -1,3 +1,7 @@
+## 1.3.2
+- Naprawa: pływający przycisk „Wszystkie kioski” (nad podglądem panelu kiosku) zasłaniał zakładkę
+  „Ustawienia” na telefonie — podniesiony nad dolny pasek zakładek na wąskich ekranach.
+
 ## 1.3.1
 - Przebudowany panel: na telefonie nic się już nie ucina (siatki nie wymuszały szerokości
   większej niż ekran). Karta kiosku pokazuje dane w dwukolumnowej tabeli zamiast ciasnych

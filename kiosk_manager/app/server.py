@@ -33,7 +33,7 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}$")
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$")
 ENTITY_RE = re.compile(r"^(switch|light|input_boolean|button|script)\.[a-z0-9_]{1,200}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.3.1"          # = version w config.yaml
+ADDON_VERSION = "1.3.2"          # = version w config.yaml
 RAW = "https://raw.githubusercontent.com/kecajtop/Kiosk/main/"
 _LATEST = {"t": 0, "data": None}
 
@@ -417,9 +417,13 @@ def remove_kiosk(kid):
         save(n)
 
 
-BACK_BAR = (b'<a href="../../" style="position:fixed;right:12px;bottom:12px;z-index:9;background:#F2A900;'
+BACK_BAR = (b'<style>#km-allback{position:fixed;right:12px;bottom:12px;z-index:9;background:#F2A900;'
             b'color:#14110A;font:600 14px system-ui,sans-serif;padding:10px 14px;border-radius:999px;'
-            b'text-decoration:none;box-shadow:0 2px 10px #0008">&larr; Wszystkie kioski</a>')
+            b'text-decoration:none;box-shadow:0 2px 10px #0008}'
+            # Panel kiosku pokazuje na wąskich ekranach dolny pasek zakładek (Pilot/Kamery/Ustawienia) —
+            # tam przycisk wracałby na zakładkę Ustawienia, więc podnosimy go nad pasek.
+            b'@media (max-width:860px){#km-allback{right:auto;left:12px;bottom:calc(72px + env(safe-area-inset-bottom))}}'
+            b'</style><a id="km-allback" href="../../">&larr; Wszystkie kioski</a>')
 
 
 class Handler(BaseHTTPRequestHandler):
