@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""Wykrywanie i rozpoznawanie twarzy na obrazie z kamery — lokalnie, bez chmury.
+
+Uruchamia go kiosk-api (python z /opt/kiosk-faces, OpenCV 4.8+):
+  kiosk-faces-worker watch --camera 1 --url rtsp://... [--fps 2] [--size 960] [--threshold 0.40]
+  kiosk-faces-worker check PLIK.jpg     -> {"faces": N}  (czy na zdjęciu jest twarz)
+  kiosk-faces-worker image PLIK.jpg     -> wynik rozpoznawania jednego zdjęcia (test)
+
+Wykrywanie: YuNet, rozpoznawanie: SFace (modele z opencv_zoo w /opt/kiosk-faces/models).
+Osoby: /etc/kiosk-setup/faces/<imię>/*.jpg — zdjęcia twarzy; wzorce liczone przy starcie
+i po każdej zmianie katalogu. Wynik: wiersze JSON na stdout; podgląd z ramkami w
+/run/kiosk-faces/kameraN.jpg (tylko w pamięci RAM), wycinek twarzy do zapisania osoby
+w /run/kiosk-faces/kameraN-twarz.jpg.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+import threading
+import time
+
+os.environ.setdefault("OPENCV_LOG_LEVEL", "ERROR")
+import cv2
+import numpy as np
+
+MODELS = os.environ.get("KIOSK_FACES_MODELS", "/opt/kiosk-faces/models")
+GALLERY = os.environ.get("KIOSK_FACES_GALLERY", "/etc/kiosk-setup/faces")
+RUN = os.environ.get("KIOSK_FACES_RUN", "/run/kiosk-faces")
+DET_MODEL = "face_detection_yunet_2023mar.onnx"
+REC_MODEL = "face_recognition_sface_2021dec.onnx"
+IMG_EXT = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+MIN_FACE = 36          # najmniejsza twarz (px) brana do rozpoznawania
+
+
+def out(**kw):
+    sys.stdout.write(json.dumps(kw, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
+class Engine:
+    def __init__(self, det_score=0.75):
+        self.det = cv2.FaceDetectorYN.create(os.path.join(MODELS, DET_MODEL), "", (320, 320), det_score, 0.3, 5000)
+        self.rec = cv2.FaceRecognizerSF.create(os.path.join(MODELS, REC_MODEL), "")
+        self.size = None
+
+    def detect(self, img):
+        h, w = img.shape[:2]
+        if self.size != (w, h):
+            self.det.setInputSize((w, h))
+            self.size = (w, h)
+        _, faces = self.det.detect(img)
+        return [] if faces is None else list(faces)
+
+    def feature(self, img, face):
+        f = self.rec.feature(self.rec.alignCrop(img, face)).flatten()
+        return f / (np.linalg.norm(f) or 1.0)
+
+
+def largest(faces):
+    return max(faces, key=lambda f: f[2] * f[3]) if faces else None
+
+
+def read_image(path):
+    img = cv2.imread(path, cv2.IMREAD_COLOR)
+    if img is None:
+        raise ValueError("nie umiem odczytać obrazu: %s" % os.path.basename(path))
+    h, w = img.shape[:2]
+    s = 1280 / max(h, w)
+    if s < 1:
+        img = cv2.resize(img, (int(w * s), int(h * s)), interpolation=cv2.INTER_AREA)
+    return img
+
+
+class Gallery:
+    """Wzorce znanych osób: {imię: [wektor, ...]}."""
+
+    def __init__(self, eng):
+        self.eng, self.people, self.stamp, self.info = eng, {}, None, {}
+
+    def _stamp(self):
+        st = []
+        try:
+            for name in sorted(os.listdir(GALLERY)):
+                d = os.path.join(GALLERY, name)
+                if os.path.isdir(d):
+                    st.append((name, os.stat(d).st_mtime_ns, len(os.listdir(d))))
+        except OSError:
+            pass
+        return tuple(st)
+
+    def refresh(self, force=False):
+        st = self._stamp()
+        if st == self.stamp and not force:
+            return False
+        self.stamp, people, info = st, {}, {}
+        for name, _, _ in st:
+            d = os.path.join(GALLERY, name)
+            feats, n = [], 0
+            for f in sorted(os.listdir(d)):
+                if not f.lower().endswith(IMG_EXT):
+                    continue
+                n += 1
+                try:
+                    img = read_image(os.path.join(d, f))
+                    face = largest(self.eng.detect(img))
+                    if face is not None:
+                        feats.append(self.eng.feature(img, face))
+                except Exception as e:
+                    out(ev="log", msg="%s/%s: %s" % (name, f, e))
+            info[name] = {"images": n, "ok": len(feats)}
+            if feats:
+                people[name] = np.array(feats)
+        self.people, self.info = people, info
+        return True
+
+    def match(self, feat, threshold):
+        best, sim = None, -1.0
+        for name, fs in self.people.items():
+            s = float(np.max(fs @ feat))
+            if s > sim:
+                best, sim = name, s
+        return (best if sim >= threshold else None), sim
+
+
+def analyse(eng, gal, img, threshold):
+    res = []
+    for f in eng.detect(img):
+        x, y, w, h = (int(v) for v in f[:4])
+        item = {"box": [x, y, w, h], "score": round(float(f[14]), 2), "name": None, "sim": 0.0}
+        if min(w, h) >= MIN_FACE and gal.people:
+            name, sim = gal.match(eng.feature(img, f), threshold)
+            item.update(name=name, sim=round(max(sim, 0.0), 3))
+        res.append((f, item))
+    return res
+
+
+def annotate(img, res):
+    v = img.copy()
+    for _, it in res:
+        x, y, w, h = it["box"]
+        col = (60, 200, 60) if it["name"] else (0, 170, 242)
+        cv2.rectangle(v, (x, y), (x + w, y + h), col, 2)
+        label = it["name"] or "?"
+        cv2.putText(v, label, (x, max(14, y - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2, cv2.LINE_AA)
+    return v
+
+
+def save_jpg(path, img, q=82):
+    tmp = path + ".tmp"
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, q])
+    if ok:
+        with open(tmp, "wb") as fh:
+            fh.write(buf.tobytes())
+        os.replace(tmp, path)
+
+
+def crop_face(img, face, margin=0.6):
+    x, y, w, h = (int(v) for v in face[:4])
+    H, W = img.shape[:2]
+    mx, my = int(w * margin), int(h * margin)
+    return img[max(0, y - my):min(H, y + h + my), max(0, x - mx):min(W, x + w + mx)]
+
+
+class Grabber:
+    """ffmpeg → surowe klatki BGR; trzymamy tylko najnowszą (bez opóźnień przy wolnej analizie)."""
+
+    def __init__(self, url, fps, size):
+        self.w, self.h = size, size * 9 // 16 // 2 * 2
+        inp = ["-f", "v4l2", "-i", url] if url.startswith("/dev/video") else \
+              (["-rtsp_transport", "tcp"] if url.startswith("rtsp") else
+               [] if "://" in url else ["-re", "-stream_loop", "-1"]) + ["-i", url]   # plik: w czasie rzeczywistym, w pętli (test)
+        vf = "fps=%g,scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:-1:-1" % (fps, self.w, self.h, self.w, self.h)
+        self.p = subprocess.Popen(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error"] + inp +
+                                  ["-an", "-vf", vf, "-pix_fmt", "bgr24", "-f", "rawvideo", "-"],
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.frame, self.seq, self.err = None, 0, ""
+        self.cond = threading.Condition()
+        threading.Thread(target=self._read, daemon=True).start()
+        threading.Thread(target=self._stderr, daemon=True).start()
+
+    def _stderr(self):
+        for line in self.p.stderr:
+            self.err = line.decode(errors="replace").strip()[-200:]
+
+    def _read(self):
+        n = self.w * self.h * 3
+        while True:
+            buf = self.p.stdout.read(n)
+            if not buf or len(buf) < n:
+                break
+            with self.cond:
+                self.frame = np.frombuffer(buf, np.uint8).reshape(self.h, self.w, 3)
+                self.seq += 1
+                self.cond.notify_all()
+        with self.cond:
+            self.frame = None
+            self.seq = -1
+            self.cond.notify_all()
+
+    def next(self, last, timeout=30):
+        with self.cond:
+            self.cond.wait_for(lambda: self.seq != last, timeout)
+            return self.seq, self.frame
+
+    def stop(self):
+        try:
+            self.p.terminate()
+        except Exception:
+            pass
+
+
+def watch(a):
+    eng = Engine()
+    gal = Gallery(eng)
+    gal.refresh(True)
+    os.makedirs(RUN, exist_ok=True)
+    snap = os.path.join(RUN, "kamera%d.jpg" % a.camera)
+    facef = os.path.join(RUN, "kamera%d-twarz.jpg" % a.camera)
+    out(ev="ready", gallery=gal.info, people=sorted(gal.people))
+    g = Grabber(a.url, a.fps, a.size)
+    seq, had, last_snap, last_gal = 0, False, 0, time.time()
+    try:
+        while True:
+            seq, img = g.next(seq)
+            if seq == -1 or img is None:
+                out(ev="error", msg="kamera %d: koniec obrazu (%s)" % (a.camera, g.err or "ffmpeg zakończył pracę"))
+                return 1
+            now = time.time()
+            if now - last_gal > 15 and gal.refresh():
+                out(ev="gallery", gallery=gal.info, people=sorted(gal.people))
+            if now - last_gal > 15:
+                last_gal = now
+            res = analyse(eng, gal, img, a.threshold)
+            if res:
+                out(ev="faces", faces=[it for _, it in res], w=g.w, h=g.h)
+                if now - last_snap >= 1:
+                    last_snap = now
+                    save_jpg(snap, annotate(img, res))
+                    big = max(res, key=lambda r: r[0][2] * r[0][3])
+                    save_jpg(facef, crop_face(img, big[0]), 92)
+                    with open(facef + ".json", "w") as fh:
+                        json.dump({"t": now, "faces": len(res), "name": big[1]["name"]}, fh, ensure_ascii=False)
+            elif had:
+                out(ev="faces", faces=[], w=g.w, h=g.h)
+            had = bool(res)
+    finally:
+        g.stop()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", choices=("watch", "check", "image"))
+    ap.add_argument("file", nargs="?")
+    ap.add_argument("--camera", type=int, default=1)
+    ap.add_argument("--url")
+    ap.add_argument("--fps", type=float, default=2)
+    ap.add_argument("--size", type=int, default=960)
+    ap.add_argument("--threshold", type=float, default=0.40)
+    a = ap.parse_args()
+    a.fps = max(0.2, min(10, a.fps))
+    a.size = max(320, min(1920, a.size)) // 2 * 2
+    if a.cmd == "watch":
+        if not a.url:
+            ap.error("--url")
+        return watch(a)
+    if not a.file:
+        ap.error("plik")
+    eng = Engine()
+    img = read_image(a.file)
+    if a.cmd == "check":
+        faces = eng.detect(img)
+        f = largest(faces)
+        out(faces=len(faces), size=int(min(f[2], f[3])) if f is not None else 0)
+        return 0
+    gal = Gallery(eng)
+    gal.refresh(True)
+    out(faces=[it for _, it in analyse(eng, gal, img, a.threshold)], gallery=gal.info)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(0)
+    except Exception as e:
+        out(ev="error", msg=str(e))
+        sys.exit(2)

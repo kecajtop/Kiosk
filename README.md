@@ -2,7 +2,7 @@
 
 Ubuntu Server jako kiosk z ekranem dla Home Assistant: Chromium na pełnym ekranie, kamery RTSP,
 zegary (flip, analogowy, woltomierz, 7-segmentowy, LCD 1602/2004, C64, BSOD, wąż, platformówka),
-karta „teraz gra”, komunikaty głosowe, MQTT z auto-wykryciem w HA, panel WWW, dysk tylko do odczytu
+karta „teraz gra”, komunikaty głosowe, lokalne rozpoznawanie twarzy na kamerach, MQTT z auto-wykryciem w HA, panel WWW, dysk tylko do odczytu
 oraz dodatek Home Assistant „Kioski” do zarządzania wieloma kioskami.
 
 ![Zegary kiosku](docs/img/zegary.png)
@@ -29,17 +29,17 @@ Dokumentacja pakietu: [kiosk-setup/rootfs/usr/share/doc/kiosk-setup/README.md](k
 
 ## Instalacja na kiosku
 
-Gotowy pakiet: [`releases/kiosk-setup_1.0.7_amd64.deb`](releases/).
+Gotowy pakiet: [`releases/kiosk-setup_1.0.8_amd64.deb`](releases/).
 
 ```bash
-sudo apt install ./kiosk-setup_1.0.7_amd64.deb
+sudo apt install ./kiosk-setup_1.0.8_amd64.deb
 # aktualizacja istniejącego kiosku (działa też przy dysku tylko do odczytu):
-sudo kiosk-update file ./kiosk-setup_1.0.7_amd64.deb
+sudo kiosk-update file ./kiosk-setup_1.0.8_amd64.deb
 ```
 
 ### Wersja light
 
-`releases/kiosk-setup-light_1.0.7_amd64.deb` (ok. 0,3 MB) — ekran (Chromium, kamery RTSP), zegary, panel WWW,
+`releases/kiosk-setup-light_1.0.8_amd64.deb` (ok. 0,3 MB) — ekran (Chromium, kamery RTSP), zegary, panel WWW,
 MQTT/Home Assistant i muzyka, bez mowy, interkomu i asystenta głosowego. Instalacja jak wyżej; zastępuje
 pełny pakiet i odwrotnie. Aktualizacje: `update-light.json` zamiast `update.json`. Budowanie: `./build.sh --light`.
 Przełączanie edycji: **System → Aktualizacje → „Przełącz na wersję light/pełną”** albo `sudo kiosk-update switch light|full`.
@@ -73,7 +73,7 @@ Potrzebne `dpkg-deb` i `python3`.
 
 ```bash
 cd kiosk-setup
-./build.sh --piper-from kiosk-setup_1.0.7_amd64.deb   # Piper (TTS) z gotowego pakietu
+./build.sh --piper-from kiosk-setup_1.0.8_amd64.deb   # Piper (TTS) z gotowego pakietu
 ./build.sh --no-piper                                 # albo bez Pipera
 # wynik: kiosk-setup/dist/kiosk-setup_<wersja>_amd64.deb
 ```

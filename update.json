@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.7",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.7_amd64.deb",
-  "sha256": "ac4a96ba45e95748809105c95d4a099eb1c2f89e8fac3ce4ee2b7e966d34d747",
-  "size": 22952194,
+  "version": "1:1.0.8",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.8_amd64.deb",
+  "sha256": "a39d163ecabbf59f718f9f13ed5b36c5f702b6e86e4016b5ad897acab47b78f8",
+  "size": 22965322,
   "date": "2026-10-18",
-  "notes": "Przełączanie edycji pełna/light z panelu, poprawki aktualizacji przez panel WWW, pasek informacyjny bez zapętlania po lewej."
+  "notes": "Lokalne rozpoznawanie twarzy na kamerach (Automatyka → Rozpoznawanie twarzy); szybsze aktualizacje bez zbędnego update-grub i update-initramfs."
 }

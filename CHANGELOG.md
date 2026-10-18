@@ -1,5 +1,15 @@
 # Zmiany
 
+## 1.0.8 (2026-10-18)
+- **Rozpoznawanie twarzy (lokalnie):** Automatyka → Rozpoznawanie twarzy. Kiosk wykrywa twarze na wybranych kamerach
+  (YuNet) i rozpoznaje dodane osoby (SFace, OpenCV) — bez chmury. Osoby: zdjęcia albo zapis twarzy prosto z kamery.
+  W HA: czujniki „Twarze kamera N”, „Osoba kamera N” i zdarzenie „Twarz” (rozpoznana / nieznana). Reakcje: powitanie
+  głosem („Cześć, {imie}!”), alarm z kamerą i nagranie przy nieznanej osobie. Instalacja na żądanie
+  (`sudo kiosk-faces install`, ok. 100 MB z internetu, ok. 300 MB na dysku); działa też w wersji light (bez powitania).
+- **Szybsze aktualizacje:** `update-grub` i `update-initramfs` uruchamiają się tylko po zmianie linii startowej
+  albo motywu startowego (logo); wymuszenie: `sudo kiosk-bootlogo initramfs --force`.
+- Gotowe pakiety: `releases/kiosk-setup_1.0.8_amd64.deb`, `releases/kiosk-setup-light_1.0.8_amd64.deb`.
+
 ## 1.0.7 (2026-10-18)
 - **Przełączanie edycji:** System → Aktualizacje → „Przełącz na wersję light” / „Przełącz na wersję pełną” —
   kiosk pobiera z GitHuba pakiet drugiej edycji, instaluje go (ustawienia zostają) i przestawia adres

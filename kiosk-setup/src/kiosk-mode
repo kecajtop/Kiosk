@@ -72,7 +72,7 @@ update_splash() {
     if [ -d "$(dirname "$dst")" ] && ! cmp -s "$src" "$dst"; then
         cp "$src" "$dst"
         # initramfs trwa długo — w tle, żeby nie opóźniać przełączenia.
-        ( update-initramfs -u >/dev/null 2>&1 || logger "kiosk-mode: update-initramfs nie powiodło się" ) &
+        ( /usr/local/sbin/kiosk-bootlogo initramfs >/dev/null 2>&1 || logger "kiosk-mode: update-initramfs nie powiodło się" ) &
     fi
 }
 

@@ -18,4 +18,6 @@ EOF_FW kiosk-firewall
 EOF_VOICE kiosk-voice
 EOF_UPDATE kiosk-update
 EOF_SATELLITE kiosk-satellite
+EOF_FACES kiosk-faces
+EOF_FACESW kiosk-faces-worker
 EOF_RO kiosk-ro

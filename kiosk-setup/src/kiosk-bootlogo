@@ -4,6 +4,7 @@
 #   sudo kiosk-bootlogo on     - logo kecaj, cichy start
 #   sudo kiosk-bootlogo off    - bez logo: widać komunikaty startu systemu (na stałe)
 #   sudo kiosk-bootlogo once   - bez logo tylko przy NASTĘPNYM uruchomieniu, potem logo wraca
+#   sudo kiosk-bootlogo initramfs [--force] - update-initramfs tylko po zmianie motywu startowego
 [ "$EUID" -eq 0 ] || { echo "Uruchom jako root: sudo kiosk-bootlogo ${1:-status}" >&2; exit 1; }
 CONF=/etc/kiosk-setup/boot.conf
 ONCE=/etc/kiosk-setup/bootlogo-once
@@ -23,7 +24,26 @@ set_grub() {   # set_grub on|off
     else
         echo "GRUB_CMDLINE_LINUX_DEFAULT=\"$line\"" >> "$GRUB_FILE"
     fi
+    # update-grub tylko gdy linia startowa w /boot/grub/grub.cfg jest inna niż ustawiona
+    if [ -r /boot/grub/grub.cfg ] && grep -qF -- " $line" /boot/grub/grub.cfg; then
+        return 0
+    fi
     update-grub >/dev/null 2>&1 || { echo "update-grub nie powiodło się — sprawdź: sudo update-grub" >&2; return 1; }
+}
+
+SUM_FILE=/var/lib/kiosk-setup/initramfs.sum
+theme_sum() {   # suma motywu startowego (to, co trafia do initramfs)
+    { cat /etc/plymouth/plymouthd.conf; readlink -f /usr/share/plymouth/themes/default.plymouth
+      find /usr/share/plymouth/themes/mylogo -type f -print0 | sort -z | xargs -0 cat; } 2>/dev/null | sha256sum | cut -d' ' -f1
+}
+initramfs() {   # initramfs [--force]
+    local sum; sum=$(theme_sum)
+    if [ "${1:-}" != --force ] && [ "$sum" = "$(cat "$SUM_FILE" 2>/dev/null)" ]; then
+        echo "initramfs bez zmian (motyw startowy ten sam) — pomijam update-initramfs."
+        return 0
+    fi
+    update-initramfs -u || { echo "update-initramfs nie powiodło się — sprawdź: sudo update-initramfs -u" >&2; return 1; }
+    mkdir -p "${SUM_FILE%/*}"; echo "$sum" > "$SUM_FILE"
 }
 
 save() { mkdir -p /etc/kiosk-setup; echo "KIOSK_BOOTLOGO=$1" > "$CONF"; chmod 0644 "$CONF"; }
@@ -40,9 +60,11 @@ case "${1:-status}" in
     once)
         save on; touch "$ONCE"
         set_grub off && echo "Przy następnym uruchomieniu bez logo (widać komunikaty), potem logo wraca samo." ;;
+    initramfs)
+        initramfs "${2:-}" ;;
     restore)
         # Wywoływane przy starcie (kiosk-bootlogo.service): po jednorazowym starcie bez logo.
         if [ -e "$ONCE" ]; then rm -f "$ONCE"; set_grub on; fi ;;
     *)
-        sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+        sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

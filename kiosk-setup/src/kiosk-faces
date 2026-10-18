@@ -1,0 +1,80 @@
+#!/bin/bash
+# Rozpoznawanie twarzy na kamerach — wszystko lokalnie na kiosku, bez chmury.
+#   sudo kiosk-faces install   - pobierz OpenCV (pip) i modele YuNet + SFace: ok. 100 MB, na dysku ok. 300 MB
+#   sudo kiosk-faces remove    - usuń program i modele (zdjęcia osób zostają)
+#   sudo kiosk-faces status
+#   sudo kiosk-faces check ZDJĘCIE.jpg | image ZDJĘCIE.jpg   - test na zdjęciu
+# Włączanie, kamery, osoby i reakcje: panel WWW → Automatyka → Rozpoznawanie twarzy.
+set -u
+DIR=/opt/kiosk-faces
+WORKER=/usr/local/lib/kiosk-setup/kiosk-faces-worker
+LOG=/var/log/kiosk-faces-install.log
+ZOO=https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models
+MODELS="face_detection_yunet/face_detection_yunet_2023mar.onnx:8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
+face_recognition_sface/face_recognition_sface_2021dec.onnx:0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79"
+
+need_root() { [ "$EUID" -eq 0 ] || { echo "Uruchom jako root: sudo kiosk-faces ${1:-status}" >&2; exit 1; }; }
+open_fw() {   # firewall kiosku: na czas instalacji dostęp do PyPI i GitHuba
+    FW_RULE=(OUTPUT 1 -p tcp -m multiport --dports 80,443 -j ACCEPT)
+    command -v iptables >/dev/null && iptables -I "${FW_RULE[@]}" 2>/dev/null && FW_OPEN=1
+}
+close_fw() { [ -n "${FW_OPEN:-}" ] && iptables -D OUTPUT -p tcp -m multiport --dports 80,443 -j ACCEPT 2>/dev/null; FW_OPEN=; }
+
+installed() { [ -x "$DIR/bin/python" ] && [ -s "$DIR/models/face_recognition_sface_2021dec.onnx" ]; }
+
+case "${1:-status}" in
+    install)
+        need_root install
+        exec > >(tee -a "$LOG") 2>&1
+        echo "===== $(date '+%F %T') instalacja rozpoznawania twarzy ====="
+        if [ -x /usr/local/sbin/kiosk-ro ] && /usr/local/sbin/kiosk-ro is-active; then
+            echo "BŁĄD: dysk jest tylko do odczytu — instalacja przepadłaby po restarcie."
+            echo "Wyłącz tryb (panel → System → Dysk tylko do odczytu albo sudo kiosk-ro off), uruchom ponownie, zainstaluj i włącz tryb z powrotem."
+            exit 1
+        fi
+        if ! python3 -m venv --help >/dev/null 2>&1; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv || { echo "Brak python3-venv"; exit 1; }
+        fi
+        open_fw
+        trap close_fw EXIT
+        rm -rf "$DIR.new"
+        echo "Pobieram OpenCV (pip)…"
+        python3 -m venv "$DIR.new" && "$DIR.new/bin/pip" install -q --upgrade pip && \
+            "$DIR.new/bin/pip" install -q "opencv-python-headless>=4.8,<5" "numpy<3" || {
+            echo "BŁĄD: pip nie zainstalował OpenCV"; rm -rf "$DIR.new"; exit 1; }
+        mkdir -p "$DIR.new/models"
+        while IFS=: read -r path sum; do
+            f=$DIR.new/models/${path##*/}
+            if [ -s "$DIR/models/${path##*/}" ] && echo "$sum  $DIR/models/${path##*/}" | sha256sum -c --status; then
+                cp "$DIR/models/${path##*/}" "$f"; continue
+            fi
+            echo "Pobieram model ${path##*/}…"
+            python3 -c 'import sys, urllib.request; urllib.request.urlretrieve(sys.argv[1], sys.argv[2])' "$ZOO/$path" "$f" ||
+                { echo "BŁĄD: nie pobrano $path"; rm -rf "$DIR.new"; exit 1; }
+            echo "$sum  $f" | sha256sum -c --status || { echo "BŁĄD: zła suma SHA-256 modelu ${path##*/}"; rm -rf "$DIR.new"; exit 1; }
+        done <<< "$MODELS"
+        close_fw
+        "$DIR.new/bin/python" -c "import cv2; assert hasattr(cv2, 'FaceDetectorYN'); print('OpenCV', cv2.__version__)" || {
+            echo "BŁĄD: OpenCV nie działa"; rm -rf "$DIR.new"; exit 1; }
+        rm -rf "$DIR"; mv "$DIR.new" "$DIR"
+        install -d -m 0700 /etc/kiosk-setup/faces
+        echo "Gotowe. Panel → Automatyka → Rozpoznawanie twarzy: włącz kamery i dodaj osoby (zdjęcie albo z kamery)." ;;
+    remove)
+        need_root remove
+        pkill -f "$WORKER" 2>/dev/null
+        rm -rf "$DIR" /run/kiosk-faces
+        echo "Rozpoznawanie twarzy usunięte. Zdjęcia osób zostały w /etc/kiosk-setup/faces (usuń je w panelu albo ręcznie)." ;;
+    status)
+        if installed; then
+            echo "Rozpoznawanie twarzy: zainstalowane ($("$DIR/bin/python" -c 'import cv2; print("OpenCV", cv2.__version__)' 2>/dev/null))"
+            n=$(find /etc/kiosk-setup/faces -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+            echo "Osoby: $n"
+        else
+            echo "Rozpoznawanie twarzy: nie zainstalowane (sudo kiosk-faces install)"
+        fi ;;
+    check|image)
+        installed || { echo "Najpierw: sudo kiosk-faces install" >&2; exit 1; }
+        [ -r "${2:-}" ] || { echo "Podaj zdjęcie: kiosk-faces $1 ZDJĘCIE.jpg" >&2; exit 1; }
+        exec "$DIR/bin/python" "$WORKER" "$1" "$2" ;;
+    *)  sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

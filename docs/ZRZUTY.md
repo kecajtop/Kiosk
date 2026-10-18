@@ -35,7 +35,7 @@ Adres panelu: `http://<kiosk>:8088`.
 | **Ekran → Jasność i wyłączanie**<br>![](img/panel-zasilanie.png) | **Wygląd zegara**<br>![](img/panel-wyglad-zegara.png) |
 | **Komunikaty → Powiedz**<br>![](img/panel-powiedz.png) | **Dźwięk → Radio**<br>![](img/panel-radio.png) |
 | **Połączenia → Wi-Fi i sieć**<br>![](img/panel-wifi.png) | **Połączenia → MQTT**<br>![](img/panel-mqtt.png) |
-| **System → Nazwa kiosku**<br>![](img/panel-nazwa.png) | |
+| **System → Nazwa kiosku**<br>![](img/panel-nazwa.png) | **Automatyka → Rozpoznawanie twarzy**<br>![](img/panel-twarze.png) |
 | **System → Aktualizacje** (GitHub)<br>![](img/panel-aktualizacje.png) | **System → Dysk tylko do odczytu**<br>![](img/panel-dysk.png) |
 | **System → Diagnostyka**<br>![](img/panel-debug.png) | **Na telefonie**<br>![](img/panel-telefon.png) |
 

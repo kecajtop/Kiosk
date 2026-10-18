@@ -2673,7 +2673,14 @@ class MqttBridge:
             ("binary_sensor", "motion_%d" % i, {"name": "Ruch kamera %d" % i, "device_class": "motion",
                                                 "state_topic": p + "/motion/%d" % i})
             for i in range(1, len(read_conf()["cameras"]) + 1)
+        ] + [e for i in range(1, len(read_conf()["cameras"]) + 1) for e in (
+            ("sensor", "faces_%d" % i, {"name": "Twarze kamera %d" % i, "icon": "mdi:face-recognition",
+                                        "state_class": "measurement", "state_topic": p + "/faces/%d" % i}),
+            ("sensor", "person_%d" % i, {"name": "Osoba kamera %d" % i, "icon": "mdi:account-eye",
+                                         "state_topic": p + "/person/%d" % i}))
         ] + [
+            ("event", "face", {"name": "Twarz", "icon": "mdi:face-recognition", "state_topic": p + "/face/event",
+                               "event_types": ["rozpoznana", "nieznana"]}),
             ("camera", "screen", {"name": "Podgląd ekranu", "topic": p + "/screen/image", "icon": "mdi:monitor-eye"}),
             ("binary_sensor", "alert", dict(st, name="Alarm na ekranie", icon="mdi:cctv",
                                             value_template="{{ 'ON' if value_json.alert.active else 'OFF' }}")),
@@ -2694,6 +2701,13 @@ class MqttBridge:
             if LIGHT and oid in ("say", "voice", "say_time", "say_time_date", "say_weather"):
                 c.publish(topic, "", qos=1, retain=True)  # wersja light: bez mowy
                 continue
+            if oid == "face" or oid.startswith(("faces_", "person_")):
+                fc = read_faces()
+                on = fc["enabled"] and faces_installed() and (
+                    oid == "face" and fc["cameras"] or oid != "face" and int(oid.split("_")[1]) in fc["cameras"])
+                if not on:
+                    c.publish(topic, "", qos=1, retain=True)  # rozpoznawanie twarzy wyłączone = bez encji
+                    continue
             if comp == "camera" and not self.cfg.get("screenshot"):
                 c.publish(topic, "", qos=1, retain=True)  # zrzuty wyłączone = bez kamery
                 continue
@@ -3380,7 +3394,7 @@ def announce_audio(src, chime=True):
 
 BACKUP_FILES = ("clock.json", "screen-icons.json", "kiosk.conf", "displays.conf", "second.conf", "views.json", "mqtt.json", "weather.json", "voice.json",
                 "schedule.json", "presence.json", "ticker.json", "ticker.conf", "session.conf", "boot.conf",
-                "firewall.conf", "dlna.env", "logo-custom.png", "updates.conf")
+                "firewall.conf", "dlna.env", "logo-custom.png", "updates.conf", "faces.json")
 UPDATES_CONF = ETC + "/updates.conf"
 UPDATE_DIR = "/var/lib/kiosk-setup"
 UPDATE_LOG = "/var/log/kiosk-update.log"
@@ -3888,6 +3902,268 @@ class Motion:
 MOTION = None
 
 
+# ---------------------------------------------------------------- rozpoznawanie twarzy (lokalnie)
+
+FACES_FILE = ETC + "/faces.json"
+FACES_DIR = ETC + "/faces"
+FACES_RUN = "/run/kiosk-faces"
+FACES_PY = "/opt/kiosk-faces/bin/python"
+FACES_WORKER = "/usr/local/lib/kiosk-setup/kiosk-faces-worker"
+FACES_CMD = "/usr/local/sbin/kiosk-faces"
+FACES_LOG = "/var/log/kiosk-faces-install.log"
+FACES_MODELS = "/opt/kiosk-faces/models"
+PERSON_RE = re.compile(r"^[\w .\-]{1,40}$")
+
+
+def faces_installed():
+    return (os.path.exists(FACES_PY) and os.path.exists(FACES_WORKER)
+            and os.path.exists(FACES_MODELS + "/face_recognition_sface_2021dec.onnx"))
+
+
+def faces_env():
+    return dict(os.environ, KIOSK_FACES_MODELS=FACES_MODELS, KIOSK_FACES_GALLERY=FACES_DIR, KIOSK_FACES_RUN=FACES_RUN)
+
+
+def read_faces():
+    m = read_json(FACES_FILE, {})
+
+    def num(k, d, lo, hi, cast=int):
+        try:
+            v = cast(m.get(k, d))
+        except (TypeError, ValueError):
+            v = d
+        return min(hi, max(lo, v))
+    return {"enabled": bool(m.get("enabled", False)),
+            "cameras": [int(c) for c in m.get("cameras", []) if str(c).isdigit()],
+            "fps": num("fps", 2, 0.5, 5, float), "size": m.get("size") if m.get("size") in (640, 960, 1280) else 960,
+            "threshold": round(num("threshold", 0.40, 0.25, 0.70, float), 2),
+            "greet": bool(m.get("greet", False)),
+            "greet_text": str(m.get("greet_text") or "Cześć, {imie}!")[:200],
+            "greet_minutes": num("greet_minutes", 30, 1, 1440),
+            "unknown_action": m.get("unknown_action") if m.get("unknown_action") in ("none", "alert") else "none",
+            "alert_seconds": num("alert_seconds", 20, 5, 600),
+            "record_unknown": bool(m.get("record_unknown", False))}
+
+
+def person_name(name):
+    name = re.sub(r"\s+", " ", str(name or "")).strip()
+    if not PERSON_RE.match(name) or name.startswith("."):
+        raise ValueError("imię osoby: litery, cyfry, spacja, kropka, myślnik (do 40 znaków)")
+    return name
+
+
+def faces_people():
+    out = []
+    try:
+        names = sorted(os.listdir(FACES_DIR), key=str.lower)
+    except OSError:
+        names = []
+    for n in names:
+        d = os.path.join(FACES_DIR, n)
+        if os.path.isdir(d):
+            ph = sorted(f for f in os.listdir(d) if f.lower().endswith(IMG_EXT))
+            g = FACES.gallery.get(n, {}) if FACES else {}
+            out.append({"name": n, "photos": ph, "ok": g.get("ok")})
+    return out
+
+
+def faces_check(path):
+    """Ile twarzy jest na zdjęciu (proces roboczy OpenCV)."""
+    r = subprocess.run([FACES_PY, FACES_WORKER, "check", path], capture_output=True, text=True, timeout=90, env=faces_env())
+    try:
+        return json.loads(r.stdout.strip().splitlines()[-1])
+    except (IndexError, ValueError):
+        raise RuntimeError("analiza zdjęcia nie powiodła się: %s" % (r.stderr.strip()[-200:] or r.returncode))
+
+
+def faces_add(name, src, move=False):
+    name = person_name(name)
+    d = os.path.join(FACES_DIR, name)
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    os.chmod(FACES_DIR, 0o700)
+    ext = os.path.splitext(src)[1].lower()
+    dst = os.path.join(d, time.strftime("%Y%m%d-%H%M%S") + "-%03d" % (int(time.time() * 1000) % 1000)
+                       + (ext if ext in IMG_EXT else ".jpg"))
+    (os.replace if move else shutil.copyfile)(src, dst)
+    os.chmod(dst, 0o600)
+    return dst
+
+
+class Faces:
+    """Procesy rozpoznawania (jeden na kamerę) i reakcje: czujniki w HA, powitanie, alarm, nagranie."""
+    HOLD = 10   # s — osoba jest „przy kamerze” jeszcze tyle po ostatnim wykryciu
+
+    def __init__(self):
+        self.procs, self.sig, self.died = {}, None, {}
+        self.seen, self.pub, self.last = {}, {}, {}
+        self.greeted, self.unknown_cd = {}, {}
+        self.gallery, self.error = {}, ""
+        self.lock = threading.Lock()
+        threading.Thread(target=self._watch, daemon=True).start()
+
+    def info(self):
+        with self.lock:
+            last = {str(n): {"time": time.strftime("%H:%M:%S", time.localtime(v["time"])), "names": v["names"]}
+                    for n, v in self.last.items()}
+            now = time.time()
+            present = {str(n): sorted(k for k, t in s.items() if now - t <= self.HOLD) for n, s in self.seen.items()}
+        return {"running": sorted(n for n, p in self.procs.items() if p.poll() is None), "last": last,
+                "present": present, "error": self.error}
+
+    def stop_all(self):
+        for p in self.procs.values():
+            try:
+                p.terminate()
+            except Exception:
+                pass
+        self.procs = {}
+
+    def _watch(self):
+        while True:
+            try:
+                cfg = read_faces()
+                cams = read_conf()["cameras"]
+                want = {n: cams[n - 1] for n in cfg["cameras"]
+                        if cfg["enabled"] and faces_installed() and 1 <= n <= len(cams)}
+                sig = (tuple(sorted(want.items())), cfg["fps"], cfg["size"], cfg["threshold"])
+                if sig != self.sig:
+                    self.sig = sig
+                    self.stop_all()
+                    self.died = {}
+                for n, url in want.items():
+                    p = self.procs.get(n)
+                    if p is None or p.poll() is not None:
+                        if p is not None and n not in self.died:
+                            self.died[n] = time.time()
+                        if time.time() - self.died.get(n, 0) < 30:
+                            continue   # po awarii (np. kamera niedostępna) — ponowna próba za 30 s
+                        self.died.pop(n, None)
+                        self.procs[n] = self._spawn(n, url, cfg)
+                self._expire()
+            except Exception as e:
+                log("twarze: %s" % e)
+            time.sleep(2)
+
+    def _spawn(self, n, url, cfg):
+        p = subprocess.Popen([FACES_PY, FACES_WORKER, "watch", "--camera", str(n), "--url", url,
+                              "--fps", str(cfg["fps"]), "--size", str(cfg["size"]), "--threshold", str(cfg["threshold"])],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace", env=faces_env())
+        threading.Thread(target=self._read, args=(n, p), daemon=True).start()
+        threading.Thread(target=self._stderr, args=(n, p), daemon=True).start()
+        log("twarze: kamera %d — rozpoznawanie (%g kl./s, %d px)" % (n, cfg["fps"], cfg["size"]))
+        self.pub.pop(n, None)
+        self._publish(n)      # stan początkowy w HA: 0 / „brak”
+        return p
+
+    def _stderr(self, n, p):
+        for line in p.stderr:
+            line = line.strip()
+            if line and "WARN" not in line:
+                log("twarze %d: %s" % (n, mask(line)[-200:]))
+
+    def _read(self, n, p):
+        for line in p.stdout:
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            kind = ev.get("ev")
+            if kind in ("ready", "gallery"):
+                self.gallery = ev.get("gallery") or {}
+                self.error = ""
+            elif kind == "error":
+                self.error = mask(str(ev.get("msg", "")))
+                log("twarze: " + self.error)
+            elif kind == "log":
+                log("twarze: " + str(ev.get("msg", "")))
+            elif kind == "faces":
+                try:
+                    self.on_faces(n, ev.get("faces") or [])
+                except Exception as e:
+                    log("twarze → reakcja: %s" % e)
+
+    def on_faces(self, n, faces):
+        now = time.time()
+        new = []
+        with self.lock:
+            seen = self.seen.setdefault(n, {})
+            for f in faces:
+                key = f.get("name") or "?"
+                if now - seen.get(key, 0) > self.HOLD:
+                    new.append(f)
+                seen[key] = now
+            if faces:
+                self.last[n] = {"time": now, "names": [f.get("name") or "nieznana" for f in faces]}
+        self._publish(n)
+        for f in new:
+            self.appeared(n, f)
+
+    def _expire(self):
+        now = time.time()
+        with self.lock:
+            changed = []
+            for n, s in self.seen.items():
+                old = [k for k, t in s.items() if now - t > self.HOLD]
+                for k in old:
+                    del s[k]
+                if old:
+                    changed.append(n)
+        for n in changed:
+            self._publish(n)
+
+    def _publish(self, n):
+        with self.lock:
+            keys = list(self.seen.get(n, {}))
+        known = sorted(k for k in keys if k != "?")
+        person = ", ".join(known) if known else ("nieznana" if keys else "brak")
+        state = (len(keys), person)
+        if self.pub.get(n) == state or not BRIDGE:
+            return
+        self.pub[n] = state
+        BRIDGE.publish_raw("faces/%d" % n, str(len(keys)))
+        BRIDGE.publish_raw("person/%d" % n, person)
+
+    def appeared(self, n, f):
+        cfg = read_faces()
+        name, now = f.get("name"), time.time()
+        log("twarz na kamerze %d: %s (podobieństwo %.2f)" % (n, name or "nieznana", f.get("sim") or 0))
+        if BRIDGE:
+            BRIDGE.publish_raw("face/event", json.dumps({"event_type": "rozpoznana" if name else "nieznana",
+                                                         "osoba": name or "", "kamera": n,
+                                                         "podobienstwo": f.get("sim") or 0}, ensure_ascii=False),
+                               retain=False)
+        if name:
+            if cfg["greet"] and not LIGHT and now - self.greeted.get(name, 0) > cfg["greet_minutes"] * 60:
+                self.greeted[name] = now
+                text = cfg["greet_text"].replace("{imie}", name).replace("{imię}", name)
+                threading.Thread(target=self._say, args=(text,), daemon=True).start()
+            return
+        if now - self.unknown_cd.get(n, 0) < 60:
+            return
+        self.unknown_cd[n] = now
+        if cfg["unknown_action"] == "alert" and not ALERT.status()["active"]:
+            try:
+                ALERT.start({"camera": n, "seconds": cfg["alert_seconds"], "title": "Nieznana osoba",
+                             "text": "Kamera %d" % n, "chime": True, "record": False})
+            except Exception as e:
+                log("twarze → alarm: %s" % e)
+        if cfg["record_unknown"]:
+            try:
+                CLIPS.record(n, 20, "nieznana-osoba")
+            except Exception as e:
+                log("twarze → nagranie: %s" % e)
+
+    @staticmethod
+    def _say(text):
+        try:
+            say(text)
+        except Exception as e:
+            log("twarze → powitanie: %s" % e)
+
+
+FACES = None
+
+
 def import_cameras(host):
     """Lista strumieni z go2rtc (port 1984) albo Frigate (5000) -> adresy rtsp://host:8554/nazwa."""
     host = str(host or "").strip()
@@ -4179,6 +4455,7 @@ DEBUG_SOURCES = {
     "xorg": "Serwer X (błędy i ostrzeżenia)",
     "lightdm": "Logowanie do pulpitu (LightDM)",
     "system": "System: ostrzeżenia i błędy od startu",
+    "faces": "Rozpoznawanie twarzy (instalacja)",
 }
 
 
@@ -4204,6 +4481,8 @@ def debug_log(src, n=300):
         text = tail_file("/var/log/lightdm/lightdm.log", n)
     elif src == "system":
         text = journal(["-b", "-p", "warning"], n)
+    elif src == "faces":
+        text = tail_file(FACES_LOG, n) if os.path.exists(FACES_LOG) else "(rozpoznawanie twarzy nie było instalowane)"
     else:
         raise ValueError("źródło: " + ", ".join(DEBUG_SOURCES))
     return scrub(text)
@@ -4333,7 +4612,7 @@ def debug_report():
 
 PKG_VERSION = ""
 UPLOADS = {"/api/message": 15_000_000, "/api/restore": 5_000_000, "/api/update/upload": 120_000_000,
-           "/api/photos/upload": 25_000_000}
+           "/api/photos/upload": 25_000_000, "/api/faces/upload": 15_000_000}
 
 
 _LOGIN_CACHE = {}
@@ -4671,6 +4950,24 @@ class Handler(BaseHTTPRequestHandler):
                     ext = f.lower().rsplit(".", 1)[-1]
                     self.send_file(f, {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp",
                                        "gif": "image/gif", "bmp": "image/bmp"}.get(ext, "application/octet-stream"))
+            elif path == "/api/faces":
+                self.send(200, {"installed": faces_installed(), "config": read_faces(), "people": faces_people(),
+                                "status": FACES.info() if FACES else {}, "cameras": len(read_conf()["cameras"]),
+                                "light": LIGHT})
+            elif path.startswith("/api/faces/snap/"):
+                f = os.path.join(FACES_RUN, "kamera%d.jpg" % to_int(path[16:], 1, 99, "kamera"))
+                if not os.path.isfile(f):
+                    self.send(404, {"error": "brak podglądu — jeszcze nie wykryto twarzy"})
+                else:
+                    self.send_file(f, "image/jpeg")
+            elif path.startswith("/api/faces/img/"):
+                parts = unquote(path[15:]).split("/")
+                f = os.path.join(FACES_DIR, person_name(parts[0]), os.path.basename(parts[-1])) if len(parts) == 2 else ""
+                if not f or not os.path.isfile(f):
+                    self.send(404, {"error": "nie ma zdjęcia"})
+                else:
+                    ext = f.lower().rsplit(".", 1)[-1]
+                    self.send_file(f, {"png": "image/png", "webp": "image/webp", "bmp": "image/bmp"}.get(ext, "image/jpeg"))
             elif path == "/api/clips":
                 self.send(200, {"clips": CLIPS.list()})
             elif path.startswith("/api/clips/"):
@@ -4781,6 +5078,64 @@ class Handler(BaseHTTPRequestHandler):
             if BRIDGE:
                 threading.Thread(target=BRIDGE.publish_discovery, daemon=True).start()
             return "Wykrywanie ruchu: " + ("kamery " + ", ".join(map(str, cams)) if cfg["enabled"] and cams else "wyłączone")
+        if path == "/api/faces":
+            cams = [int(c) for c in body.get("cameras", []) if str(c).isdigit()]
+            n = len(read_conf()["cameras"])
+            if any(not 1 <= c <= n for c in cams):
+                raise ValueError("kamery 1-%d" % n)
+            cur = read_faces()
+            cfg = dict(cur, enabled=bool(body.get("enabled")), cameras=cams)
+            for k in ("fps", "threshold", "size", "greet", "greet_text", "greet_minutes", "unknown_action",
+                      "alert_seconds", "record_unknown"):
+                if k in body:
+                    cfg[k] = body[k]
+            if cfg["enabled"] and not faces_installed():
+                raise ValueError("najpierw zainstaluj rozpoznawanie twarzy (przycisk „Zainstaluj”)")
+            write_json(FACES_FILE, cfg, 0o600)
+            cfg = read_faces()
+            write_json(FACES_FILE, cfg, 0o600)
+            if BRIDGE:
+                threading.Thread(target=BRIDGE.publish_discovery, daemon=True).start()
+            return "Rozpoznawanie twarzy: " + ("kamery " + ", ".join(map(str, cfg["cameras"]))
+                                               if cfg["enabled"] and cfg["cameras"] else "wyłączone")
+        if path == "/api/faces/install":
+            a = body.get("action")
+            if a not in ("install", "remove"):
+                raise ValueError("action: install, remove")
+            r = subprocess.run(["systemd-run", "--unit", "kiosk-faces-%s-%d" % (a, int(time.time())), "--collect",
+                                FACES_CMD, a], capture_output=True, text=True, timeout=20)
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr.strip())
+            return {"install": "Instaluję rozpoznawanie twarzy (kilka minut: ok. 100 MB z internetu, ok. 300 MB na dysku) — dziennik: Debug → Rozpoznawanie twarzy",
+                    "remove": "Usuwam rozpoznawanie twarzy (zdjęcia osób zostają)"}[a]
+        if path == "/api/faces/capture":
+            n = to_int(body.get("camera", 1), 1, 99, "camera")
+            name = person_name(body.get("name"))
+            src = os.path.join(FACES_RUN, "kamera%d-twarz.jpg" % n)
+            meta = read_json(src + ".json", {})
+            if not os.path.exists(src) or time.time() - float(meta.get("t", 0)) > 5:
+                raise ValueError("kamera %d nie widzi teraz twarzy — stań przed kamerą (rozpoznawanie musi być włączone dla tej kamery)" % n)
+            if meta.get("faces") != 1:
+                raise ValueError("kamera %d widzi %d twarze — przed kamerą powinna stać jedna osoba" % (n, meta.get("faces", 0)))
+            if meta.get("name") and meta["name"].lower() != name.lower():
+                raise ValueError("kamera rozpoznaje tę twarz jako „%s” — sprawdź imię albo usuń błędne zdjęcia tamtej osoby" % meta["name"])
+            faces_add(name, src)
+            return "Zapisano twarz: %s (z kamery %d)" % (name, n)
+        if path == "/api/faces/delete":
+            name = person_name(body.get("name"))
+            d = os.path.join(FACES_DIR, name)
+            if not os.path.isdir(d):
+                raise ValueError("nie ma osoby: " + name)
+            if body.get("photo"):
+                f = os.path.join(d, os.path.basename(str(body["photo"])))
+                if not os.path.isfile(f):
+                    raise ValueError("nie ma zdjęcia")
+                os.unlink(f)
+                if not os.listdir(d):
+                    os.rmdir(d)
+                return "Usunięto zdjęcie osoby " + name
+            shutil.rmtree(d)
+            return "Usunięto osobę: " + name
         if path == "/api/clips/record":
             return "Nagrywam: " + CLIPS.record(to_int(body.get("camera", 1), 1, 99, "camera"),
                                                to_int(body.get("seconds", 20), 5, 300, "seconds"), "recznie")
@@ -4960,6 +5315,26 @@ class Handler(BaseHTTPRequestHandler):
                 os.replace(tmp, dst)
                 os.chmod(dst, 0o644)
                 out = "Zdjęcie: " + name
+            elif path == "/api/faces/upload":
+                from urllib.parse import parse_qs
+                try:
+                    name = person_name(parse_qs(q).get("name", [""])[0])
+                    if not faces_installed():
+                        raise ValueError("najpierw zainstaluj rozpoznawanie twarzy")
+                    r = faces_check(tmp)
+                    if not r.get("faces"):
+                        raise ValueError("na zdjęciu nie widać twarzy — użyj zdjęcia z twarzą na wprost")
+                    if r.get("size", 0) < 60:
+                        raise ValueError("twarz na zdjęciu jest za mała (%d px) — przytnij zdjęcie do twarzy" % r.get("size", 0))
+                    ext = os.path.splitext(parse_qs(q).get("file", ["x.jpg"])[0])[1].lower()
+                    os.replace(tmp, tmp + (ext if ext in IMG_EXT else ".jpg"))
+                    tmp += ext if ext in IMG_EXT else ".jpg"
+                    faces_add(name, tmp, move=True)
+                finally:
+                    if os.path.exists(tmp):
+                        os.unlink(tmp)
+                out = "Dodano zdjęcie osoby %s%s" % (name, " (na zdjęciu %d twarze — wzorcem jest największa)" % r["faces"]
+                                                     if r["faces"] > 1 else "")
             elif path == "/api/restore":
                 with open(tmp, "rb") as f:
                     blob = f.read()
@@ -5645,6 +6020,7 @@ a{color:var(--blue)}
 <a href="#/zdjecia" role="tab" data-pane="zdjecia">Zdjęcia (wygaszacz)</a>
 <a href="#/kalendarz" role="tab" data-pane="kalendarz">Kalendarz</a>
 <a href="#/ruch" role="tab" data-pane="ruch">Ruch na kamerach</a>
+<a href="#/twarze" role="tab" data-pane="twarze">Rozpoznawanie twarzy</a>
 <a href="#/pogoda" role="tab" data-pane="pogoda">Pogoda</a>
 </div>
 <section class="card pane" role="tabpanel" id="harmonogram" aria-labelledby="h-harmonogram" hidden><h2 id="h-harmonogram">Harmonogram</h2>
@@ -5699,6 +6075,32 @@ a{color:var(--blue)}
 <div class="row" style="margin-top:8px"><select id="cliprec" style="width:auto"></select><button type="button" id="cliprecb">Nagraj teraz 20 s</button><button type="button" id="cliprefresh">Odśwież listę</button></div>
 <div class="scroll"><table><tbody id="cliptab"></tbody></table></div>
 <video id="clipplay" controls hidden style="max-width:100%;border-radius:10px;margin-top:8px"></video>
+</section>
+<section class="card pane" role="tabpanel" id="twarze" aria-labelledby="h-twarze" hidden><h2 id="h-twarze">Rozpoznawanie twarzy</h2>
+<p class="lead">Kiosk wykrywa twarze na obrazie z kamer i rozpoznaje dodane osoby. Wszystko dzieje się lokalnie na kiosku — obraz, zdjęcia osób i wyniki nie trafiają do internetu. W Home Assistant: czujniki „Twarze kamera N” (ile osób), „Osoba kamera N” (kto) i zdarzenie „Twarz” (rozpoznana / nieznana) do automatyzacji.</p>
+<div class="row"><span id="fcst" class="hint" style="align-self:center;flex:1;min-width:220px"></span><button type="button" id="fcinst">Zainstaluj</button><button type="button" id="fcrm" class="danger" hidden>Odinstaluj</button></div>
+<form id="fcf"><label class="check"><input type="checkbox" id="fcen"> Rozpoznawanie włączone</label>
+<div id="fccams" class="row" style="gap:6px 14px"></div>
+<div class="grid2"><div class="field"><label for="fcfps">Analiz na sekundę</label><select id="fcfps"><option value="0.5">0,5</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="5">5</option></select></div>
+<div class="field"><label for="fcsize">Rozdzielczość analizy</label><select id="fcsize"><option value="640">640 px — słabszy komputer</option><option value="960">960 px</option><option value="1280">1280 px — dalsze twarze</option></select></div>
+<div class="field"><label for="fcth">Próg rozpoznania: <span id="fcthv">0.40</span></label><input type="range" id="fcth" min="0.25" max="0.70" step="0.01" value="0.40"><span class="hint">Wyżej = mniej pomyłek, ale częściej „nieznana”.</span></div>
+<div class="field"><label for="fcunk">Nieznana osoba</label><select id="fcunk"><option value="none">Tylko czujnik w HA</option><option value="alert">Pokaż tę kamerę (alarm)</option></select></div>
+<div class="field"><label for="fcsec">Alarm na (s)</label><input type="number" id="fcsec" min="5" max="600" value="20"></div></div>
+<label class="check"><input type="checkbox" id="fcrec"> Nagrywaj nieznane osoby (20 s)</label>
+<div id="fcgreetbox"><label class="check"><input type="checkbox" id="fcgreet"> Witaj rozpoznane osoby głosem</label>
+<div class="grid2"><div class="field"><label for="fcgtext">Powitanie (<code>{imie}</code> = imię)</label><input type="text" id="fcgtext" maxlength="200" placeholder="Cześć, {imie}!"></div>
+<div class="field"><label for="fcgmin">Nie częściej niż co (min)</label><input type="number" id="fcgmin" min="1" max="1440" value="30"></div></div></div>
+<div class="row"><button type="submit" class="primary">Zapisz</button><span id="fclast" class="hint" style="align-self:center"></span></div></form>
+<h3>Osoby</h3>
+<p class="hint">Dodaj 2–5 zdjęć każdej osoby: twarz na wprost, dobrze oświetlona, różne dni. Najlepiej zapisać twarz prosto z kamery kiosku — wtedy wzorzec ma to samo światło i kąt.</p>
+<div class="grid2"><div class="field"><label for="fcname">Imię</label><input type="text" id="fcname" maxlength="40" placeholder="np. Jacek"></div>
+<div class="field"><label for="fccapcam">Kamera</label><select id="fccapcam"></select></div></div>
+<div class="row"><button type="button" id="fccap">Zapisz twarz z kamery</button><label class="btn" style="cursor:pointer"><input type="file" id="fcfiles" accept="image/*" multiple hidden> Dodaj zdjęcia…</label></div>
+<div id="fcpeople" style="margin-top:10px"></div>
+<h3>Podgląd</h3>
+<p class="hint">Ostatnia klatka z wykrytą twarzą (zielona ramka — rozpoznana osoba, bursztynowa — nieznana). Tylko w pamięci RAM kiosku.</p>
+<div class="row"><select id="fcsnapcam" style="width:auto"></select><button type="button" id="fcsnapb">Odśwież</button></div>
+<img id="fcsnap" alt="Podgląd rozpoznawania" style="max-width:100%;border-radius:10px;margin-top:8px;display:none">
 </section>
 <section class="card pane" role="tabpanel" id="pogoda" aria-labelledby="h-pogoda" hidden><h2 id="h-pogoda">Pogoda</h2>
 <p class="lead">Pogoda przy zegarze, na pasku i w zapowiedziach. Adres i token HA z tej sekcji używają też obecność i kalendarz.</p>
@@ -6290,6 +6692,53 @@ $('dcf').addEventListener('submit', async e=>{ e.preventDefault(); const cmd=$('
   out.scrollTop=out.scrollHeight; setTimeout(loadStatus, 2000); });
 // ---- rotacja, noc, zdjęcia, kalendarz, ruch, nagrania, Frigate, radio, interkom, asystent, jasność, powiadomienia, konta, kioski
 let EXT=null, ME='admin';
+// ---- rozpoznawanie twarzy
+let FCTIMER=0, FCSIG='';
+const fcName=()=>$('fcname').value.trim();
+function fcSnap(){ const n=$('fcsnapcam').value; if(!n) return; const i=$('fcsnap'); i.onload=()=>{ i.style.display='block'; }; i.onerror=()=>{ i.style.display='none'; }; i.src='api/faces/snap/'+n+'?t='+Date.now(); }
+async function loadFaces(quiet){ const r=await api('api/faces'); const c=r.config, st=r.status||{};
+  const cams=[...Array(r.cameras).keys()].map(i=>String(i+1));
+  $('fcinst').textContent=r.installed?'Zainstaluj ponownie':'Zainstaluj'; $('fcrm').hidden=!r.installed;
+  let t=r.installed?('Zainstalowane · '+((st.running||[]).length?'działa na kamerach: '+st.running.join(', '):(c.enabled?'uruchamianie…':'wyłączone'))):'Nie zainstalowane — „Zainstaluj” pobierze OpenCV i modele (ok. 100 MB z internetu, ok. 300 MB na dysku, kilka minut).';
+  if(st.error) t+=' · Błąd: '+st.error; $('fcst').textContent=t;
+  const pres=Object.entries(st.present||{}).filter(([k,v])=>v.length).map(([k,v])=>'kamera '+k+': '+v.map(x=>x==='?'?'nieznana':x).join(', '));
+  const last=Object.entries(st.last||{}).map(([k,v])=>'kamera '+k+' '+v.time+' ('+v.names.join(', ')+')');
+  $('fclast').textContent=pres.length?'Teraz: '+pres.join('; '):(last.length?'Ostatnio: '+last.join('; '):'');
+  const sig=JSON.stringify([c,r.cameras,r.people,r.installed]);
+  if(quiet && sig===FCSIG){ fcSnap(); return; } FCSIG=sig;
+  if(!quiet || !$('fcf').contains(document.activeElement)){
+    $('fcen').checked=c.enabled; chkList($('fccams'), cams, c.cameras.map(String), 'Kamera ');
+    if(!cams.length) $('fccams').textContent='(brak kamer — dodaj je w zakładce Ekran)';
+    $('fcfps').value=String(c.fps); $('fcsize').value=String(c.size); $('fcth').value=c.threshold; $('fcthv').textContent=Number(c.threshold).toFixed(2);
+    $('fcunk').value=c.unknown_action; $('fcsec').value=c.alert_seconds; $('fcrec').checked=c.record_unknown;
+    $('fcgreet').checked=c.greet; $('fcgtext').value=c.greet_text; $('fcgmin').value=c.greet_minutes; $('fcgreetbox').hidden=!!r.light;
+  }
+  for(const sel of [$('fccapcam'), $('fcsnapcam')]){ const v=sel.value; sel.replaceChildren(...cams.map(n=>{ const o=document.createElement('option'); o.value=n; o.textContent='Kamera '+n; return o; }));
+    if(cams.includes(v)) sel.value=v; else if(c.cameras.length) sel.value=String(c.cameras[0]); }
+  const box=$('fcpeople'); box.replaceChildren(...r.people.map(p=>{ const d=document.createElement('div'); d.className='card'; d.style.cssText='padding:10px 12px;margin:0 0 8px';
+    const h=document.createElement('div'); h.className='row'; h.style.alignItems='center';
+    const b=document.createElement('strong'); b.textContent=p.name; const s=document.createElement('span'); s.className='hint';
+    s.textContent=p.photos.length+' zdj.'+(p.ok!=null&&p.ok!==undefined?' · wzorców: '+p.ok+(p.ok<p.photos.length?' (na części zdjęć nie znaleziono twarzy)':''):'');
+    const use=document.createElement('button'); use.type='button'; use.textContent='Wybierz'; use.onclick=()=>{ $('fcname').value=p.name; $('fcname').focus(); };
+    const del=document.createElement('button'); del.type='button'; del.className='danger'; del.textContent='Usuń osobę';
+    del.onclick=()=>{ if(confirm('Usunąć osobę „'+p.name+'” i wszystkie jej zdjęcia?')) act(()=>post('api/faces/delete',{name:p.name})).then(()=>loadFaces()); };
+    h.append(b,s,use,del);
+    const g=document.createElement('div'); g.className='row'; g.style.cssText='gap:8px;margin-top:8px';
+    g.append(...p.photos.map(f=>{ const w=document.createElement('div'); w.style.position='relative';
+      const i=document.createElement('img'); i.src='api/faces/img/'+encodeURIComponent(p.name)+'/'+encodeURIComponent(f); i.alt=p.name; i.loading='lazy'; i.style.cssText='width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--line);display:block';
+      const x=document.createElement('button'); x.type='button'; x.textContent='×'; x.title='Usuń zdjęcie'; x.style.cssText='position:absolute;top:2px;right:2px;min-height:24px;padding:0 7px';
+      x.onclick=()=>act(()=>post('api/faces/delete',{name:p.name, photo:f})).then(()=>loadFaces()); w.append(i,x); return w; }));
+    d.append(h,g); return d; }));
+  if(!r.people.length) box.textContent='Brak osób — bez nich kiosk tylko wykrywa twarze (każda jest „nieznana”).';
+  fcSnap(); }
+$('fcth').oninput=()=>{ $('fcthv').textContent=Number($('fcth').value).toFixed(2); };
+$('fcinst').onclick=()=>{ if(confirm('Pobrać i zainstalować rozpoznawanie twarzy (OpenCV + modele: ok. 100 MB z internetu, ok. 300 MB na dysku)?')) act(()=>post('api/faces/install',{action:'install'})).then(()=>setTimeout(()=>loadFaces().catch(()=>{}),8000)); };
+$('fcrm').onclick=()=>{ if(confirm('Odinstalować rozpoznawanie twarzy? Zdjęcia osób zostaną.')) act(()=>post('api/faces/install',{action:'remove'})).then(()=>setTimeout(()=>loadFaces().catch(()=>{}),4000)); };
+$('fcf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/faces',{enabled:$('fcen').checked, cameras:checkedOf($('fccams')).map(Number), fps:Number($('fcfps').value), size:Number($('fcsize').value), threshold:Number($('fcth').value), unknown_action:$('fcunk').value, alert_seconds:Number($('fcsec').value), record_unknown:$('fcrec').checked, greet:$('fcgreet').checked, greet_text:$('fcgtext').value, greet_minutes:Number($('fcgmin').value)})).then(()=>loadFaces()); });
+$('fccap').onclick=()=>{ if(!fcName()) return toast('Wpisz imię osoby','err'); act(()=>post('api/faces/capture',{camera:Number($('fccapcam').value), name:fcName()})).then(()=>loadFaces()); };
+$('fcfiles').onchange=async()=>{ const fs=[...$('fcfiles').files]; $('fcfiles').value=''; if(!fcName()) return toast('Najpierw wpisz imię osoby','err');
+  for(const f of fs){ try{ await upload('api/faces/upload?name='+encodeURIComponent(fcName())+'&file='+encodeURIComponent(f.name), f); }catch(e){} } loadFaces().catch(()=>{}); };
+$('fcsnapb').onclick=fcSnap; $('fcsnapcam').onchange=fcSnap;
 function chkList(el, items, checked, prefix){ el.replaceChildren(...items.map(v=>{ const l=document.createElement('label'); l.className='check'; l.style.margin='0'; const c=document.createElement('input'); c.type='checkbox'; c.value=v; c.checked=checked.includes(v); l.append(c, (prefix||'')+v); return l; })); }
 const checkedOf=el=>[...el.querySelectorAll('input:checked')].map(c=>c.value);
 async function loadExt(){ const r=await api('api/extras'); EXT=r;
@@ -6430,6 +6879,8 @@ function showTab(id, focus){
   if(adm && g==='system'){ loadUpdate().catch(e=>toast(e.message,'err')); loadUsers().catch(()=>{}); loadName().catch(()=>{}); loadRo().catch(()=>{}); }
   if(adm && id==='kioski') loadPeers().catch(()=>{});
   if(adm && id==='siec') loadWifi().catch(e=>toast(e.message,'err'));
+  if(adm && id==='twarze') loadFaces().catch(e=>toast(e.message,'err'));
+  clearInterval(FCTIMER); FCTIMER=id==='twarze'?setInterval(()=>{ if(!document.hidden) loadFaces(true).catch(()=>{}); },3000):0;
   if(id==='debug' && !DBTEXT) dbLoad();
   dbLive();
   if(changed && window.scrollY>200) window.scrollTo(0,0);
@@ -6603,7 +7054,7 @@ def cli():
 
 
 def main():
-    global BRIDGE, WEATHER, ANNOUNCER, AUTO, MOTION, PKG_VERSION, RO
+    global BRIDGE, WEATHER, ANNOUNCER, AUTO, MOTION, FACES, PKG_VERSION, RO
     if len(sys.argv) > 1:
         sys.exit(cli())
     if not os.path.exists(TOKEN_FILE):
@@ -6612,6 +7063,7 @@ def main():
     ANNOUNCER = Announcer()
     AUTO = Automation()
     MOTION = Motion()
+    FACES = Faces()
     PKG_VERSION = pkg_version()
     try:
         with open(OVERLAY_CONF) as f:

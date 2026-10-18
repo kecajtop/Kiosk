@@ -456,7 +456,8 @@ BOOTLOGO=on
 [ "$BOOTLOGO" = off ] || BOOTLOGO=on
 if [ -f /etc/default/grub ]; then
     /usr/local/sbin/kiosk-bootlogo "$BOOTLOGO" || echo "    UWAGA: konfiguracja GRUB nie powiodła się, sprawdź: sudo update-grub" >&2
-    update-initramfs -u || echo "    UWAGA: update-initramfs nie powiodło się, sprawdź ręcznie." >&2
+    # update-grub i update-initramfs tylko po zmianie linii startowej / motywu (logo) — szybsze aktualizacje
+    /usr/local/sbin/kiosk-bootlogo initramfs || echo "    UWAGA: update-initramfs nie powiodło się, sprawdź ręcznie." >&2
 else
     echo "    UWAGA: brak /etc/default/grub, pomijam konfigurację GRUB (system bez GRUB-a?)." >&2
 fi
@@ -647,6 +648,18 @@ cat > /usr/local/sbin/kiosk-satellite.new <<'EOF_SATELLITE'
 EOF_SATELLITE
 chmod 0755 /usr/local/sbin/kiosk-satellite.new
 mv -f /usr/local/sbin/kiosk-satellite.new /usr/local/sbin/kiosk-satellite
+# Rozpoznawanie twarzy (lokalnie): instalacja OpenCV i modeli na żądanie — panel albo sudo kiosk-faces install
+install -d -m 0755 /usr/local/lib/kiosk-setup
+cat > /usr/local/sbin/kiosk-faces.new <<'EOF_FACES'
+# (treść: src/kiosk-faces — wkleja build.sh)
+EOF_FACES
+chmod 0755 /usr/local/sbin/kiosk-faces.new
+mv -f /usr/local/sbin/kiosk-faces.new /usr/local/sbin/kiosk-faces
+cat > /usr/local/lib/kiosk-setup/kiosk-faces-worker.new <<'EOF_FACESW'
+# (treść: src/kiosk-faces-worker — wkleja build.sh)
+EOF_FACESW
+chmod 0755 /usr/local/lib/kiosk-setup/kiosk-faces-worker.new
+mv -f /usr/local/lib/kiosk-setup/kiosk-faces-worker.new /usr/local/lib/kiosk-setup/kiosk-faces-worker
 # Dysk tylko do odczytu (overlayroot) — włączanie: panel WWW → System albo sudo kiosk-ro on
 cat > /usr/local/sbin/kiosk-ro.new <<'EOF_RO'
 # (treść: src/kiosk-ro — wkleja build.sh)

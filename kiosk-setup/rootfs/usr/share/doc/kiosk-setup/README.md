@@ -169,7 +169,7 @@ menu z siedmioma sekcjami, a w każdej sekcji kilka zakładek:
 | **Ekran** | Co wyświetla kiosk · Widoki (z rotacją) · Monitory · Jasność i wyłączanie |
 | **Komunikaty** | Dymek · Powiedz na głos (z mówiącym zegarem) · Alarm na ekranie · Pasek informacyjny |
 | **Dźwięk** | Głośność i głos · Radio i muzyka · Wiadomość i interkom · Asystent głosowy |
-| **Automatyka** | Harmonogram · Obecność i noc · Zdjęcia · Kalendarz · Ruch na kamerach · Pogoda |
+| **Automatyka** | Harmonogram · Obecność i noc · Zdjęcia · Kalendarz · Ruch na kamerach · Rozpoznawanie twarzy · Pogoda |
 | **Połączenia** | MQTT i Home Assistant · Frigate/go2rtc · Kioski w sieci · Jak używać (MQTT, HA, API) |
 | **System** | Nazwa kiosku · Konta i dostęp · Aktualizacje i kopia · Dysk tylko do odczytu · Powiadomienia i ochrona · Diagnostyka |
 
@@ -517,6 +517,31 @@ i wpisy na pasku informacyjnym; odświeżane co 5 min. Adres i token HA jak dla 
 - „Kamery z Frigate / go2rtc”: podaj adres serwera, kiosk pokaże strumienie
   `rtsp://serwer:8554/nazwa` do dodania jednym kliknięciem.
 
+### Rozpoznawanie twarzy (lokalnie)
+- Automatyka → Rozpoznawanie twarzy → „Zainstaluj” (albo `sudo kiosk-faces install`):
+  OpenCV w `/opt/kiosk-faces` (pip) i modele YuNet (wykrywanie) oraz SFace
+  (rozpoznawanie) z opencv_zoo, sprawdzane sumą SHA-256 — ok. 100 MB z internetu,
+  ok. 300 MB na dysku. Przy dysku tylko do odczytu najpierw wyłącz ten tryb.
+- Obraz, zdjęcia osób i wyniki zostają na kiosku. Zdjęcia osób:
+  `/etc/kiosk-setup/faces/<imię>/` (tylko root, poza kopią ustawień); podgląd
+  ostatniej klatki tylko w RAM (`/run/kiosk-faces`).
+- Osoby: wpisz imię i „Zapisz twarz z kamery” (najlepiej 2–5 razy, różne dni)
+  albo „Dodaj zdjęcia…” (twarz na wprost). Kiosk nie zapisze twarzy pod imieniem,
+  jeśli rozpoznaje ją już jako inną osobę.
+- Ustawienia: kamery, analiz na sekundę (0,5–5), rozdzielczość analizy (640/960/1280 px),
+  próg rozpoznania (domyślnie 0,40 — wyżej mniej pomyłek, częściej „nieznana”).
+  Obciążenie: przy 960 px i 2 analizach/s ok. 1/3 rdzenia na kamerę plus dekodowanie obrazu.
+- W HA: „Twarze kamera N” (`sensor.<kiosk>_faces_N`, ile osób), „Osoba kamera N”
+  (`sensor.<kiosk>_person_N`: imiona, „nieznana” albo „brak”) i zdarzenie „Twarz”
+  (`event.<kiosk>_face`) z typem `rozpoznana`/`nieznana`
+  i atrybutami `osoba`, `kamera`, `podobienstwo` — do automatyzacji (np. otwórz
+  furtkę tylko domownikom). MQTT: `<prefiks>/faces/N`, `<prefiks>/person/N`, `<prefiks>/face/event`.
+- Reakcje kiosku: powitanie głosem rozpoznanej osoby (`{imie}` w tekście, nie częściej
+  niż co N minut; w wersji light brak mowy), przy nieznanej osobie alarm z tą kamerą
+  i/lub nagranie 20 s.
+- Test na zdjęciu: `sudo kiosk-faces image zdjecie.jpg`. Dziennik instalacji: Debug →
+  Rozpoznawanie twarzy. Usunięcie: „Odinstaluj” / `sudo kiosk-faces remove` (zdjęcia osób zostają).
+
 ### Radio
 Dźwięk → Radio internetowe: wyszukiwarka stacji (radio-browser.info), ulubione,
 graj/stop. W HA lista „Radio” (`radio/set` nazwa albo `OFF`). Budzik:
@@ -732,6 +757,11 @@ zanim załaduje się strona lub obraz kamery. `kiosk-mode` podmienia je
 przy zmianie trybu. Własny plik PNG podany w konfiguracji pakietu
 (`dpkg-reconfigure kiosk-setup`) ma pierwszeństwo w każdym trybie.
 
+`update-grub` i `update-initramfs` (kilkadziesiąt sekund) uruchamiają się tylko wtedy,
+gdy zmieni się linia startowa GRUB-a (logo wł./wył.) albo motyw startowy (logo, skrypt
+Plymouth) — zwykła aktualizacja pakietu ich nie powtarza. Wymuszenie przebudowy
+initramfs: `sudo kiosk-bootlogo initramfs --force`.
+
 ## SSH i konfiguracja sieci/WiFi
 
 Pakiet włącza SSH od razu — cała konfiguracja (poza początkowym
@@ -889,7 +919,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
   (`sudo kiosk-update github`).
 - **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
   github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
-  i go instaluje; wersja np. `1:1.0.7+git20261017.abc1234`. W terminalu:
+  i go instaluje; wersja np. `1:1.0.8+git20261017.abc1234`. W terminalu:
   `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
 
 ## Wersja light (kiosk-setup-light)
@@ -919,6 +949,9 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.8** (18.10.2026) — rozpoznawanie twarzy lokalnie na kiosku (YuNet + SFace, OpenCV):
+  osoby ze zdjęć albo z kamery, czujniki i zdarzenie w HA, powitanie głosem, alarm i nagranie
+  przy nieznanej osobie; `update-grub` i `update-initramfs` tylko po zmianie logo/linii startowej.
 - **1.0.7** (18.10.2026) — przełączanie edycji pełna/light z panelu i `kiosk-update switch`;
   poprawki aktualizacji przez panel (wgrywanie porcjami, pakiet light, adres zapisywany sam,
   błędy widoczne w panelu, ponowna próba po `apt-get update`); pasek informacyjny nie zapętla

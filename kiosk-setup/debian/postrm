@@ -40,6 +40,9 @@ case "$1" in
         rm -f /etc/systemd/system/kiosk-update.timer /etc/systemd/system/kiosk-update.service
         rm -f /usr/local/sbin/kiosk-update /usr/local/bin/kiosk-ticker /usr/local/bin/kiosk-agenda
         [ -x /usr/local/sbin/kiosk-satellite ] && /usr/local/sbin/kiosk-satellite remove >/dev/null 2>&1 || true
+        [ -x /usr/local/sbin/kiosk-faces ] && /usr/local/sbin/kiosk-faces remove >/dev/null 2>&1 || true
+        rm -f /usr/local/sbin/kiosk-faces /usr/local/lib/kiosk-setup/kiosk-faces-worker /var/log/kiosk-faces-install.log
+        rmdir /usr/local/lib/kiosk-setup 2>/dev/null || true
         rm -f /usr/local/sbin/kiosk-satellite /usr/local/sbin/kiosk-ro /usr/local/bin/kiosk-status /run/kiosk-netstatus.json /run/kiosk-update.json /run/kiosk-nowplaying.json /run/kiosk-nowplaying-art /etc/modules-load.d/kiosk-i2c.conf
         rm -f /run/kiosk-agenda.json /run/kiosk-brightness
         echo "UWAGA: zdjęcia (/var/lib/kiosk-photos) i nagrania z kamer (/var/lib/kiosk-clips) NIE zostały usunięte."
