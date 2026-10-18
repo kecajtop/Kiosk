@@ -12,6 +12,19 @@ Jeden panel do wszystkich kiosków z pakietem **kiosk-setup**, w menu bocznym Ho
   „Aktualizuj do X”), a „Aktualizuj wszystkie z GitHuba” aktualizuje wszystkie naraz. Każdy kiosk ma też w HA
   encję „Aktualizacja” (Ustawienia → Aktualizacje) i przełącznik „Automatyczne aktualizacje”.
 
+## Zasilanie: przekaźnik i Wake-on-LAN
+
+Przy kiosku kliknij **Ustaw zasilanie…**:
+
+- **Przekaźnik** — encja HA, która daje kioskowi prąd (np. ESP32 / Sonoff `switch.…_relay`).
+- **Wake-on-LAN** — adres MAC kiosku albo encja WOL (np. `switch.…_wol` z integracji Wake on LAN). Włączony kiosk
+  z kiosk-setup 1.0.17+ podaje swój MAC sam. WOL wymaga kabla (Wi-Fi zwykle nie budzi) i włączenia w BIOS.
+
+**Włącz**: przekaźnik, po ~8 s pakiety WOL, aż kiosk odpowie (do ~1 min). **Wyłącz**: kiosk zamyka system,
+a gdy przestanie odpowiadać — przekaźnik odcina prąd. Tip: w BIOS ustaw „Power on after AC loss”, wtedy
+sam przekaźnik włącza kiosk. Przekaźnik sterowany też przez termostat (np. Sonoff THR320D) — wyłącz termostat
+(`climate` → off), inaczej może sam odciąć kiosk.
+
 ## Aktualizacja samego dodatku
 
 Nowe wersje dodatku Home Assistant pokazuje w Ustawienia → Aktualizacje (po odświeżeniu sklepu dodatków).

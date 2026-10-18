@@ -70,6 +70,7 @@ td{padding:8px 4px;border-bottom:1px solid var(--line)}
 <form id="sayf"><label for="say">Powiedz na wszystkich</label><div class="row"><input id="say" maxlength="1000" placeholder="Obiad gotowy!"><button class="primary">Powiedz</button></div></form>
 <form id="bubf"><label for="bub">Dymek na wszystkich (15 s)</label><div class="row"><input id="bub" maxlength="600" placeholder="Wychodzimy za 5 minut"><button>Pokaż</button></div></form>
 <div><label for="allview">Widok na wszystkich</label><div class="row"><select id="allview" style="flex:1"></select><button type="button" id="allviewb">Pokaż</button></div></div>
+<div><label>Zasilanie (przekaźnik / WOL)</label><div class="row"><button type="button" id="allon">Włącz wszystkie</button><button type="button" class="danger" id="alloff">Wyłącz wszystkie</button></div></div>
 <div><label>Ekran i system</label><div class="row"><button type="button" data-all="screen-on">Włącz ekrany</button><button type="button" data-all="screen-off">Wyłącz ekrany</button><button type="button" data-all="restart">Odśwież</button></div></div>
 <div><label>Aktualizacja kiosk-setup</label><div class="row"><button type="button" class="primary" data-all="update-github">Aktualizuj wszystkie z GitHuba</button><label class="btn"><input type="file" id="deb" accept=".deb" hidden> Wgraj .deb na wszystkie…</label></div><div class="hint" id="latestinfo"></div></div>
 </div></section>
@@ -90,6 +91,14 @@ td{padding:8px 4px;border-bottom:1px solid var(--line)}
 <div class="row"><input id="snet" placeholder="sieć, np. 192.168.0.0/24 (puste = automatycznie)" style="flex:1"><button type="button" class="primary" id="sgo">Szukaj</button></div>
 <p class="hint" id="sinfo"></p><table><tbody id="sres"></tbody></table>
 <div class="row" style="justify-content:flex-end;margin-top:16px"><button type="button" id="sclose">Zamknij</button></div></dialog>
+
+<dialog id="pdlg"><form id="pform" method="dialog">
+<h2>Zasilanie: <span id="phost"></span></h2>
+<label for="prelay">Przekaźnik zasilania (encja HA, np. ESP32 / Sonoff)</label><select id="prelay" style="width:100%"></select>
+<label for="pwol">Wake-on-LAN: adres MAC albo encja WOL</label><input id="pwol" list="pwolist" autocomplete="off" placeholder="AA:BB:CC:DD:EE:FF albo switch.kiosk_wol"><datalist id="pwolist"></datalist><p class="hint" id="pmac"></p>
+<p class="hint"><b>Włącz</b>: przekaźnik włączony, po kilku sekundach pakiet WOL (do skutku, maks. ~1 min). <b>Wyłącz</b>: kiosk zamyka system, potem przekaźnik odcina prąd. Bez przekaźnika — samo WOL / samo zamknięcie systemu.</p>
+<div class="row" style="justify-content:flex-end;margin-top:16px"><button type="button" id="pcancel">Anuluj</button><button class="primary" id="pok">Zapisz</button></div>
+</form></dialog>
 
 <div id="toast" role="status" aria-live="polite" hidden></div>
 <script>
@@ -120,7 +129,7 @@ function card(k){
   if(st){
     const chip=(b,t)=>el('span',null,el('b',{textContent:b}),t);
     c.append(el('div',{className:'chips'}, chip('Ekran', (MODES[st.mode]||st.mode)+(st.view?' · '+st.view:'')), chip('Monitor', st.screen==='on'?'włączony':(st.screen==='off'?'wyłączony':'?')),
-      chip('Kamery', String(st.camera_players)), st.ro?chip('Dysk','tylko odczyt'):null, chip('Czas pracy', fmtUp(st.uptime_s||0)), netChip(st.net),
+      chip('Kamery', String(st.camera_players)), st.ro?chip('Dysk','tylko odczyt'):null, chip('Czas pracy', fmtUp(st.uptime_s||0)), st.shutdown_in_s!=null?chip('Wyłączenie za', fmtUp(st.shutdown_in_s)):null, netChip(st.net),
       st.now_playing&&st.now_playing.state==='playing' ? chip('Gra', [st.now_playing.artist, st.now_playing.title||st.now_playing.station].filter(Boolean).join(' — ').slice(0,50)) : null));
     const sel=el('select',{'aria-label':'Widok'}); sel.append(el('option',{value:'',textContent:'— widok —'}));
     (s.views||[]).forEach(v=>sel.append(el('option',{value:v,textContent:v,selected:v===st.view})));
@@ -133,15 +142,41 @@ function card(k){
     if(upb) upb.onclick=()=>{ if(confirm('Zaktualizować kiosk '+(st.name||k.host)+' do '+want+'? Ustawienia zostają.')) busy(upb,()=>kpost(k,'/api/update/github',{},'Aktualizacja uruchomiona — kilka minut')); };
     const del=el('button',{type:'button', className:'danger', textContent:'Usuń z listy'});
     del.onclick=()=>{ if(confirm('Usunąć '+k.host+' z listy? (kiosk działa dalej)')) api('api/kiosks/'+k.id,{method:'DELETE'}).then(()=>{ toast('Usunięto z listy','good'); load(); }).catch(e=>toast(e.message,'bad')); };
-    c.append(el('div',{className:'acts'}, open, upb, scr, el('div',{className:'wide'}, sel), del));
+    const off=el('button',{type:'button', className:'danger', textContent:'Wyłącz'});
+    off.onclick=()=>{ if(confirm('Wyłączyć kiosk '+(st.name||k.host)+'?'+(hasPower(k)&&k.power.relay?' Po zamknięciu systemu przekaźnik odetnie prąd.':' Włączysz go przyciskiem albo przez WOL / przekaźnik.'))) busy(off,()=>pwr(k,'off')); };
+    c.append(el('div',{className:'acts'}, open, upb, scr, el('div',{className:'wide'}, sel), off, powerBtn(k), del));
   } else {
     const del=el('button',{type:'button', className:'danger', textContent:'Usuń z listy'});
     del.onclick=()=>{ if(confirm('Usunąć '+k.host+' z listy?')) api('api/kiosks/'+k.id,{method:'DELETE'}).then(load); };
     const ed=el('button',{type:'button', textContent:'Zmień token'}); ed.onclick=()=>openAdd(k.host);
-    c.append(el('div',{className:'acts'}, ed, del));
+    let on=null; if(hasPower(k)){ on=el('button',{type:'button', className:'primary wide', textContent:'Włącz'}); on.onclick=()=>busy(on,()=>pwr(k,'on')); }
+    c.append(el('div',{className:'acts'}, on, ed, powerBtn(k), del));
   }
   return c;
 }
+const hasPower=k=>!!(k.power&&(k.power.relay||k.power.wol));
+function powerBtn(k){ const b=el('button',{type:'button', textContent:hasPower(k)?'Zasilanie…':'Ustaw zasilanie…'}); b.onclick=()=>openPower(k); return b; }
+async function pwr(k, what){ try{ const r=await post('api/kiosks/'+k.id+'/'+what,{}); toast(r.output,'good'); setTimeout(load, what==='on'?60000:30000); } catch(e){ toast('Kiosk '+k.host+': '+e.message,'bad'); } }
+let PK=null;
+async function openPower(k){ PK=k; const pw=k.power||{}; const hw=((STATE[k.id]||{}).status||{}).network_hw||{};
+  $('phost').textContent=k.host; $('pwol').value=pw.wol||hw.mac||'';
+  $('pmac').textContent=hw.mac ? 'Kiosk zgłasza MAC '+hw.mac+' ('+hw.iface+(hw.wifi?', Wi-Fi — WOL zwykle nie działa przez Wi-Fi':(hw.wol===false?', WOL wyłączone w karcie sieciowej — włącz w BIOS / ethtool':(hw.wol?', WOL włączone':'')))+').' : 'MAC wpisze się sam, gdy kiosk jest włączony (kiosk-setup 1.0.17+).';
+  $('prelay').replaceChildren(el('option',{value:'',textContent:'— brak przekaźnika —'})); $('pwolist').replaceChildren(); $('pdlg').showModal();
+  try{ const ents=(await api('api/ha/entities')).entities;
+    ents.filter(e=>/^(switch|light|input_boolean)\./.test(e.entity_id)).forEach(e=>$('prelay').append(el('option',{value:e.entity_id, textContent:e.name+' — '+e.entity_id+' ('+e.state+')'})));
+    ents.filter(e=>/^(switch|button|script)\./.test(e.entity_id)).forEach(e=>$('pwolist').append(el('option',{value:e.entity_id, label:e.name})));
+  } catch(e){ toast('Lista encji HA: '+e.message,'bad'); }
+  if(pw.relay && ![...$('prelay').options].some(o=>o.value===pw.relay)) $('prelay').append(el('option',{value:pw.relay,textContent:pw.relay}));
+  $('prelay').value=pw.relay||''; }
+$('pcancel').onclick=()=>$('pdlg').close();
+$('pform').onsubmit=e=>{ e.preventDefault(); busy($('pok'), async()=>{ try{ const r=await post('api/kiosks/'+PK.id+'/power',{relay:$('prelay').value, wol:$('pwol').value.trim()}); $('pdlg').close(); toast(r.output,'good'); load(); } catch(err){ toast(err.message,'bad'); } }); };
+$('allon').onclick=e=>busy(e.target, async()=>{ const ks=KIOSKS.filter(k=>hasPower(k)&&!(STATE[k.id]||{}).status); if(!ks.length) return toast('Brak wyłączonych kiosków z ustawionym zasilaniem','bad');
+  const res=await Promise.all(ks.map(k=>post('api/kiosks/'+k.id+'/on',{}).then(()=>null).catch(e=>'Kiosk '+k.host+': '+e.message))); const bad=res.filter(Boolean);
+  toast(bad.length?bad.join('\n'):'Włączam '+ks.length+' kiosk(i) — 1–2 minuty', bad.length?'bad':'good'); setTimeout(load, 60000); });
+$('alloff').onclick=e=>{ const ks=KIOSKS.filter(k=>(STATE[k.id]||{}).status); if(!ks.length) return toast('Żaden kiosk nie odpowiada','bad');
+  if(confirm('Wyłączyć '+ks.length+' kiosk(i)? Kioski z przekaźnikiem zostaną też odcięte od prądu.')) busy(e.target, async()=>{
+  const res=await Promise.all(ks.map(k=>post('api/kiosks/'+k.id+'/off',{}).then(()=>null).catch(e=>'Kiosk '+k.host+': '+e.message))); const bad=res.filter(Boolean);
+  toast(bad.length?bad.join('\n'):'Wyłączam '+ks.length+' kiosk(i)', bad.length?'bad':'good'); setTimeout(load, 30000); }); };
 function render(){
   $('kiosks').replaceChildren(...KIOSKS.map(card));
   $('empty').hidden=KIOSKS.length>0; $('allc').hidden=KIOSKS.length===0;

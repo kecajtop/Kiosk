@@ -1,5 +1,5 @@
 name: Kioski
-version: "1.2.1"
+version: "1.3.0"
 slug: kiosk_manager
 description: Panel administracyjny kiosków kiosk-setup — stan, sterowanie i ustawienia wszystkich kiosków w jednym miejscu
 arch:
@@ -14,5 +14,6 @@ ingress_stream: true
 panel_icon: mdi:monitor-dashboard
 panel_title: Kioski
 hassio_api: true
+homeassistant_api: true
 options: {}
 schema: {}

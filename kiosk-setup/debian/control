@@ -1,9 +1,9 @@
 Package: kiosk-setup
-Version: 1:1.0.16
+Version: 1:1.0.17
 Section: admin
 Priority: optional
 Architecture: amd64
-Recommends: gmediarender, ddcutil, python3-venv
+Recommends: gmediarender, ddcutil, python3-venv, ethtool
 Suggests: overlayroot
 Conflicts: kiosk-setup-light
 Replaces: kiosk-setup-light

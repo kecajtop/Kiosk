@@ -276,15 +276,64 @@ def screen_state():
         return "unknown"
 
 
-def shutdown_scheduled():
+def shutdown_at():
+    """Czas zaplanowanego wyłączenia (epoch) z systemd albo None."""
     try:
         with open("/run/systemd/shutdown/scheduled") as f:
             for line in f:
                 if line.startswith("USEC="):
-                    return time.strftime("%Y-%m-%d %H:%M", time.localtime(int(line[5:]) / 1e6))
+                    return int(line[5:]) / 1e6
     except Exception:
         pass
-    return ""
+    return None
+
+
+def shutdown_scheduled():
+    t = shutdown_at()
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(t)) if t else ""
+
+
+def shutdown_in_s():
+    """Sekundy do zaplanowanego wyłączenia (None = nic nie zaplanowano)."""
+    t = shutdown_at()
+    return max(0, int(t - time.time())) if t else None
+
+
+_NETHW = {"t": 0, "data": None}
+
+
+def net_hw():
+    """Interfejs trasy domyślnej: nazwa, MAC, Wi-Fi czy kabel, Wake-on-LAN (ethtool) — pamiętane 5 min."""
+    if _NETHW["data"] and time.time() - _NETHW["t"] < 300:
+        return _NETHW["data"]
+    iface = ""
+    try:
+        with open("/proc/net/route") as f:
+            for line in f.readlines()[1:]:
+                parts = line.split()
+                if len(parts) > 2 and parts[1] == "00000000":
+                    iface = parts[0]
+                    break
+    except OSError:
+        pass
+    if not iface:   # bez trasy domyślnej — pierwszy fizyczny interfejs
+        try:
+            iface = next((n for n in sorted(os.listdir("/sys/class/net")) if os.path.exists("/sys/class/net/%s/device" % n)), "")
+        except OSError:
+            pass
+    out = {"iface": iface, "mac": "", "wifi": False, "wol": None}
+    if iface:
+        try:
+            with open("/sys/class/net/%s/address" % iface) as f:
+                out["mac"] = f.read().strip().upper()
+        except OSError:
+            pass
+        out["wifi"] = os.path.isdir("/sys/class/net/%s/wireless" % iface)
+        m = re.search(r"^\s*Wake-on:\s*(\S+)", qrun(["ethtool", iface], timeout=5), re.M)
+        if m:
+            out["wol"] = "g" in m.group(1)   # g = magic packet
+    _NETHW.update(t=time.time(), data=out)
+    return out
 
 
 def set_power_settings(body):
@@ -1413,6 +1462,8 @@ def status():
         "screen_off_minutes": c["screen_off_minutes"],
         "shutdown_after_minutes": c["shutdown_after_minutes"],
         "shutdown_scheduled": shutdown_scheduled(),
+        "shutdown_in_s": shutdown_in_s(),
+        "network_hw": net_hw(),
         "camera_players": len(pids("mpv")),
         "browser_running": bool(pids("chrome") or pids("chromium") or pids("chromium-browse")),
         "bubble_visible": BUBBLE.visible(),
@@ -2633,6 +2684,11 @@ class MqttBridge:
                                               value_template="{{ value_json.shutdown_after_minutes }}")),
             ("sensor", "shutdown_scheduled", dict(st, name="Zaplanowane wyłączenie", icon="mdi:power-sleep",
                                                   value_template="{{ value_json.shutdown_scheduled or 'brak' }}")),
+            ("sensor", "shutdown_in", dict(st, name="Do wyłączenia", icon="mdi:timer-sand", unit_of_measurement="min",
+                                           value_template="{{ (value_json.shutdown_in_s / 60) | round(0) | int "
+                                                          "if value_json.shutdown_in_s is not none else None }}")),
+            ("sensor", "mac", dict(st, name="Adres MAC", icon="mdi:ethernet", entity_category="diagnostic",
+                                   value_template="{{ value_json.network_hw.mac if value_json.network_hw else None }}")),
             ("button", "restart", {"name": "Odśwież ekran", "icon": "mdi:monitor-shimmer",
                                    "command_topic": p + "/restart/set", "payload_press": "PRESS"}),
             ("button", "reboot", {"name": "Restart urządzenia", "device_class": "restart",
@@ -6887,7 +6943,8 @@ async function loadStatus(){
       cell('Monitor', okDot(s.screen==='on', s.screen==='on'?'włączony':(s.screen==='off'?'wyłączony':'nieznany'))),
       cell('Kamery', String(s.camera_players)),
       cell('Dźwięk', astates[a.state]||a.state||'—'),
-      cell('Wyłączenie', s.shutdown_scheduled||'brak'),
+      cell('Wyłączenie', s.shutdown_scheduled ? s.shutdown_scheduled+(s.shutdown_in_s!=null?' (za '+fmtUp(s.shutdown_in_s)+')':'') : 'brak'),
+      ...(s.network_hw && s.network_hw.mac ? [cell('MAC', s.network_hw.mac+' · '+s.network_hw.iface+(s.network_hw.wifi?' (Wi-Fi, WOL zwykle nie działa)':(s.network_hw.wol===true?' · WOL włączone':(s.network_hw.wol===false?' · WOL wyłączone':''))))] : []),
       cell('Pogoda', s.weather ? (s.weather.icon+' '+(s.weather.temp!=null?Math.round(s.weather.temp)+'°C':'')) : '—'),
       cell('Czas pracy', fmtUp(s.uptime_s)),
       ...(s.ro ? [cell('Dysk', 'tylko odczyt')] : []),

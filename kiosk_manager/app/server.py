@@ -30,8 +30,10 @@ INGRESS_GW = "172.30.32.2"
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
        "transfer-encoding", "upgrade", "x-frame-options", "www-authenticate", "content-length"}
 HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}$")
+MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$")
+ENTITY_RE = re.compile(r"^(switch|light|input_boolean|button|script)\.[a-z0-9_]{1,200}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.2.1"          # = version w config.yaml
+ADDON_VERSION = "1.3.0"          # = version w config.yaml
 RAW = "https://raw.githubusercontent.com/kecajtop/Kiosk/main/"
 _LATEST = {"t": 0, "data": None}
 
@@ -223,13 +225,156 @@ def pair_claim(host, port=8088):
 
 
 def auto_scan():
-    """W tle co 2 minuty: kioski z otwartym parowaniem trafiają na listę same."""
+    """W tle co 2 minuty: kioski z otwartym parowaniem trafiają na listę same, MAC-i kiosków do WOL."""
     while True:
         time.sleep(120)
         try:
             scan(quiet=True)
         except Exception as e:
             log("szukanie w tle: %s" % e)
+        for k in load():    # MAC z włączonych kiosków — do WOL, gdy będą wyłączone
+            try:
+                remember_mac(k["id"], (kiosk_json(k, "GET", "/api/status", timeout=5).get("network_hw") or {}).get("mac"))
+            except Exception:
+                pass
+
+
+def ha_call(method, path, payload=None, timeout=10):
+    """Home Assistant Core przez Supervisora (homeassistant_api: true)."""
+    tok = supervisor_token()
+    if not tok:
+        raise RuntimeError("brak tokenu Supervisora — dodatek nie może sterować encjami HA")
+    body = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request("http://supervisor/core/api" + path, body, method=method,
+                                 headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read() or b"null")
+    except urllib.error.HTTPError as e:
+        raise RuntimeError("Home Assistant: %s %s — %d %s" % (method, path, e.code, e.read(300).decode("utf-8", "replace")))
+
+
+def ha_entity_service(entity, on):
+    """Włącz/wyłącz encję; button i script tylko „naciskamy” przy włączaniu."""
+    domain = entity.split(".", 1)[0]
+    if domain == "button":
+        if on:
+            ha_call("POST", "/services/button/press", {"entity_id": entity})
+    elif domain == "script":
+        if on:
+            ha_call("POST", "/services/script/turn_on", {"entity_id": entity})
+    else:
+        ha_call("POST", "/services/homeassistant/turn_%s" % ("on" if on else "off"), {"entity_id": entity})
+
+
+def ha_power_entities():
+    """Encje do wyboru w ustawieniach zasilania: przekaźniki (switch/light/input_boolean) i WOL (switch/button/script)."""
+    out = []
+    for st in ha_call("GET", "/states") or []:
+        e = st.get("entity_id", "")
+        if ENTITY_RE.match(e):
+            out.append({"entity_id": e, "name": st.get("attributes", {}).get("friendly_name") or e, "state": st.get("state")})
+    out.sort(key=lambda x: x["entity_id"])
+    return out
+
+
+def set_power(kid, body):
+    relay = str(body.get("relay") or "").strip()
+    wol = str(body.get("wol") or "").strip()
+    if relay and not (ENTITY_RE.match(relay) and relay.split(".")[0] in ("switch", "light", "input_boolean")):
+        raise ValueError("przekaźnik: encja switch., light. albo input_boolean., np. switch.kiosk_relay")
+    if wol and not (MAC_RE.match(wol) or ENTITY_RE.match(wol)):
+        raise ValueError("WOL: adres MAC (AA:BB:CC:DD:EE:FF) albo encja, np. switch.kiosk_wol")
+    with LOCK:
+        ks = load()
+        for k in ks:
+            if k["id"] == kid:
+                k["power"] = {"relay": relay, "wol": wol.upper().replace("-", ":") if MAC_RE.match(wol) else wol}
+                save(ks)
+                return {"output": "Zapisano zasilanie: %s" % k["host"]}
+    raise KeyError(kid)
+
+
+def _wol(wol):
+    if MAC_RE.match(wol):
+        ha_call("POST", "/services/wake_on_lan/send_magic_packet", {"mac": wol})
+    else:
+        ha_entity_service(wol, True)
+
+
+def _power_on_job(k, pw):
+    try:
+        if pw.get("relay"):
+            ha_entity_service(pw["relay"], True)
+            time.sleep(8)       # zasilacz i karta sieciowa muszą wstać, zanim WOL zadziała
+        if pw.get("wol"):
+            for _ in range(3):  # kilka pakietów — pierwszy bywa gubiony tuż po podaniu zasilania
+                _wol(pw["wol"])
+                for _ in range(10):
+                    time.sleep(2)
+                    if ping(k["host"], int(k.get("port", 8088)), 1.5):
+                        log("włączono: %s" % k["host"])
+                        return
+    except Exception as e:
+        log("włączanie %s: %s" % (k["host"], e))
+
+
+def _power_off_job(k, pw, shut_ok):
+    try:
+        if shut_ok:     # czekamy, aż system się zamknie, dopiero potem odcinamy prąd
+            for _ in range(60):
+                time.sleep(3)
+                if not ping(k["host"], int(k.get("port", 8088)), 1.5):
+                    break
+            time.sleep(15)
+        ha_entity_service(pw["relay"], False)
+        log("odcięto zasilanie: %s (%s)" % (k["host"], pw["relay"]))
+    except Exception as e:
+        log("wyłączanie %s: %s" % (k["host"], e))
+
+
+def remember_mac(kid, mac):
+    """MAC zgłoszony przez włączony kiosk — zapisany jako WOL, jeśli nic innego nie ustawiono."""
+    if not MAC_RE.match(mac or ""):
+        return
+    with LOCK:
+        ks = load()
+        for k in ks:
+            if k["id"] == kid and not (k.get("power") or {}).get("wol"):
+                k["power"] = dict(k.get("power") or {"relay": ""}, wol=mac.upper())
+                save(ks)
+                log("zapamiętano MAC %s: %s" % (k["host"], mac))
+
+
+def power_on(kid):
+    k = find(kid)
+    if not k:
+        raise KeyError(kid)
+    pw = k.get("power") or {}
+    if not (pw.get("relay") or pw.get("wol")):
+        raise ValueError("kiosk %s nie ma ustawionego zasilania (przekaźnik / WOL)" % k["host"])
+    threading.Thread(target=_power_on_job, args=(k, pw), daemon=True).start()
+    what = " + ".join(x for x in ("przekaźnik" if pw.get("relay") else "", "WOL" if pw.get("wol") else "") if x)
+    return {"output": "Włączam %s (%s) — kiosk wstanie za 1–2 minuty" % (k["host"], what)}
+
+
+def power_off(kid):
+    k = find(kid)
+    if not k:
+        raise KeyError(kid)
+    pw = k.get("power") or {}
+    try:
+        kiosk_json(k, "POST", "/api/shutdown", {"in_minutes": 0}, timeout=5)
+        shut_ok = True
+    except Exception as e:
+        if not pw.get("relay"):
+            raise RuntimeError("kiosk %s nie odpowiada (%s)" % (k["host"], e))
+        shut_ok = False
+    if pw.get("relay"):
+        threading.Thread(target=_power_off_job, args=(k, pw, shut_ok), daemon=True).start()
+        return {"output": "Wyłączam %s — przekaźnik odetnie prąd %s" % (
+            k["host"], "po zamknięciu systemu" if shut_ok else "teraz (kiosk nie odpowiada)")}
+    return {"output": "Wyłączam %s" % k["host"]}
 
 
 def add_kiosk(body):
@@ -365,8 +510,16 @@ class Handler(BaseHTTPRequestHandler):
             if self.command == "GET" and path == "/api/latest":
                 return self.send(200, latest_versions())
             if self.command == "GET" and path == "/api/kiosks":
-                return self.send(200, {"kiosks": [{"id": k["id"], "host": k["host"], "port": k.get("port", 8088)}
-                                                  for k in load()]})
+                return self.send(200, {"kiosks": [{"id": k["id"], "host": k["host"], "port": k.get("port", 8088),
+                                                   "power": k.get("power") or {}} for k in load()]})
+            if self.command == "GET" and path == "/api/ha/entities":
+                return self.send(200, {"entities": ha_power_entities()})
+            mp = re.match(r"^/api/kiosks/([a-z0-9]{1,20})/(power|on|off)$", path)
+            if self.command == "POST" and mp:
+                body = self.body_json()
+                if mp.group(2) == "power":
+                    return self.send(200, dict(set_power(mp.group(1), body), ok=True))
+                return self.send(200, dict((power_on if mp.group(2) == "on" else power_off)(mp.group(1)), ok=True))
             if self.command == "POST" and path == "/api/kiosks":
                 return self.send(200, dict(add_kiosk(self.body_json()), ok=True))
             m2 = re.match(r"^/api/kiosks/([a-z0-9]{1,20})$", path)

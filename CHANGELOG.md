@@ -1,5 +1,13 @@
 # Zmiany
 
+## 1.0.17 (2026-10-18)
+- **MAC i Wake-on-LAN w stanie kiosku:** `GET /api/status` → `network_hw` (interfejs trasy domyślnej, MAC, Wi-Fi,
+  WOL z `ethtool`); w panelu kafelek „MAC”, w HA sensor diagnostyczny „Adres MAC”. Dodatek Kioski 1.3.0 bierze
+  z niego adres do WOL.
+- **Czas do automatycznego wyłączenia:** `shutdown_in_s` w `/api/status`, w panelu „Wyłączenie … (za X h Y min)”,
+  w HA sensor „Do wyłączenia” (min).
+- `ethtool` w Recommends (stan WOL karty sieciowej).
+
 ## 1.0.16 (2026-10-18) · aplikacja Kiosk 1.5
 - **Odtwarzacz w Androidzie (aplikacja 1.5):** powiadomienie z okładką, tytułem i stacją, przyciski ⏮ ⏯ ⏭ — także na
   ekranie blokady, w słuchawkach i na zegarku. Głośność kiosku z przycisków telefonu działa też w tle i przy
