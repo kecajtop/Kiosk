@@ -52,7 +52,8 @@ def pkg_version():
     for name in PKG_NAMES:
         r = subprocess.run(["dpkg-query", "-W", "-f=${db:Status-Status} ${Version}", name], capture_output=True, text=True)
         st = (r.stdout or "").split()
-        if len(st) == 2 and st[0] == "installed":
+        # postinst restartuje kiosk-api, gdy pakiet jest jeszcze „half-configured” — wersja już jest znana
+        if len(st) == 2 and st[0] not in ("not-installed", "config-files"):
             return st[1] + (" (light)" if name.endswith("light") else "")
     return ""
 TTS_DIR = "/var/lib/kiosk-mpd/tts"
