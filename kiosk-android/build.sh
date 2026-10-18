@@ -1,7 +1,7 @@
 #!/bin/bash
 # Buduje aplikację Kiosk na Androida (APK) bez Gradle i Android Studio — narzędzia z Ubuntu:
 #   sudo apt install openjdk-17-jdk-headless aapt dalvik-exchange zipalign apksigner android-sdk-platform-23
-#   KEYSTORE=~/kiosk-android.keystore ./build.sh     -> dist/kiosk-android.apk
+#   KEYSTORE=~/kiosk-android.keystore NOTES="opis zmian" ./build.sh  -> dist/kiosk-android-<wersja>.apk, dist/android.json
 # Klucz podpisu (KEYSTORE, hasło w KEYSTORE_PASS) musi być ten sam przy każdej wersji —
 # inaczej Android nie zainstaluje aktualizacji na starą wersję. Brak pliku = nowy klucz.
 set -euo pipefail
@@ -35,4 +35,14 @@ echo "==> apksigner"
 apksigner sign --ks "$KEYSTORE" --ks-pass "pass:$KEYSTORE_PASS" --ks-key-alias kiosk \
     --min-sdk-version 21 --out "dist/kiosk-android-$VER.apk" "$OUT/app.aligned.apk"
 apksigner verify --min-sdk-version 21 "dist/kiosk-android-$VER.apk"
-echo "Gotowe: dist/kiosk-android-$VER.apk ($(du -k "dist/kiosk-android-$VER.apk" | cut -f1) kB)"
+CODE=$(sed -n 's/.*android:versionCode="\([0-9]*\)".*/\1/p' AndroidManifest.xml)
+# Plik aktualizacji dla aplikacji (w repozytorium: android.json obok update.json)
+python3 - "$VER" "$CODE" "dist/kiosk-android-$VER.apk" "${NOTES:-}" > dist/android.json <<'EOF'
+import hashlib, json, os, sys
+ver, code, apk, notes = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+d = open(apk, "rb").read()
+print(json.dumps({"package": "pl.kecaj.kiosk", "versionCode": code, "versionName": ver,
+                  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/" + os.path.basename(apk),
+                  "sha256": hashlib.sha256(d).hexdigest(), "size": len(d), "notes": notes}, indent=2, ensure_ascii=False))
+EOF
+echo "Gotowe: dist/kiosk-android-$VER.apk ($(du -k "dist/kiosk-android-$VER.apk" | cut -f1) kB), dist/android.json"

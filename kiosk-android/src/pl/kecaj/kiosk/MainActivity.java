@@ -96,6 +96,127 @@ public class MainActivity extends Activity {
         JSONObject cur = current();
         if (cur == null) showSetup(null);
         else openKiosk(cur);
+        if (System.currentTimeMillis() - prefs.getLong("updcheck", 0) > 24L * 3600 * 1000) checkUpdate(false);
+    }
+
+    @Override
+    protected void onNewIntent(Intent i) {
+        super.onNewIntent(i);
+        if (!INSTALL_ACTION.equals(i.getAction())) return;
+        int st = i.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -999);
+        if (st == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION) {
+            Intent confirm = i.getParcelableExtra(Intent.EXTRA_INTENT);
+            if (confirm != null) {
+                confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                try { startActivity(confirm); } catch (Exception e) { openInBrowser(); }
+            }
+        } else if (st == android.content.pm.PackageInstaller.STATUS_SUCCESS) {
+            toast("Aplikacja zaktualizowana");
+        } else {
+            String m = i.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE);
+            toast("Instalacja nieudana" + (m == null ? "" : ": " + m) + " — otwieram pobieranie w przeglądarce");
+            openInBrowser();
+        }
+    }
+
+    // ------------------------------------------------------------------ aktualizacja aplikacji z GitHuba
+
+    static final String UPDATE_URL = "https://raw.githubusercontent.com/kecajtop/Kiosk/main/android.json";
+    static final String INSTALL_ACTION = "pl.kecaj.kiosk.INSTALL";
+    String updApk = "https://github.com/kecajtop/Kiosk/tree/main/releases";
+
+    int myVersionCode() {
+        try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode; } catch (Exception e) { return 0; }
+    }
+
+    String myVersionName() {
+        try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception e) { return "?"; }
+    }
+
+    static byte[] download(String url, int limit) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(10000);
+        c.setReadTimeout(30000);
+        c.setInstanceFollowRedirects(true);
+        int code = c.getResponseCode();
+        if (code != 200) throw new Exception("HTTP " + code);
+        InputStream in = c.getInputStream();
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        byte[] b = new byte[16384];
+        int n;
+        while ((n = in.read(b)) > 0) {
+            buf.write(b, 0, n);
+            if (buf.size() > limit) throw new Exception("plik za duży");
+        }
+        in.close();
+        c.disconnect();
+        return buf.toByteArray();
+    }
+
+    /** Sprawdza android.json w repozytorium; manual = przycisk (pokazuje też „masz najnowszą”). */
+    void checkUpdate(final boolean manual) {
+        if (manual) toast("Sprawdzam aktualizację…");
+        io.execute(new Runnable() { public void run() {
+            try {
+                final JSONObject m = new JSONObject(new String(download(UPDATE_URL + "?t=" + System.currentTimeMillis(), 65536), "UTF-8"));
+                prefs.edit().putLong("updcheck", System.currentTimeMillis()).apply();
+                if (m.optString("url").length() > 0) updApk = m.optString("url");
+                final boolean newer = m.optInt("versionCode") > myVersionCode();
+                ui.post(new Runnable() { public void run() {
+                    if (newer) updateDialog(m);
+                    else if (manual) toast("Masz najnowszą wersję aplikacji (" + myVersionName() + ")");
+                } });
+            } catch (final Exception e) {
+                if (manual) ui.post(new Runnable() { public void run() { toast("Nie udało się sprawdzić aktualizacji: " + e.getMessage()); } });
+            }
+        } });
+    }
+
+    void updateDialog(final JSONObject m) {
+        new AlertDialog.Builder(this)
+                .setTitle("Nowa wersja aplikacji Kiosk")
+                .setMessage("Wersja " + m.optString("versionName") + " (masz " + myVersionName() + ").\n\n" + m.optString("notes"))
+                .setPositiveButton("Zaktualizuj", new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int w) { installUpdate(m); } })
+                .setNegativeButton("Później", null)
+                .show();
+    }
+
+    /** Pobiera APK, sprawdza SHA-256 i instaluje przez systemowy instalator (PackageInstaller). */
+    void installUpdate(final JSONObject m) {
+        toast("Pobieram wersję " + m.optString("versionName") + "…");
+        io.execute(new Runnable() { public void run() {
+            try {
+                byte[] apk = download(m.getString("url"), 30 * 1024 * 1024);
+                String sha = hex(MessageDigest.getInstance("SHA-256").digest(apk));
+                if (!sha.equalsIgnoreCase(m.optString("sha256"))) throw new Exception("zła suma SHA-256 pobranego pliku");
+                android.content.pm.PackageInstaller pi = getPackageManager().getPackageInstaller();
+                android.content.pm.PackageInstaller.SessionParams sp = new android.content.pm.PackageInstaller.SessionParams(
+                        android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+                sp.setAppPackageName(getPackageName());
+                int sid = pi.createSession(sp);
+                android.content.pm.PackageInstaller.Session ses = pi.openSession(sid);
+                OutputStream o = ses.openWrite("kiosk.apk", 0, apk.length);
+                o.write(apk);
+                ses.fsync(o);
+                o.close();
+                Intent it = new Intent(MainActivity.this, MainActivity.class).setAction(INSTALL_ACTION);
+                int flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                        | (android.os.Build.VERSION.SDK_INT >= 31 ? 0x02000000 /* FLAG_MUTABLE */ : 0);
+                android.app.PendingIntent pend = android.app.PendingIntent.getActivity(MainActivity.this, 7, it, flags);
+                ses.commit(pend.getIntentSender());
+                ses.close();
+            } catch (final Exception e) {
+                ui.post(new Runnable() { public void run() {
+                    toast("Aktualizacja nieudana: " + e.getMessage() + " — otwieram pobieranie w przeglądarce");
+                    openInBrowser();
+                } });
+            }
+        } });
+    }
+
+    void openInBrowser() {
+        try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(updApk))); } catch (Exception ignored) { }
     }
 
     @Override
@@ -200,7 +321,7 @@ public class MainActivity extends Activity {
             s.setJavaScriptEnabled(true);
             s.setDomStorageEnabled(true);
             s.setMediaPlaybackRequiresUserGesture(false);
-            s.setUserAgentString(s.getUserAgentString() + " KioskApp/1.2");
+            s.setUserAgentString(s.getUserAgentString() + " KioskApp/1.3");
             web.addJavascriptInterface(new Bridge(), "KioskApp");
             web.setWebChromeClient(new WebChromeClient() {
                 @Override
@@ -290,7 +411,7 @@ public class MainActivity extends Activity {
             volKeys = on;
             prefs.edit().putBoolean("volkeys", on).apply();
         }
-        @JavascriptInterface public String version() { return "1.2"; }
+        @JavascriptInterface public String version() { return myVersionName(); }
     }
 
     // ------------------------------------------------------------------ głośność przyciskami
@@ -496,6 +617,12 @@ public class MainActivity extends Activity {
         box.addView(go);
         status = text(err == null ? "" : err, err == null ? MUTED : BAD, 14);
         box.addView(status);
+
+        box.addView(label("Aplikacja"));
+        box.addView(text("Kiosk " + myVersionName() + " — aktualizacje z github.com/kecajtop/Kiosk (sprawdzane raz dziennie).", MUTED, 13));
+        Button upd = button("Sprawdź aktualizację aplikacji", false);
+        upd.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { checkUpdate(true); } });
+        box.addView(upd);
         setContentView(scroll(box));
     }
 

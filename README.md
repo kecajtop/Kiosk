@@ -65,7 +65,7 @@ jego sumę SHA-256.
 
 ## Aplikacja na Androida
 
-[`releases/kiosk-android-1.2.apk`](releases/) — panel kiosku na telefonie: fizyczne przyciski głośności
+[`releases/kiosk-android-1.3.apk`](releases/) — panel kiosku na telefonie: fizyczne przyciski głośności
 sterują głośnością kiosku, wyszukiwanie kiosków w sieci, zapamiętany token, HTTPS kiosku.
 Kod i budowanie (bez Gradle): [`kiosk-android/`](kiosk-android/README.md).
 

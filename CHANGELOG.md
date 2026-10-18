@@ -1,5 +1,10 @@
 # Zmiany
 
+## Aplikacja Kiosk 1.3 (2026-10-18)
+- **Aktualizacja aplikacji z GitHuba:** aplikacja raz dziennie sprawdza `android.json` w repozytorium (i przyciskiem
+  „Sprawdź aktualizację aplikacji” w jej ustawieniach), pobiera nowy APK, sprawdza SHA-256 i uruchamia systemową
+  instalację. Gdy instalacja się nie uda — otwiera pobieranie w przeglądarce. Wersję 1.3 trzeba zainstalować raz ręcznie.
+
 ## 1.0.11 (2026-10-18)
 - **Nowy układ panelu:** strona główna to **Pilot** — „Teraz gra”, głośność −/+ i stop, kafelki ulubionych stacji,
   widoki i ekran, „Powiedz”, jasność. Nowa zakładka **Kamery**: podgląd ekranu kiosku i kamery na żądanie.

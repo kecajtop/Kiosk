@@ -11,10 +11,13 @@ Panel kiosku kecaj (kiosk-setup) jako aplikacja na telefon:
 - pełny ekran z panelem, przycisk **wstecz** cofa zakładki, wgrywanie plików (zdjęcia, pakiety),
   linki spoza kiosku otwierają się w przeglądarce,
 - ustawienia aplikacji: Ustawienia → pierwsza pozycja „Aplikacja Kiosk”,
+- **aktualizacje z GitHuba:** raz dziennie (i przyciskiem „Sprawdź aktualizację aplikacji”) aplikacja czyta
+  `android.json` z repozytorium, pobiera nowy APK, sprawdza SHA-256 i uruchamia systemową instalację
+  (Android zapyta raz o zgodę na instalowanie aplikacji z tego źródła),
 - po otwarciu **Pilot**: „Teraz gra”, głośność, kafelki ulubionych stacji, ekran; na dole zakładki Pilot, Kamery,
   Ustawienia; widok po otwarciu do wyboru w ustawieniach aplikacji.
 
-Android 5.0 lub nowszy. Instalacja: skopiuj `releases/kiosk-android-1.2.apk` na telefon i otwórz
+Android 5.0 lub nowszy. Instalacja: skopiuj `releases/kiosk-android-1.3.apk` na telefon i otwórz
 (zgoda na „instalowanie nieznanych aplikacji” dla przeglądarki lub menedżera plików).
 
 ## Budowanie
@@ -25,6 +28,9 @@ Bez Gradle i Android Studio, tylko narzędzia z Ubuntu:
 sudo apt install openjdk-17-jdk-headless aapt dalvik-exchange zipalign apksigner android-sdk-platform-23
 KEYSTORE=~/kiosk-android.keystore ./build.sh      # -> dist/kiosk-android-<wersja>.apk
 ```
+
+Wydanie: skopiuj `dist/kiosk-android-<wersja>.apk` do `releases/` i `dist/android.json` do katalogu głównego
+repozytorium (podnieś wcześniej `versionCode` i `versionName` w `AndroidManifest.xml`).
 
 Aktualizację aplikacji trzeba podpisać **tym samym kluczem** (`KEYSTORE`, hasło `KEYSTORE_PASS`),
 inaczej Android jej nie zainstaluje na starą wersję. Klucza nie ma w repozytorium.

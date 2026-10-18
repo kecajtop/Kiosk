@@ -1,0 +1,9 @@
+{
+  "package": "pl.kecaj.kiosk",
+  "versionCode": 4,
+  "versionName": "1.3",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-android-1.3.apk",
+  "sha256": "f12c5acc09b87b82fb7a6a4113ce97d228ae98cbb8ddedc03f6a33579a3b0861",
+  "size": 41763,
+  "notes": "Aktualizacja aplikacji z GitHuba (raz dziennie i przyciskiem w ustawieniach aplikacji); Pilot jako widok po otwarciu."
+}

@@ -913,12 +913,13 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 - **Przyciski głośności telefonu:** Dźwięk → Głośność i głos → „Przyciski głośności tego
   urządzenia sterują kioskiem”. Chrome na Androidzie zwykle nie przekazuje ich stronom —
   wtedy użyj aplikacji.
-- **Aplikacja Kiosk** (`releases/kiosk-android-1.2.apk`, Android 5.0+): panel na pełnym ekranie,
+- **Aplikacja Kiosk** (`releases/kiosk-android-1.3.apk`, Android 5.0+): panel na pełnym ekranie,
   przyciski głośności telefonu zawsze sterują kioskiem, wyszukiwanie kiosków w sieci, zapamiętany
   token lub konto domownika, HTTPS kiosku (zaufanie po porównaniu odcisku SHA-256), „wstecz”
   cofa zakładki, Ustawienia → „Aplikacja Kiosk” otwiera ustawienia aplikacji. Po otwarciu pokazuje
   Pilota (widok po otwarciu do wyboru: Pilot, Kamery, Radio i muzyka, Ustawienia). Instalacja: skopiuj plik na
-  telefon i otwórz (zezwól na instalowanie aplikacji z tego źródła).
+  telefon i otwórz (zezwól na instalowanie aplikacji z tego źródła). Kolejne wersje aplikacja
+  pobiera sama z GitHuba (`android.json`; raz dziennie albo „Sprawdź aktualizację aplikacji”).
 - API: `POST /api/audio {"volume_step": 5}` (albo `-5`), MQTT `<prefiks>/volume/step`.
 
 ## Wi-Fi (panel → Połączenia → Wi-Fi i sieć)
