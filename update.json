@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.14",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.14_amd64.deb",
-  "sha256": "02a59a402cb0a7b1a6ec2d5c9d559a86b8e0f36545b03a755dc85547e5038d8a",
-  "size": 23044260,
+  "version": "1:1.0.15",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.15_amd64.deb",
+  "sha256": "8abb06f843622f4e2ffa6f8fc12095be7b8d4bff106540e2b7221821791f95e2",
+  "size": 23045148,
   "date": "2026-10-18",
-  "notes": "Aktualizacje kiosku w Home Assistant (encja Aktualizacja, automatyczne aktualizacje), podgląd ekranu jako kamera MJPEG w HA."
+  "notes": "Paruj z HA: parowanie kiosku z dodatkiem Kioski bez przepisywania tokenu."
 }

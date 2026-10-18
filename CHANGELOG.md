@@ -1,12 +1,12 @@
 # Zmiany
 
-## 1.0.15 (niewydane) · dodatek Kioski 1.2.0
+## 1.0.15 (2026-10-18) · dodatek Kioski 1.2.0
 - **Paruj z HA:** przycisk w panelu kiosku (MQTT i Home Assistant) otwiera parowanie na 5 minut — dodatek Kioski
   sam znajduje kiosk w sieci i dodaje go do listy, bez SSH i przepisywania tokenu. Jedno kliknięcie = jedno
   sparowanie; `/api/ping` mówi, czy parowanie jest otwarte. API: `POST /api/pair/open` (administrator),
   `POST /api/pair/claim` (bez logowania, tylko w otwartym oknie).
 - **Dodatek Kioski 1.2.0:** szukanie kiosków w tle co 2 minuty i automatyczne parowanie.
-- Pakiety .deb do zbudowania (`kiosk-setup/build.sh`), `update.json` po wydaniu.
+- Gotowe pakiety: `releases/kiosk-setup_1.0.15_amd64.deb`, `releases/kiosk-setup-light_1.0.15_amd64.deb`.
 
 ## 1.0.14 (2026-10-18) · dodatek Kioski 1.1.0 · aplikacja Kiosk 1.4
 - **Aktualizacje kiosku w Home Assistant:** encja „Aktualizacja” (zainstalowana i dostępna wersja, opis, postęp,

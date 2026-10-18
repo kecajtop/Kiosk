@@ -907,6 +907,12 @@ czas zmian. Instalacja asystenta głosowego wymaga wyłączenia trybu.
 
 ## Panel administracyjny w Home Assistant (dodatek „Kioski”)
 
+**Paruj z HA:** panel kiosku → Połączenia → MQTT i Home Assistant → „Paruj z HA” otwiera parowanie
+na 5 minut. Dodatek Kioski (1.2.0+) sam znajduje kiosk w sieci (szuka co 2 minuty) i dodaje go do listy —
+bez SSH i przepisywania tokenu. Jedno kliknięcie = jedno sparowanie. API: `POST /api/pair/open`
+(administrator), `POST /api/pair/claim` (bez logowania, tylko w otwartym oknie); `/api/ping` mówi, czy
+parowanie jest otwarte.
+
 Osobny dodatek Home Assistant (`kiosk-ha-addon`) — jeden panel do wszystkich kiosków
 w menu bocznym HA: stan każdego kiosku, pełny panel kiosku bez osobnego logowania,
 akcje na wszystkich naraz (powiedz, dymek, widok, ekrany, odświeżenie, aktualizacja
@@ -954,7 +960,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
   (`sudo kiosk-update github`).
 - **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
   github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
-  i go instaluje; wersja np. `1:1.0.14+git20261017.abc1234`. W terminalu:
+  i go instaluje; wersja np. `1:1.0.15+git20261017.abc1234`. W terminalu:
   `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
 
 ## Wersja light (kiosk-setup-light)
@@ -984,6 +990,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.15** (18.10.2026) — „Paruj z HA”: parowanie kiosku z dodatkiem Kioski bez tokenu (okno 5 min,
+  jedno sparowanie); dodatek Kioski 1.2.0 szuka i paruje kioski sam.
 - **1.0.14** (18.10.2026) — aktualizacje kiosku w Home Assistant (encja „Aktualizacja”, automatyczne
   aktualizacje, sprawdzanie), adresy podglądu ekranu dla integracji MJPEG IP Camera; dodatek Kioski 1.1.0
   (wersje i aktualizacja kiosków); aplikacja Kiosk 1.4 (automatyczna aktualizacja aplikacji).
