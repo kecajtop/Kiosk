@@ -3201,6 +3201,8 @@ class Automation:
         self.last_ticker = 0
         self.night_active = False
         self.night_force = None        # None = wg godzin, True/False = wymuszone (MQTT/HA)
+        self.sun_last_pct = None
+        self.sun_error = ""
         self.rot_idx = -1
         self.rot_next = 0
         self.agenda = []
@@ -3218,6 +3220,7 @@ class Automation:
                 "ticker": {"message": self.message if time.time() < self.message_until else "", "error": self.ticker_error,
                            "text": self._read_text()},
                 "night": {"active": self.night_active, "forced": self.night_force},
+                "sun": {"value": self.sun_last_pct, "error": self.sun_error},
                 "agenda": {"events": self.agenda, "error": self.agenda_error},
                 "problems": self.problems, "override": OVR.current()}
 
@@ -3268,7 +3271,7 @@ class Automation:
                 self._presence()
             except Exception as e:
                 self.presence_error = str(e)
-            for step in (self._night, self._rotation):
+            for step in (self._night, self._rotation, self._sun):
                 try:
                     step()
                 except Exception as e:
@@ -3309,6 +3312,26 @@ class Automation:
         except Exception as e:
             log("noc: jasność: %s" % e)
         log("tryb nocny: " + ("włączony" if want else "wyłączony"))
+
+    def _sun(self):
+        s = read_sun()
+        if not s["enabled"] or self.night_active or OVR.current():
+            return
+        try:
+            el, src = current_sun_elevation()
+            pct = sun_brightness_pct(el, s["min"], s["max"])
+            self.sun_error = ""
+        except Exception as e:
+            if str(e) != self.sun_error:
+                log("jasność wg słońca: %s" % e)
+            self.sun_error = str(e)
+            return
+        if self.sun_last_pct is None or abs(pct - self.sun_last_pct) >= 3:
+            try:
+                BRIGHT.set(pct)
+                self.sun_last_pct = pct
+            except Exception as e:
+                log("jasność wg słońca: %s" % e)
 
     def _rotation(self):
         r = read_rotation()
@@ -3873,6 +3896,70 @@ def read_night():
             "to": n.get("to") if TIME_RE.match(str(n.get("to", ""))) else "06:30",
             "brightness": int(n.get("brightness", 25)) if str(n.get("brightness", 25)).isdigit() else 25,
             "clock_only": bool(n.get("clock_only", True))}
+
+
+SUN_FILE = ETC + "/sun.json"
+
+
+def read_sun():
+    s = read_json(SUN_FILE, {})
+    mn = int(s.get("min", 20)) if str(s.get("min", 20)).isdigit() else 20
+    mx = int(s.get("max", 100)) if str(s.get("max", 100)).isdigit() else 100
+    return {"enabled": bool(s.get("enabled", False)), "min": max(5, min(100, mn)), "max": max(5, min(100, mx))}
+
+
+def sun_elevation(lat, lon, t=None):
+    """Przybliżona wysokość słońca nad horyzontem w stopniach (uproszczony wzór NOAA, bez zależności)."""
+    t = t or time.gmtime()
+    n = t.tm_yday
+    hour = t.tm_hour + t.tm_min / 60.0 + t.tm_sec / 3600.0
+    decl = 23.45 * math.sin(math.radians(360.0 / 365.0 * (284 + n)))
+    b = math.radians(360.0 * (n - 81) / 364.0)
+    eot = 9.87 * math.sin(2 * b) - 7.53 * math.cos(b) - 1.5 * math.sin(b)
+    solar_time = hour + (4.0 * lon + eot) / 60.0
+    hour_angle = 15.0 * (solar_time - 12.0)
+    lat_r, decl_r, ha_r = math.radians(lat), math.radians(decl), math.radians(hour_angle)
+    sin_el = math.sin(lat_r) * math.sin(decl_r) + math.cos(lat_r) * math.cos(decl_r) * math.cos(ha_r)
+    return math.degrees(math.asin(max(-1.0, min(1.0, sin_el))))
+
+
+def current_sun_elevation():
+    """Wysokość słońca: z encji sun.sun w Home Assistant (dokładna), a bez HA — obliczona z szerokości/długości."""
+    try:
+        url, tok = ha_conn()
+    except ValueError:
+        url = ""
+    if url:
+        d = ha_state("sun.sun")
+        el = (d.get("attributes") or {}).get("elevation")
+        if el is not None:
+            return float(el), "Home Assistant (sun.sun)"
+    w = read_weather_conf()
+    lat, lon = w.get("lat"), w.get("lon")
+    if lat is None or lon is None:
+        raise ValueError("ustaw adres i token Home Assistant albo szerokość/długość geograficzną (Automatyka → Pogoda)")
+    return sun_elevation(float(lat), float(lon)), "obliczenia lokalne (szerokość/długość)"
+
+
+def sun_brightness_pct(elevation, mn, mx):
+    """Mapuje wysokość słońca na jasność: poniżej -4° (zmierzch) = min, powyżej 8° (jasny dzień) = max."""
+    lo, hi = -4.0, 8.0
+    f = 0.0 if elevation <= lo else (1.0 if elevation >= hi else (elevation - lo) / (hi - lo))
+    return int(round(mn + (mx - mn) * f))
+
+
+def sun_status():
+    s = read_sun()
+    out = dict(s)
+    if s["enabled"]:
+        try:
+            el, src = current_sun_elevation()
+            out["elevation"] = round(el, 1)
+            out["source"] = src
+            out["value"] = sun_brightness_pct(el, s["min"], s["max"])
+        except Exception as e:
+            out["error"] = str(e)
+    return out
 
 
 def read_rotation():
@@ -5434,6 +5521,7 @@ class Handler(BaseHTTPRequestHandler):
                                 "notify": read_notify(), "brightness": {"day": read_bright()["day"], "value": BRIGHT.value,
                                                                          "method": BRIGHT.method, "how": read_bright()["method"],
                                                                          "invert": read_bright()["invert"]},
+                                "sun": sun_status(),
                                 "photos": list_photos(), "views": sorted(read_views()), "cameras": len(cams),
                                 "satellite": satellite_info(), "https_port": HTTPS_PORT if os.path.exists(TLS_DIR + "/cert.pem") else None,
                                 "https_fp": tls_fingerprint(),
@@ -5522,6 +5610,19 @@ class Handler(BaseHTTPRequestHandler):
             AUTO.wake.set()
             return "Tryb nocny: %s, %s–%s, jasność %d%%%s" % ("włączony" if n["enabled"] else "wyłączony", n["from"], n["to"],
                                                             n["brightness"], ", tylko zegar" if n["clock_only"] else "")
+        if path == "/api/sun":
+            s = read_sun()
+            for k in ("min", "max"):
+                if body.get(k) is not None:
+                    s[k] = to_int(body[k], 5, 100, k)
+            if "enabled" in body:
+                s["enabled"] = bool(body["enabled"])
+            if s["min"] > s["max"]:
+                raise ValueError("jasność w nocy nie może być większa niż w dzień")
+            write_json(SUN_FILE, s, 0o644)
+            AUTO.sun_last_pct = None
+            AUTO.wake.set()
+            return "Jasność wg słońca: %s, %d–%d%%" % ("włączona" if s["enabled"] else "wyłączona", s["min"], s["max"])
         if path == "/api/rotation":
             r = read_rotation()
             if "views" in body:
@@ -6247,6 +6348,7 @@ td code{word-break:break-all}
 .clkstyles button{height:auto;min-height:0;padding:10px;display:flex;flex-direction:column;align-items:center;gap:8px;background:var(--field)}
 .clkstyles button img{width:100%;height:92px;object-fit:contain;border-radius:6px}
 .clkstyles button[aria-checked=true]{border-color:var(--amberline);background:var(--sel);color:var(--amber);box-shadow:0 0 0 1px var(--amberline) inset}
+.icbtn{min-width:44px;width:44px;padding:0;font-size:18px}
 
 /* Akcenty jak na wzorze: liczby i stan bursztynowe, małe kropki cyjanowe */
 .view.on{border-color:var(--amberline);background:var(--sel)}
@@ -6266,6 +6368,22 @@ a{color:var(--blue)}
 .tiles button.on{color:var(--amber);border-color:var(--amberline);background:var(--amberbg)}
 .tiles button.on::before{content:"▶ "}
 @media (max-width:600px){ .tiles{grid-template-columns:1fr 1fr} .tiles:not(:empty)+.field .rdselrow{display:none} }
+@media (max-width:600px){
+  .tiles button{min-height:52px;padding:6px 10px;font-size:13px}
+  .ptrans button{min-height:46px;font-size:19px}
+  .pvol{grid-template-columns:46px 1fr 46px}
+  .pvol button{min-height:42px;font-size:17px}
+  .npart{width:58px;height:58px}
+  .npph{font-size:22px}
+  .pnow .nptext .rdtt{font-size:16px}
+  .npsub{font-size:13px;padding-left:28px}
+  .quick{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:6px}
+  .quick button{min-height:38px;font-size:13px;padding:0 10px}
+  .chips button{min-height:38px;padding:0 12px;font-size:13px}
+  #start h3{font-size:14px;margin:0 0 8px}
+  .block{padding:10px}
+  details.more.adm summary{margin:2px 0}
+}
 /* Telefon: pilot na dole ekranu, większe pola dotyku, bez opóźnienia podwójnego dotknięcia */
 html{-webkit-text-size-adjust:100%}
 body{touch-action:manipulation;overscroll-behavior-y:contain;-webkit-tap-highlight-color:transparent}
@@ -6339,7 +6457,8 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
   label.check input{width:22px;height:22px}
 }
 .card>.lead{margin:0 22px 14px}
-@media (max-width:600px){ .card>.lead{margin:0 14px 12px} }
+.card>details.more{margin:0 22px 14px}
+@media (max-width:600px){ .card>.lead{margin:0 14px 12px} .card>details.more{margin:0 14px 12px} }
 .field>label.check,label.check{text-transform:none;letter-spacing:0;font-size:14px;font-weight:500;color:var(--text)}
 @media (max-width:600px){ #host{font-size:13px;letter-spacing:.04em} #host small{font-size:11px} #theme{font-size:11px;padding:0 8px;min-height:32px;margin-left:8px} header.top img{max-width:90px} }
 
@@ -6375,12 +6494,16 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <div id="qviews" class="chips"></div>
 <div class="quick" style="margin-top:10px">
 <button type="button" id="pscr">⏻ Ekran</button>
+</div>
+<details class="more adm"><summary>Więcej</summary>
+<div class="quick" style="margin-top:10px">
 <button type="button" data-proxy="nton" class="adm">Noc teraz</button>
 <button type="button" data-proxy="ntauto" class="adm">Noc wg godzin</button>
 <button type="button" data-proxy="restart" class="adm">Odśwież ekran</button>
 <button type="button" data-proxy="alstop" class="adm">Zakończ alarm</button>
 </div>
 <div class="field adm" style="margin-top:14px"><label for="qbri">Jasność ekranu: <span id="qbriv">—</span>%</label><input type="range" id="qbri" min="5" max="100" step="5" value="100"></div>
+</details>
 <h3>Powiedz</h3>
 <form id="qsayf" class="field"><label for="qsay" class="lbl">Tekst</label>
 <div class="row"><input type="text" id="qsay" maxlength="1000" placeholder="Obiad gotowy!" style="flex:1;min-width:180px"><button type="submit" class="primary">Powiedz</button><button type="button" data-proxy="saytime">Która godzina</button></div></form>
@@ -6391,7 +6514,7 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <section class="card pane" role="tabpanel" id="kamery" aria-labelledby="h-kamery" hidden><h2 id="h-kamery">Kamery</h2>
 <h3>Ekran kiosku</h3>
 <img id="kmshot" class="shot" alt="Podgląd ekranu kiosku">
-<div class="row" style="margin-top:8px"><button type="button" id="kmlive" class="primary adm">▶ Na żywo</button><button type="button" id="kmshotb">Odśwież</button><span class="hint" id="kmshott" style="align-self:center"></span></div>
+<div class="row" style="margin-top:8px"><button type="button" id="kmlive" class="primary adm icbtn" aria-label="Na żywo" title="Na żywo">▶</button><button type="button" id="kmshotb" class="icbtn" aria-label="Odśwież" title="Odśwież">⟳</button><span class="hint" id="kmshott" style="align-self:center"></span></div>
 <h3 class="adm">Pokaż kamerę na kiosku</h3>
 <div class="adm"><div id="kmcams" class="quick"></div><div class="row" style="margin-top:8px"><button type="button" data-proxy="alstop">Zakończ alarm</button></div></div>
 </section>
@@ -6512,6 +6635,10 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <p class="lead">Włączanie ekranu, jasność, automatyczne wygaszanie i wyłączanie komputera.</p>
 <div class="row" style="margin-bottom:16px"><button type="button" id="son">Włącz ekran</button><button type="button" id="soff">Wyłącz ekran</button></div>
 <div class="field"><label for="bri">Jasność ekranu: <span id="briv">100</span>%</label><input type="range" id="bri" min="5" max="100" step="5" value="100"><div class="hint" id="brimethod">Przez DDC/CI zmienia podświetlenie monitora; bez DDC/CI — programowo.</div></div>
+<div class="field"><label class="check"><input type="checkbox" id="sunen"> Automatyczna jasność wg położenia słońca</label>
+<div class="row" style="margin-top:8px"><div style="min-width:130px"><label class="lbl" for="sunmin">W nocy (%)</label><input type="number" id="sunmin" min="5" max="100" step="5" value="20"></div>
+<div style="min-width:130px"><label class="lbl" for="sunmax">W dzień (%)</label><input type="number" id="sunmax" min="5" max="100" step="5" value="100"></div></div>
+<div class="hint" id="sunhint">Jasność rośnie o świcie i maleje o zmierzchu. Źródło: encja <code>sun.sun</code> w Home Assistant, a bez HA — szerokość/długość geograficzna (Automatyka → Pogoda).</div></div>
 <div class="field adm"><label for="brihow">Sposób przyciemniania</label><select id="brihow"><option value="auto">Automatycznie (DDC/CI, a gdy nie działa — programowo)</option><option value="ddc">Podświetlenie monitora (DDC/CI)</option><option value="soft">Programowo (działa zawsze, także VGA)</option></select>
 <label class="check"><input type="checkbox" id="briinv"> Odwrotna jasność (monitor jaśnieje, gdy suwak idzie w lewo)</label>
 <div class="hint">Monitory na VGA często nie zmieniają jasności przez DDC/CI — wybierz wtedy „Programowo”: obraz jest przyciemniany przez kartę graficzną (podświetlenie świeci dalej).</div></div>
@@ -7475,6 +7602,8 @@ async function loadExt(){ const r=await api('api/extras'); EXT=r;
   $('molast').textContent=Object.keys(r.motion_last).length?('Ostatni ruch: '+Object.entries(r.motion_last).map(([k,v])=>'kamera '+k+' '+v).join(', ')):'';
   $('cliprec').replaceChildren(...cams.map(i=>opt(i,'Kamera '+i)));
   $('bri').value=r.brightness.value||r.brightness.day; $('briv').textContent=$('bri').value; if(r.brightness.method) $('brimethod').textContent='Teraz: '+r.brightness.method; if(r.brightness.how) $('brihow').value=r.brightness.how; $('briinv').checked=!!r.brightness.invert;
+  const su=r.sun||{}; $('sunen').checked=!!su.enabled; $('sunmin').value=su.min??20; $('sunmax').value=su.max??100;
+  $('sunhint').textContent=su.enabled ? (su.error ? 'Błąd: '+su.error : 'Teraz: '+(su.value??'—')+'% (wysokość słońca '+(su.elevation??'—')+'°, '+(su.source||'')+').') : 'Jasność rośnie o świcie i maleje o zmierzchu. Źródło: encja sun.sun w Home Assistant, a bez HA — szerokość/długość geograficzna (Automatyka → Pogoda).';
   const nf=r.notify; $('nfen').checked=nf.enabled; $('nfsvc').value=nf.service; $('nftemp').value=nf.temp_limit;
   const s=r.sensors||{}, pr=(r.info||{}).problems||{};
   $('sysnow').textContent=['Temperatura: '+(s.cpu_temp??'—')+' °C','obciążenie: '+(s.load??'—'),'wolna pamięć: '+(s.mem_free_mb??'—')+' MB','dysk: '+(s.disk_free_gb??'—')+' GB'+(s.power_w!=null?', procesor: '+s.power_w+' W':'')].join(', ')+(Object.keys(pr).length?'\nProblemy: '+Object.values(pr).join('; '):'');
@@ -7550,6 +7679,9 @@ const satAct=a=>act(()=>post('api/satellite',{action:a})).then(()=>setTimeout(()
 $('satinst').onclick=()=>satAct('install'); $('satrst').onclick=()=>satAct('restart'); $('satrm').onclick=()=>{ if(confirm('Usunąć asystenta głosowego?')) satAct('remove'); };
 // jasność, powiadomienia
 $('briinv').onchange=()=>act(()=>post('api/brightness',{value:Number($('bri').value), invert:$('briinv').checked})).then(()=>loadExt().catch(()=>{}));
+$('sunen').onchange=()=>act(()=>post('api/sun',{enabled:$('sunen').checked, min:Number($('sunmin').value), max:Number($('sunmax').value)})).then(()=>loadExt().catch(()=>{}));
+let sunT; const sunSave=()=>{ clearTimeout(sunT); sunT=setTimeout(()=>act(()=>post('api/sun',{min:Number($('sunmin').value), max:Number($('sunmax').value)})).then(()=>loadExt().catch(()=>{})), 600); };
+$('sunmin').addEventListener('input', sunSave); $('sunmax').addEventListener('input', sunSave);
 $('brihow').onchange=()=>act(()=>post('api/brightness',{value:Number($('bri').value), method:$('brihow').value})).then(()=>loadExt().catch(()=>{}));
 let briT; $('bri').addEventListener('input', ()=>{ $('briv').textContent=$('bri').value; clearTimeout(briT); briT=setTimeout(()=>post('api/brightness',{value:Number($('bri').value)}).then(r=>{ $('brimethod').textContent=r.output; }).catch(e=>toast(e.message,'err')), 500); });
 $('ntff').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/notify',{enabled:$('nfen').checked, service:$('nfsvc').value.trim(), temp_limit:Number($('nftemp').value||0)})); });
@@ -7685,16 +7817,18 @@ $('roclips').onchange=()=>act(()=>post('api/ro',{keep_clips:$('roclips').checked
 // Czytelność: każda część pod nagłówkiem h3 w osobnej ramce, długie objaśnienia zwinięte.
 (function(){
   const LONG=170;
-  function wrapLong(p){
-    if(p.closest('details.more') || p.textContent.trim().length<LONG) return;
+  function wrapDetails(p, label){
+    if(p.closest('details.more')) return;
     const d=document.createElement('details'); d.className='more';
-    const s=document.createElement('summary'); s.textContent='Więcej informacji';
+    const s=document.createElement('summary'); s.textContent=label||'Więcej informacji';
     p.replaceWith(d); d.append(s, p);
   }
+  function wrapLong(p){ if(p.textContent.trim().length>=LONG) wrapDetails(p); }
   document.querySelectorAll('.pane:not([data-noblock])').forEach(pane=>{
     const kids=[...pane.children]; let block=null, first=true;
     kids.forEach(el=>{
-      if(el.tagName==='H2' || (first && el.classList.contains('lead') && !block)){ return; }
+      if(el.tagName==='H2'){ return; }
+      if(first && el.classList.contains('lead') && !block){ wrapDetails(el, 'Co to jest'); first=false; return; }
       const startsWithH3 = el.tagName==='H3' || (el.firstElementChild && el.firstElementChild.tagName==='H3' && el.classList.contains('adm'));
       if(startsWithH3 || !block){ block=document.createElement('div'); block.className='block'; el.before(block); }
       first=false;

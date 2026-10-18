@@ -1,3 +1,10 @@
+## 1.3.1
+- Przebudowany panel: na telefonie nic się już nie ucina (siatki nie wymuszały szerokości
+  większej niż ekran). Karta kiosku pokazuje dane w dwukolumnowej tabeli zamiast ciasnych
+  „chipów”, drugorzędne przyciski (zasilanie, wyłączanie, usuwanie) schowane pod „Więcej”,
+  a sekcja „Wszystkie kioski naraz” jest zwijana i pogrupowana (komunikaty / widok / zasilanie
+  / aktualizacja).
+
 ## 1.3.0
 - **Zasilanie kiosków:** przy każdym kiosku „Ustaw zasilanie…” — przekaźnik (encja HA: switch/light/input_boolean,
   np. ESP32 / Sonoff) i Wake-on-LAN (adres MAC albo encja WOL). Przyciski **Włącz** (przekaźnik, potem pakiety WOL

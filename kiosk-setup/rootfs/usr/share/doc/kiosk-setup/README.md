@@ -998,6 +998,10 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.18** (18.10.2026) — automatyczna jasność ekranu wg położenia słońca (sun.sun w Home Assistant albo
+  szerokość/długość geograficzna); porządek w panelu na telefonie: opisy sekcji schowane pod „ⓘ Co to jest”,
+  drugorzędne przyciski Pilota pod „Więcej”, mniejsze przyciski, „Na żywo”/„Odśwież” na Kamerach jako ikonki.
+  Dodatek Kioski 1.3.1 — ten sam porządek w panelu dodatku, naprawiony układ na wąskich ekranach.
 - **1.0.17** (18.10.2026) — adres MAC, karta sieciowa i Wake-on-LAN oraz czas do automatycznego wyłączenia
   w stanie kiosku (panel, czujniki HA „Adres MAC” i „Do wyłączenia”); dodatek Kioski 1.3.0 włącza i wyłącza
   kioski przekaźnikiem i przez Wake-on-LAN.

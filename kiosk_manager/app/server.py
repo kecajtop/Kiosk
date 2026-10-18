@@ -33,7 +33,7 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}$")
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$")
 ENTITY_RE = re.compile(r"^(switch|light|input_boolean|button|script)\.[a-z0-9_]{1,200}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.3.0"          # = version w config.yaml
+ADDON_VERSION = "1.3.1"          # = version w config.yaml
 RAW = "https://raw.githubusercontent.com/kecajtop/Kiosk/main/"
 _LATEST = {"t": 0, "data": None}
 

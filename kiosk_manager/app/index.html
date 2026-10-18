@@ -8,10 +8,13 @@
 @font-face{font-family:"IBM Plex Mono";font-weight:600 700;src:url(font/plex-mono-600.ttf) format("truetype")}
 :root{--bg:#0A0C08;--card:#0F120D;--field:#080A06;--line:#2C3127;--ink:#D9DCCB;--muted:#8E937F;--amber:#F5B400;--amberbg:#231E0C;--amberline:#7A5E12;--blue:#5EC8D8;--bad:#EF5B50;--badbg:#2E1714;--badline:#74302A;--ok:#86CF6A;--mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,"DejaVu Sans Mono",monospace}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--mono)}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--mono);overflow-x:hidden;overflow-wrap:anywhere}
 main{max-width:1240px;margin:0 auto;padding:20px 20px 72px}
 @media (max-width:600px){ main{padding:14px 16px 64px} }
-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+header .row{flex:1 1 auto;justify-content:flex-end}
+@media (max-width:600px){ header .row{width:100%} header .row button{flex:1} }
 h1{margin:0;font-size:20px;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
 h1 small{display:block;font-size:14px;font-weight:400;color:var(--muted)}
 h2{margin:0 0 12px;font-size:13px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
@@ -24,14 +27,22 @@ button:disabled{opacity:.5;cursor:wait}
 input,select{background:var(--field);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:9px 12px;font:15px var(--mono);min-height:42px;min-width:0}
 input:focus,select:focus,button:focus-visible,.btn:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:18px}
-.all{margin-bottom:20px}
-.all .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px 16px}
+.all{margin-bottom:20px;padding:0}
+.all>summary{list-style:none;cursor:pointer;padding:14px 18px;font-size:13px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center;min-height:48px}
+.all>summary::-webkit-details-marker{display:none}
+.all>summary::after{content:'▾';font-size:16px;color:var(--amber);transition:transform .15s}
+.all[open]>summary::after{transform:rotate(180deg)}
+.all[open]>summary{border-bottom:1px solid var(--line)}
+.all .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:18px 20px;padding:16px 18px 18px}
+.all .grid>*{min-width:0}
+.all .grp{padding-top:14px;border-top:1px solid var(--line)} .all .grp:first-child,.all form:first-child{padding-top:0;border-top:0}
+.all .row button,.all .row .btn{flex:1 1 auto}
 .all label{display:block;font-size:11px;color:var(--muted);margin-bottom:6px;letter-spacing:.14em;text-transform:uppercase}
 .all .row input{flex:1}
 .all label.btn{display:inline-flex;margin:0;font-size:14px;color:var(--ink)}
-.kiosks{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
-@media (max-width:400px){ .kiosks{grid-template-columns:1fr} }
-.k{display:flex;flex-direction:column;gap:12px}
+.kiosks{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:14px}
+.kiosks>*{min-width:0}
+.k{display:flex;flex-direction:column;gap:14px}
 .k.off{opacity:.75}
 .k .top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .k .name{font-size:17px;font-weight:600;line-height:1.3;color:var(--amber)}
@@ -42,11 +53,23 @@ input:focus,select:focus,button:focus-visible,.btn:focus-visible{outline:2px sol
 .hint{font-size:12px;color:var(--muted);margin-top:6px}
 .dot{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:8px;vertical-align:1px;background:var(--muted)}
 .dot.on{background:var(--ok)} .dot.err{background:var(--bad)}
-.chips{display:flex;flex-wrap:wrap;gap:6px}
-.chips span{background:var(--field);border:1px solid var(--line);border-radius:4px;color:var(--amber);padding:3px 10px;font-size:13px;white-space:nowrap}
-.chips b{color:var(--muted);font-weight:500;margin-right:6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.stats>div{background:var(--field);padding:7px 10px;min-width:0}
+.stats .full{grid-column:1/-1}
+.stats b{display:block;color:var(--muted);font-weight:500;font-size:10px;letter-spacing:.14em;text-transform:uppercase;line-height:1.5}
+.stats span{color:var(--amber);font-size:13px;line-height:1.4}
+.stats .dot{margin:0 4px 0 0} .stats .nd{margin-right:10px;white-space:nowrap;display:inline-block}
+.np{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--blue);padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:var(--field);min-width:0}
+.np span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .k .acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.k .acts>*{min-width:0}
 .k .acts .wide{grid-column:1/-1}
+.more{border-top:1px solid var(--line);padding-top:10px}
+.more>summary{cursor:pointer;color:var(--muted);font-size:12px;letter-spacing:.14em;text-transform:uppercase;list-style:none;min-height:32px;display:flex;align-items:center;justify-content:space-between}
+.more>summary::-webkit-details-marker{display:none}
+.more>summary::after{content:'▾';color:var(--amber)}
+.more[open]>summary::after{content:'▴'}
+.more .acts{margin-top:10px}
 .k select{width:100%}
 .err{color:var(--bad);font-size:13px}
 .empty{color:var(--muted);text-align:center;padding:40px 16px}
@@ -65,15 +88,16 @@ td{padding:8px 4px;border-bottom:1px solid var(--line)}
 <div class="row"><button type="button" id="scanb">Szukaj w sieci</button><button type="button" class="primary" id="addb">Dodaj kiosk</button></div></header>
 
 <div class="card upd" id="addonupd" hidden></div>
-<section class="card all" id="allc" hidden aria-labelledby="h-all"><h2 id="h-all">Wszystkie kioski naraz</h2>
+<details class="card all" id="allc" hidden><summary id="h-all">Wszystkie kioski naraz</summary>
 <div class="grid">
-<form id="sayf"><label for="say">Powiedz na wszystkich</label><div class="row"><input id="say" maxlength="1000" placeholder="Obiad gotowy!"><button class="primary">Powiedz</button></div></form>
-<form id="bubf"><label for="bub">Dymek na wszystkich (15 s)</label><div class="row"><input id="bub" maxlength="600" placeholder="Wychodzimy za 5 minut"><button>Pokaż</button></div></form>
-<div><label for="allview">Widok na wszystkich</label><div class="row"><select id="allview" style="flex:1"></select><button type="button" id="allviewb">Pokaż</button></div></div>
-<div><label>Zasilanie (przekaźnik / WOL)</label><div class="row"><button type="button" id="allon">Włącz wszystkie</button><button type="button" class="danger" id="alloff">Wyłącz wszystkie</button></div></div>
-<div><label>Ekran i system</label><div class="row"><button type="button" data-all="screen-on">Włącz ekrany</button><button type="button" data-all="screen-off">Wyłącz ekrany</button><button type="button" data-all="restart">Odśwież</button></div></div>
-<div><label>Aktualizacja kiosk-setup</label><div class="row"><button type="button" class="primary" data-all="update-github">Aktualizuj wszystkie z GitHuba</button><label class="btn"><input type="file" id="deb" accept=".deb" hidden> Wgraj .deb na wszystkie…</label></div><div class="hint" id="latestinfo"></div></div>
-</div></section>
+<div class="grp"><label>Komunikaty</label>
+<form id="sayf" class="row"><input id="say" maxlength="1000" placeholder="Powiedz: Obiad gotowy!" aria-label="Powiedz na wszystkich" style="flex:1 1 160px"><button class="primary">Powiedz</button></form>
+<form id="bubf" class="row" style="margin-top:8px"><input id="bub" maxlength="600" placeholder="Dymek 15 s: Wychodzimy za 5 minut" aria-label="Dymek na wszystkich" style="flex:1 1 160px"><button>Pokaż</button></form></div>
+<div class="grp"><label for="allview">Widok</label><div class="row"><select id="allview" style="flex:1 1 160px"></select><button type="button" id="allviewb">Pokaż</button></div>
+<label style="margin-top:14px">Ekran i system</label><div class="row"><button type="button" data-all="screen-on">Włącz ekrany</button><button type="button" data-all="screen-off">Wyłącz ekrany</button><button type="button" data-all="restart">Odśwież</button></div></div>
+<div class="grp"><label>Zasilanie (przekaźnik / WOL)</label><div class="row"><button type="button" id="allon">Włącz wszystkie</button><button type="button" class="danger" id="alloff">Wyłącz wszystkie</button></div></div>
+<div class="grp"><label>Aktualizacja kiosk-setup</label><div class="row"><button type="button" class="primary" data-all="update-github">Aktualizuj z GitHuba</button><label class="btn"><input type="file" id="deb" accept=".deb" hidden> Wgraj .deb…</label></div><div class="hint" id="latestinfo"></div></div>
+</div></details>
 
 <div class="kiosks" id="kiosks"></div>
 <p class="empty" id="empty" hidden>Nie ma jeszcze kiosków. Na kiosku otwórz panel → <b>MQTT i Home Assistant</b> → <b>Paruj z HA</b> — kiosk pojawi się tu sam w ciągu 2 minut (albo od razu po <b>Szukaj w sieci</b>). Można też <b>Dodaj kiosk</b> z tokenem.</p>
@@ -109,10 +133,10 @@ const post=(p,b)=>api(p,{method:'POST', body:JSON.stringify(b||{})});
 const el=(tag, props, ...kids)=>{ const e=Object.assign(document.createElement(tag), props||{}); e.append(...kids.filter(k=>k!=null)); return e; };
 const fmtUp=s=>{ const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60); return (d?d+' d ':'')+h+' h '+m+' min'; };
 const NETN={lan:'LAN', wifi:'Wi-Fi', internet:'Internet', ha:'HA', mqtt:'MQTT'};
-function netChip(n){ if(!n) return null; const keys=Object.keys(NETN).filter(k=>n[k]); if(!keys.length) return null;
-  const sp=el('span',null,el('b',{textContent:'Sieć'})); keys.forEach((k,i)=>{ const it=n[k]; const d=el('span',{className:'dot'+(it.state==='bad'?' err':' on'), style:'margin:0 4px 0 '+(i?'8px':'0')+(it.state==='warn'?';background:var(--amber)':'')}); sp.append(d, NETN[k]); }); return sp; }
+function netVal(n){ if(!n) return null; const keys=Object.keys(NETN).filter(k=>n[k]); if(!keys.length) return null;
+  const sp=el('span'); keys.forEach(k=>{ const it=n[k]; sp.append(el('span',{className:'nd'}, el('span',{className:'dot'+(it.state==='bad'?' err':' on'), style:it.state==='warn'?'background:var(--amber)':''}), NETN[k])); }); return sp; }
 const MODES={web:'Strona', rtsp:'Kamery', mix:'Strona + kamery', usb:'Kamera USB'};
-let KIOSKS=[], STATE={}, LATEST={};
+let KIOSKS=[], STATE={}, LATEST={}, INITOPEN=false;
 
 async function busy(btn, fn){ if(btn) btn.disabled=true; try{ return await fn(); } finally{ if(btn) btn.disabled=false; } }
 
@@ -127,11 +151,13 @@ function card(k){
   const c=el('article',{className:'card k'+(st?'':' off')}, top);
   if(s.error){ c.append(el('div',{className:'err', textContent:'Brak połączenia: '+s.error})); }
   if(st){
-    const chip=(b,t)=>el('span',null,el('b',{textContent:b}),t);
-    c.append(el('div',{className:'chips'}, chip('Ekran', (MODES[st.mode]||st.mode)+(st.view?' · '+st.view:'')), chip('Monitor', st.screen==='on'?'włączony':(st.screen==='off'?'wyłączony':'?')),
-      chip('Kamery', String(st.camera_players)), st.ro?chip('Dysk','tylko odczyt'):null, chip('Czas pracy', fmtUp(st.uptime_s||0)), st.shutdown_in_s!=null?chip('Wyłączenie za', fmtUp(st.shutdown_in_s)):null, netChip(st.net),
-      st.now_playing&&st.now_playing.state==='playing' ? chip('Gra', [st.now_playing.artist, st.now_playing.title||st.now_playing.station].filter(Boolean).join(' — ').slice(0,50)) : null));
-    const sel=el('select',{'aria-label':'Widok'}); sel.append(el('option',{value:'',textContent:'— widok —'}));
+    const stat=(b,t,full)=>el('div',{className:full?'full':''},el('b',{textContent:b}),t);
+    const np=st.now_playing&&st.now_playing.state==='playing' ? [st.now_playing.artist, st.now_playing.title||st.now_playing.station].filter(Boolean).join(' — ') : '';
+    if(np) c.append(el('div',{className:'np'}, '♪', el('span',{textContent:np})));
+    const nv=netVal(st.net);
+    c.append(el('div',{className:'stats'}, stat('Ekran', (MODES[st.mode]||st.mode)+(st.view?' · '+st.view:'')), stat('Monitor', st.screen==='on'?'włączony':(st.screen==='off'?'wyłączony':'?')),
+      stat('Kamery', String(st.camera_players)), stat('Czas pracy', fmtUp(st.uptime_s||0)), st.ro?stat('Dysk','tylko odczyt'):null, st.shutdown_in_s!=null?stat('Wyłączenie za', fmtUp(st.shutdown_in_s)):null, nv?stat('Sieć', nv, true):null));
+    const sel=el('select',{'aria-label':'Widok','style':'min-height:42px'}); sel.append(el('option',{value:'',textContent:'— widok —'}));
     (s.views||[]).forEach(v=>sel.append(el('option',{value:v,textContent:v,selected:v===st.view})));
     sel.onchange=()=>{ if(sel.value) kpost(k,'/api/view',{name:sel.value},'Widok „'+sel.value+'”'); };
     const scr=el('button',{type:'button', textContent: st.screen==='off'?'Włącz ekran':'Wyłącz ekran'});
@@ -144,7 +170,8 @@ function card(k){
     del.onclick=()=>{ if(confirm('Usunąć '+k.host+' z listy? (kiosk działa dalej)')) api('api/kiosks/'+k.id,{method:'DELETE'}).then(()=>{ toast('Usunięto z listy','good'); load(); }).catch(e=>toast(e.message,'bad')); };
     const off=el('button',{type:'button', className:'danger', textContent:'Wyłącz'});
     off.onclick=()=>{ if(confirm('Wyłączyć kiosk '+(st.name||k.host)+'?'+(hasPower(k)&&k.power.relay?' Po zamknięciu systemu przekaźnik odetnie prąd.':' Włączysz go przyciskiem albo przez WOL / przekaźnik.'))) busy(off,()=>pwr(k,'off')); };
-    c.append(el('div',{className:'acts'}, open, upb, scr, el('div',{className:'wide'}, sel), off, powerBtn(k), del));
+    open.classList.add('wide'); if(upb) upb.classList.add('wide');
+    c.append(el('div',{className:'acts'}, open, upb, scr, sel), el('details',{className:'more'}, el('summary',{textContent:'Więcej'}), el('div',{className:'acts'}, powerBtn(k), off, el('div',{className:'wide'}, del))));
   } else {
     const del=el('button',{type:'button', className:'danger', textContent:'Usuń z listy'});
     del.onclick=()=>{ if(confirm('Usunąć '+k.host+' z listy?')) api('api/kiosks/'+k.id,{method:'DELETE'}).then(load); };
@@ -179,7 +206,7 @@ $('alloff').onclick=e=>{ const ks=KIOSKS.filter(k=>(STATE[k.id]||{}).status); if
   toast(bad.length?bad.join('\n'):'Wyłączam '+ks.length+' kiosk(i)', bad.length?'bad':'good'); setTimeout(load, 30000); }); };
 function render(){
   $('kiosks').replaceChildren(...KIOSKS.map(card));
-  $('empty').hidden=KIOSKS.length>0; $('allc').hidden=KIOSKS.length===0;
+  $('empty').hidden=KIOSKS.length>0; $('allc').hidden=KIOSKS.length===0; if(!INITOPEN){ INITOPEN=true; $('allc').open=window.innerWidth>760; }
   const online=KIOSKS.filter(k=>(STATE[k.id]||{}).status).length;
   $('summary').textContent=KIOSKS.length ? online+' z '+KIOSKS.length+' w sieci' : 'Panel administracyjny kiosków';
   const views=new Set(); KIOSKS.forEach(k=>((STATE[k.id]||{}).views||[]).forEach(v=>views.add(v)));

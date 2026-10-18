@@ -133,6 +133,8 @@ Kiosk działa w jednym z dwóch trybów ekranu; zmiana w `sudo kiosk-mode` → E
 
 **Jasność** (Zasilanie → suwak, HA: liczba „Jasność ekranu”, MQTT `brightness/set` 5–100): metoda auto / DDC/CI / programowa. DDC/CI zmienia prawdziwe podświetlenie monitora (ddcutil, z odczytem kontrolnym); bez DDC/CI, np. przez VGA, działa programowo (xrandr). Pole „Odwrócona jasność” — dla monitorów z przerobionym podświetleniem LED, w których większa wartość ściemnia ekran.
 
+**Automatyczna jasność wg słońca** (Zasilanie → „Automatyczna jasność wg położenia słońca”, jasność w nocy i w dzień, %): jasność rośnie o świcie i maleje o zmierzchu, bez ustalonych godzin (inaczej niż tryb nocny). Wysokość słońca: z encji `sun.sun` w Home Assistant (adres i token jak dla pogody), a bez HA — obliczona na kiosku z szerokości/długości geograficznej (Automatyka → Pogoda). Wyłącza się automatycznie na czas trybu nocnego (ma pierwszeństwo).
+
 **Wyłączanie ekranu:** Zasilanie → przyciski i „wyłącz ekran po N min bez dotyku”; w trybie desktop „Wyłącz ekran” gasi tylko monitor kiosku.
 
 **Logo przy starcie** (`sudo kiosk-mode` → Logo przy starcie albo `sudo kiosk-mode bootlogo on|off|once`): logo kecaj, bez logo na stałe (widać komunikaty systemu) albo bez logo tylko przy następnym starcie.
@@ -585,10 +587,11 @@ Kopia zapasowa z panelu (System → Kopia) obejmuje cały ten katalog.
 
 ## Historia wersji kiosk-setup
 
-Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, 1.0.5 — wersję light, 1.0.6 — Wi-Fi w panelu i aktualizację z gita, 1.0.7 — przełączanie edycji pełna/light z panelu, 1.0.8 — lokalne rozpoznawanie twarzy, 1.0.9 — aplikację na Androida, 1.0.10 — aplikację startującą od radia, 1.0.11 — nowy układ panelu z Pilotem, 1.0.12 — ekran kiosku na żywo w panelu, 1.0.13 — szybszy podgląd ekranu (strumień wideo), 1.0.14 — aktualizacje kiosku w Home Assistant, 1.0.15 — parowanie z dodatkiem Kioski bez tokenu, 1.0.16 — odtwarzacz w telefonie i Pilot jak odtwarzacz, a 1.0.17 — MAC i Wake-on-LAN (włączanie kiosków z dodatku Kioski).
+Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, 1.0.5 — wersję light, 1.0.6 — Wi-Fi w panelu i aktualizację z gita, 1.0.7 — przełączanie edycji pełna/light z panelu, 1.0.8 — lokalne rozpoznawanie twarzy, 1.0.9 — aplikację na Androida, 1.0.10 — aplikację startującą od radia, 1.0.11 — nowy układ panelu z Pilotem, 1.0.12 — ekran kiosku na żywo w panelu, 1.0.13 — szybszy podgląd ekranu (strumień wideo), 1.0.14 — aktualizacje kiosku w Home Assistant, 1.0.15 — parowanie z dodatkiem Kioski bez tokenu, 1.0.16 — odtwarzacz w telefonie i Pilot jak odtwarzacz, 1.0.17 — MAC i Wake-on-LAN (włączanie kiosków z dodatku Kioski), a 1.0.18 — automatyczną jasność wg słońca i porządek w panelu na telefonie (opisy sekcji i drugorzędne przyciski schowane, mniejsze przyciski i ikonki).
 
 | Wersja | Data | Zawartość |
 | --- | --- | --- |
+| 1.0.18 | 18.10.2026 | Automatyczna jasność ekranu wg położenia słońca (sun.sun w HA albo szerokość/długość); porządek w panelu na telefonie: opisy sekcji pod „ⓘ Co to jest”, drugorzędne przyciski Pilota pod „Więcej”, mniejsze przyciski, „Na żywo”/„Odśwież” na Kamerach jako ikonki; dodatek Kioski 1.3.1 — ten sam porządek i naprawiony układ na wąskich ekranach |
 | 1.0.17 | 18.10.2026 | Adres MAC, Wake-on-LAN i czas do wyłączenia w stanie kiosku (czujniki HA „Adres MAC”, „Do wyłączenia”); dodatek Kioski 1.3.0 włącza i wyłącza kioski przekaźnikiem i przez Wake-on-LAN |
 | 1.0.16 | 18.10.2026 | Pilot jak odtwarzacz (okładka, ⏮ ⏯ ⏭), API graj/pauza, następna/poprzednia stacja i okładka; aplikacja Kiosk 1.5 z odtwarzaczem w powiadomieniu i na ekranie blokady |
 | 1.0.15 | 18.10.2026 | „Paruj z HA”: parowanie kiosku z dodatkiem Kioski bez tokenu (okno 5 min, jedno sparowanie); dodatek Kioski 1.2.0 szuka i paruje kioski sam |

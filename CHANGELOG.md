@@ -1,5 +1,19 @@
 # Zmiany
 
+## 1.0.18 (2026-10-18)
+- **Automatyczna jasność wg położenia słońca:** Ustawienia → Jasność i wyłączanie. Jasność rośnie o świcie i
+  maleje o zmierzchu; wysokość słońca z encji `sun.sun` w Home Assistant, a bez HA — obliczona z
+  szerokości/długości geograficznej (Automatyka → Pogoda). Ustawiane: jasność w nocy i w dzień (%).
+- **Panel kiosku, porządek na telefonie:** opis każdej sekcji (np. „Widoki”, „Harmonogram”) schowany pod
+  „ⓘ Co to jest” zamiast zajmować miejsce na stałe; w Pilocie drugorzędne przyciski ekranu (Noc teraz / wg
+  godzin / Odśwież / Zakończ alarm, jasność) schowane pod „Więcej”; mniejsze przyciski pilota i kafelków radia
+  na wąskim ekranie. Na karcie Kamery „Na żywo” i „Odśwież” to teraz małe przyciski z ikoną (▶ / ⟳) zamiast
+  szerokich przycisków z tekstem.
+- Dodatek Kioski 1.3.1: ten sam porządek w panelu dodatku — karta kiosku pokazuje dane w dwukolumnowej tabeli,
+  drugorzędne przyciski (zasilanie, wyłączanie, usuwanie) pod „Więcej”, a „Wszystkie kioski naraz” jest zwijane.
+  Naprawiony też błąd układu: siatki wymuszały szerokość większą niż ekran telefonu, więc tekst się ucinał.
+- Gotowe pakiety: `releases/kiosk-setup_1.0.18_amd64.deb`, `releases/kiosk-setup-light_1.0.18_amd64.deb`.
+
 ## 1.0.17 (2026-10-18)
 - **MAC i Wake-on-LAN w stanie kiosku:** `GET /api/status` → `network_hw` (interfejs trasy domyślnej, MAC, Wi-Fi,
   WOL z `ethtool`); w panelu kafelek „MAC”, w HA sensor diagnostyczny „Adres MAC”. Dodatek Kioski 1.3.0 bierze
