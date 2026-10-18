@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.8",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.8_amd64.deb",
-  "sha256": "a39d163ecabbf59f718f9f13ed5b36c5f702b6e86e4016b5ad897acab47b78f8",
-  "size": 22965322,
+  "version": "1:1.0.9",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.9_amd64.deb",
+  "sha256": "0e17ab3ee98bd56486a5cfe19aede2ef7a837794d99bb1ae7bf1798f519cc536",
+  "size": 22984160,
   "date": "2026-10-18",
-  "notes": "Lokalne rozpoznawanie twarzy na kamerach (Automatyka → Rozpoznawanie twarzy); szybsze aktualizacje bez zbędnego update-grub i update-initramfs."
+  "notes": "Aplikacja Kiosk na Androida (przyciski głośności telefonu), panel na telefonie: pasek pilota, większe pola dotyku, ikona na ekran główny."
 }

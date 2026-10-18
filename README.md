@@ -23,23 +23,24 @@ Więcej obrazów: [docs/ZRZUTY.md](docs/ZRZUTY.md).
 | `kiosk-setup/debian/` | pliki pakietu: control, config, templates, postinst (szablon), postrm |
 | `kiosk-setup/rootfs/` | pliki statyczne: dokumentacja, logo, czcionki IBM Plex Mono (licencja OFL) |
 | `kiosk_manager/` | dodatek Home Assistant „Kioski” |
+| `kiosk-android/` | aplikacja Kiosk na Androida (panel, przyciski głośności telefonu) |
 
 Dokumentacja całości (instalacja, ekran, zegary, dźwięk, automatyka, HA, MQTT/API, bezpieczeństwo, diagnostyka, pliki): [docs/DOKUMENTACJA.md](docs/DOKUMENTACJA.md).
 Dokumentacja pakietu: [kiosk-setup/rootfs/usr/share/doc/kiosk-setup/README.md](kiosk-setup/rootfs/usr/share/doc/kiosk-setup/README.md)
 
 ## Instalacja na kiosku
 
-Gotowy pakiet: [`releases/kiosk-setup_1.0.8_amd64.deb`](releases/).
+Gotowy pakiet: [`releases/kiosk-setup_1.0.9_amd64.deb`](releases/).
 
 ```bash
-sudo apt install ./kiosk-setup_1.0.8_amd64.deb
+sudo apt install ./kiosk-setup_1.0.9_amd64.deb
 # aktualizacja istniejącego kiosku (działa też przy dysku tylko do odczytu):
-sudo kiosk-update file ./kiosk-setup_1.0.8_amd64.deb
+sudo kiosk-update file ./kiosk-setup_1.0.9_amd64.deb
 ```
 
 ### Wersja light
 
-`releases/kiosk-setup-light_1.0.8_amd64.deb` (ok. 0,3 MB) — ekran (Chromium, kamery RTSP), zegary, panel WWW,
+`releases/kiosk-setup-light_1.0.9_amd64.deb` (ok. 0,3 MB) — ekran (Chromium, kamery RTSP), zegary, panel WWW,
 MQTT/Home Assistant i muzyka, bez mowy, interkomu i asystenta głosowego. Instalacja jak wyżej; zastępuje
 pełny pakiet i odwrotnie. Aktualizacje: `update-light.json` zamiast `update.json`. Budowanie: `./build.sh --light`.
 Przełączanie edycji: **System → Aktualizacje → „Przełącz na wersję light/pełną”** albo `sudo kiosk-update switch light|full`.
@@ -62,6 +63,12 @@ jego sumę SHA-256.
 3. W `update.json` wpisz `version`, `url`, `sha256` (`sha256sum`) i `size`.
 4. Zrób commit i push na `main`.
 
+## Aplikacja na Androida
+
+[`releases/kiosk-android-1.0.apk`](releases/) — panel kiosku na telefonie: fizyczne przyciski głośności
+sterują głośnością kiosku, wyszukiwanie kiosków w sieci, zapamiętany token, HTTPS kiosku.
+Kod i budowanie (bez Gradle): [`kiosk-android/`](kiosk-android/README.md).
+
 ## Dodatek Home Assistant
 
 W Home Assistant: **Ustawienia → Dodatki → Sklep z dodatkami → ⋮ → Repozytoria**, a potem dodaj
@@ -73,7 +80,7 @@ Potrzebne `dpkg-deb` i `python3`.
 
 ```bash
 cd kiosk-setup
-./build.sh --piper-from kiosk-setup_1.0.8_amd64.deb   # Piper (TTS) z gotowego pakietu
+./build.sh --piper-from kiosk-setup_1.0.9_amd64.deb   # Piper (TTS) z gotowego pakietu
 ./build.sh --no-piper                                 # albo bez Pipera
 # wynik: kiosk-setup/dist/kiosk-setup_<wersja>_amd64.deb
 ```

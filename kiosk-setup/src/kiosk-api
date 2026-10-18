@@ -356,6 +356,16 @@ def audio_volume(n):
     return "Głośność: %d%%" % n
 
 
+def audio_volume_step(d):
+    """Głośność w górę / w dół o d punktów (przyciski telefonu, MQTT volume/step)."""
+    d = to_int(d, -50, 50, "volume_step")
+    code, out = mpc("volume", "%+d" % d)
+    if code != 0:
+        raise RuntimeError(out or "mpc: błąd")
+    v = audio_status().get("volume")
+    return "Głośność: %s%%" % (v if v is not None else "?")
+
+
 def audio_stop():
     mpc("stop")
     if ANNOUNCER:
@@ -2828,6 +2838,8 @@ def handle_command(cmd, payload):
         return audio_stop()
     if cmd == "volume/set":
         return audio_volume(int(float(payload)))
+    if cmd == "volume/step":
+        return audio_volume_step(int(float(payload)))
     raise ValueError("nieznana komenda: " + cmd)
 
 
@@ -4376,6 +4388,22 @@ def mic_info():
     return {"available": bool(cards), "devices": cards[:5]}
 
 
+_TLS_FP = {}
+
+
+def tls_fingerprint():
+    """Odcisk SHA-256 certyfikatu HTTPS kiosku (do porównania w aplikacji na telefonie)."""
+    f = TLS_DIR + "/cert.pem"
+    try:
+        mt = os.path.getmtime(f)
+    except OSError:
+        return None
+    if _TLS_FP.get("mt") != mt:
+        out = qrun(["openssl", "x509", "-in", f, "-noout", "-fingerprint", "-sha256"])
+        _TLS_FP.update(mt=mt, fp=out.strip().split("=", 1)[-1] if "=" in out else None)
+    return _TLS_FP.get("fp")
+
+
 def satellite_info():
     st = qrun(["systemctl", "is-active", "kiosk-satellite"]).strip()
     return {"installed": os.path.exists("/opt/kiosk-satellite/bin/python"), "state": st or "inactive",
@@ -4694,6 +4722,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(204)
             self.end_headers()
             return
+        if path in ("/manifest.webmanifest", "/icon-192.png", "/icon-512.png"):   # bez logowania: ikona i nazwa aplikacji
+            if path.endswith(".png"):
+                f = os.path.join(os.path.dirname(LOGO), path[1:])
+                if not os.path.exists(f):
+                    return self.send(404, {"error": "brak ikony"})
+                with open(f, "rb") as fh:
+                    return self.send(200, fh.read(), "image/png")
+            nm = kiosk_name()
+            return self.send(200, {"name": "Kiosk %s" % nm, "short_name": nm[:12] or "Kiosk", "lang": "pl",
+                                   "start_url": "./#/start", "scope": "./", "display": "standalone",
+                                   "background_color": "#0A0C08", "theme_color": "#0A0C08",
+                                   "icons": [{"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+                                             {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}]},
+                             "application/manifest+json; charset=utf-8")
         if path == "/api/ping":   # bez logowania: wykrywanie kiosków w sieci (bez danych)
             return self.send(200, {"kecaj": True, "name": kiosk_name(), "hostname": os.uname().nodename, "version": PKG_VERSION})
         if not self.authorized():
@@ -4939,6 +4981,7 @@ class Handler(BaseHTTPRequestHandler):
                                                                          "invert": read_bright()["invert"]},
                                 "photos": list_photos(), "views": sorted(read_views()), "cameras": len(cams),
                                 "satellite": satellite_info(), "https_port": HTTPS_PORT if os.path.exists(TLS_DIR + "/cert.pem") else None,
+                                "https_fp": tls_fingerprint(),
                                 "info": AUTO.info() if AUTO else {}, "sensors": system_sensors()})
             elif path == "/api/photos":
                 self.send(200, {"photos": list_photos()})
@@ -5549,10 +5592,12 @@ class Handler(BaseHTTPRequestHandler):
                 out.append("Gong")
             if body.get("volume") is not None:
                 out.append(audio_volume(body["volume"]))
+            if body.get("volume_step"):
+                out.append(audio_volume_step(body["volume_step"]))
             if body.get("url"):
                 out.append(audio_play(body["url"]))
             if not out:
-                raise ValueError("podaj url, volume lub stop")
+                raise ValueError("podaj url, volume, volume_step lub stop")
             return "\n".join(out)
         if path == "/api/name":
             return set_kiosk_name(body)
@@ -5604,8 +5649,13 @@ class Handler(BaseHTTPRequestHandler):
 
 PAGE = r"""<!doctype html>
 <html lang="pl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Panel kiosku</title>
+<link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">
+<link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0A0C08" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#EFEEE6" media="(prefers-color-scheme: light)">
 <style>
 @font-face{font-family:"IBM Plex Mono";font-weight:400;font-display:swap;src:url(font/plex-mono-400.ttf) format("truetype"),local("IBM Plex Mono")}
 @font-face{font-family:"IBM Plex Mono";font-weight:500;font-display:swap;src:url(font/plex-mono-500.ttf) format("truetype"),local("IBM Plex Mono Medium")}
@@ -5744,6 +5794,26 @@ details.more summary{color:var(--blue)}
 .hint b,.lead b{color:var(--ink)}
 a{color:var(--blue)}
 #toast{border-radius:var(--r)}
+/* Telefon: pilot na dole ekranu, większe pola dotyku, bez opóźnienia podwójnego dotknięcia */
+html{-webkit-text-size-adjust:100%}
+body{touch-action:manipulation;overscroll-behavior-y:contain;-webkit-tap-highlight-color:transparent}
+#remote{display:none}
+@media (max-width:860px){
+  #remote{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:6;gap:6px;align-items:center;justify-content:center;
+    padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);box-shadow:0 -6px 20px #0005}
+  #remote button{flex:1 1 0;max-width:120px;min-height:48px;padding:0 6px;font-size:17px}
+  #remote .rvol{flex:0 0 auto;min-width:54px;text-align:center;color:var(--amber);font-weight:600;font-size:15px}
+  #remote button.on{color:var(--amber);border-color:var(--amberline);background:var(--amberbg)}
+  main{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+  #toast{bottom:calc(80px + env(safe-area-inset-bottom))}
+}
+@media (pointer:coarse){
+  button,.btn,select,input[type=text],input[type=number],input[type=time],input[type=password],input[type=url]{min-height:44px}
+  input,select,textarea{font-size:16px}
+  input[type=range]{height:36px}
+  label.check{min-height:40px;align-items:center}
+  label.check input{width:22px;height:22px}
+}
 .card>.lead{margin:0 22px 14px}
 @media (max-width:600px){ .card>.lead{margin:0 14px 12px} }
 .field>label.check,label.check{text-transform:none;letter-spacing:0;font-size:14px;font-weight:500;color:var(--text)}
@@ -5977,7 +6047,10 @@ a{color:var(--blue)}
 </div>
 <section class="card pane" role="tabpanel" id="glos" aria-labelledby="h-glos" hidden><h2 id="h-glos">Głośność i głos</h2>
 <p class="lead">Głośność kiosku, głos do komunikatów i zachowanie przy zapowiedziach.</p>
-<div class="field"><label for="vol">Głośność: <span id="volv">—</span>%</label><input type="range" id="vol" min="0" max="100" step="5" value="50"></div>
+<div class="field"><label for="vol">Głośność: <span id="volv">—</span>%</label>
+<div class="row" style="align-items:center;flex-wrap:nowrap"><button type="button" id="volm" aria-label="Ciszej" style="min-width:48px">−</button><input type="range" id="vol" min="0" max="100" step="5" value="50" style="flex:1"><button type="button" id="volp" aria-label="Głośniej" style="min-width:48px">+</button></div>
+<label class="check" style="margin-top:8px"><input type="checkbox" id="volkeys"> Przyciski głośności tego urządzenia sterują kioskiem (gdy panel jest otwarty)</label>
+<div class="hint" id="volkeyst"></div></div>
 <div class="field"><label for="voice">Głos</label><select id="voice"></select><div class="hint" id="voicehint"></div></div>
 <div class="field"><span class="lbl">Komunikaty głosowe</span>
 <div class="row"><label class="check" style="margin:0"><input type="checkbox" id="chime"> Gong przed komunikatem (jak na lotnisku)</label><button type="button" id="chimetest">Odsłuchaj gong</button></div>
@@ -6282,6 +6355,7 @@ a{color:var(--blue)}
 </div></div>
 </main>
 <div id="toast" role="status" aria-live="polite" hidden></div>
+<nav id="remote" aria-label="Pilot kiosku"><button type="button" id="rmvd" aria-label="Ciszej">−</button><span class="rvol" id="rmvol" aria-live="polite">—</span><button type="button" id="rmvu" aria-label="Głośniej">+</button><button type="button" id="rmstop" aria-label="Zatrzymaj dźwięk">■</button><button type="button" id="rmscr" aria-label="Ekran kiosku (włącz / wyłącz)">⏻ Ekran</button><button type="button" id="rmapp" aria-label="Ustawienia aplikacji" hidden>⚙</button></nav>
 <script>
 const $ = (id) => document.getElementById(id);
 let toastT;
@@ -6305,6 +6379,7 @@ async function loadStatus(){
     $('host').replaceChildren('Kiosk '+(s.name||s.hostname), Object.assign(document.createElement('small'),{textContent:s.hostname+' · '+s.time})); if(s.name){ document.querySelectorAll('.kname').forEach(e=>{ e.textContent=s.name; }); document.title='Kiosk '+s.name+' — panel'; }
     if(s.device_id && DID!==s.device_id){ DID=s.device_id; fillHelp($('mprefix').value||'kecaj/kiosk', $('mhost').value||'192.168.0.1'); } if(host!==s.hostname.replace(/[^A-Za-z0-9_]/g,'_')){ host=s.hostname.replace(/[^A-Za-z0-9_]/g,'_'); loadMqtt().catch(()=>{}); }
     const a=s.audio||{};
+    if(a.volume!=null) $('rmvol').textContent=a.volume+'%'; SCR=s.screen; $('rmscr').classList.toggle('on', s.screen==='on'); $('rmscr').title=s.screen==='off'?'Włącz ekran kiosku':'Wyłącz ekran kiosku';
     $('stat').replaceChildren(
       cell('Tryb', (names[s.mode]||s.mode)+(s.view?' · '+s.view:'')),
       cell('Monitor', okDot(s.screen==='on', s.screen==='on'?'włączony':(s.screen==='off'?'wyłączony':'nieznany'))),
@@ -6388,6 +6463,33 @@ $('restart').onclick=()=>act(()=>post('api/restart'), 'Ekran odświeżony');
 
 $('bf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/bubble',{title:$('btitle').value.trim(), text:$('btext').value.trim(), level:$('blevel').value, seconds:Number($('bsec').value||0), say:$('bsay').checked}), 'Dymek na ekranie'); });
 $('bhide').onclick=()=>act(()=>post('api/bubble',{hide:true}), 'Dymek ukryty');
+// ---- przyciski głośności telefonu / klawiatury → głośność kiosku (zbiera szybkie naciśnięcia w jeden krok)
+const VOLKEY_UP=new Set(['AudioVolumeUp','VolumeUp']), VOLKEY_DN=new Set(['AudioVolumeDown','VolumeDown']);
+let volKeys=(()=>{ try{ const v=localStorage.getItem('kioskVolKeys'); if(v!==null) return v==='1'; }catch(e){} return matchMedia('(pointer:coarse)').matches; })();
+let volAcc=0, volKT=0, volSeen=false;
+function volStep(d){ volAcc+=d; clearTimeout(volKT); volKT=setTimeout(()=>{ const s=volAcc; volAcc=0; if(!s) return;
+  post('api/audio',{volume_step:s}).then(r=>{ const m=/(\d+)%/.exec(r.output||''); if(m){ $('vol').value=m[1]; $('volv').textContent=m[1]; $('rmvol').textContent=m[1]+'%'; } toast('Kiosk — '+(r.output||'głośność'),'okm'); }).catch(e=>toast(e.message,'err')); }, 250); }
+function volKeysHint(){ $('volkeys').checked=volKeys; $('volkeyst').textContent=!volKeys?'':(volSeen?'Działa — przeglądarka przekazuje przyciski głośności.':'Naciśnij przycisk głośności na telefonie. Jeśli nic się nie dzieje, ta przeglądarka nie przekazuje go stronom (częste w Chrome na Androidzie) — użyj przycisków −/+ na dole albo aplikacji Kiosk na Androida (tam przyciski głośności działają zawsze).'); }
+document.addEventListener('keydown', e=>{ if(!volKeys) return; const k=e.key, c=e.keyCode;
+  const up=VOLKEY_UP.has(k)||c===175||c===24, dn=VOLKEY_DN.has(k)||c===174||c===25; if(!up&&!dn) return;
+  e.preventDefault(); volSeen=true; volKeysHint(); volStep(up?5:-5); }, true);
+$('volkeys').onchange=()=>{ volKeys=$('volkeys').checked; try{ localStorage.setItem('kioskVolKeys', volKeys?'1':'0'); }catch(e){} volKeysHint(); };
+$('volm').onclick=()=>volStep(-5); $('volp').onclick=()=>volStep(5);
+volKeysHint();
+// ---- aplikacja Kiosk na Androida (window.KioskApp): przyciski głośności obsługuje aplikacja
+const APP=window.KioskApp||null;
+if(APP){ volKeys=false; document.documentElement.classList.add('inapp');
+  const lbl=$('volkeys').parentElement; lbl.lastChild.textContent=' Przyciski głośności telefonu sterują kioskiem (aplikacja Kiosk)';
+  try{ $('volkeys').checked=APP.volumeKeys(); }catch(e){}
+  $('volkeys').onchange=()=>{ try{ APP.setVolumeKeys($('volkeys').checked); }catch(e){} $('volkeyst').textContent=$('volkeys').checked?'Działa zawsze, gdy aplikacja jest otwarta.':'Przyciski głośności zmieniają głośność telefonu.'; };
+  $('volkeyst').textContent=$('volkeys').checked?'Działa zawsze, gdy aplikacja jest otwarta.':'';
+  $('rmapp').hidden=false; $('rmapp').onclick=()=>{ try{ APP.settings(); }catch(e){} };
+}
+// ---- pilot na dole ekranu telefonu (także dla kont domowników)
+let SCR='unknown';
+$('rmvd').onclick=()=>volStep(-5); $('rmvu').onclick=()=>volStep(5);
+$('rmstop').onclick=()=>post('api/audio',{stop:true}).then(r=>toast(r.output||'Zatrzymano','okm')).catch(e=>toast(e.message,'err'));
+$('rmscr').onclick=()=>{ const on=SCR==='off'; post('api/screen',{on}).then(()=>{ toast(on?'Ekran włączony':'Ekran wyłączony','okm'); setTimeout(loadStatus,1500); }).catch(e=>toast(e.message,'err')); };
 let volT; $('vol').addEventListener('input', ()=>{ volTouched=true; $('volv').textContent=$('vol').value; clearTimeout(volT); volT=setTimeout(()=>{ post('api/audio',{volume:Number($('vol').value)}).catch(e=>toast(e.message,'err')).finally(()=>{volTouched=false;}); }, 300); });
 $('sf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/say',{text:$('saytext').value.trim(), voice:$('voice').value})); });
 $('vsample').onclick=()=>act(()=>post('api/say',{text:'Dzień dobry. Wszystkie systemy działają poprawnie. Ktoś stoi przy bramie.', voice:$('voice').value}));
@@ -6447,6 +6549,7 @@ function fillHelp(p, broker){
     ['play/set','http://…/plik.mp3','odtwórz dźwięk'],
     ['stop/set','dowolna','zatrzymaj dźwięk'],
     ['volume/set','0–100','głośność'],
+    ['volume/step','np. 5 albo -5','głośność w górę / w dół'],
     ['screen/set','ON | OFF','włącz / wyłącz monitor'],
     ['screen_timeout/set','minuty (0 = nigdy)','gaś ekran po N min bez dotyku'],
     ['shutdown_after/set','minuty (0 = nigdy)','wyłączaj komputer N min po starcie'],
@@ -6502,7 +6605,7 @@ automation:
     ['POST /api/weather/say','{"bubble":true,"voice":"jarvis"} — powiedz pogodę'],
     ['POST /api/time','{"date":true,"bubble":true,"voice":"lektorka","seconds":8} — powiedz godzinę; wszystkie pola opcjonalne'],
     ['GET/POST /api/voices','{"default":"jarvis"} — lista głosów / domyślny głos'],
-    ['POST /api/audio','{"url":"http://…mp3"} | {"volume":40} | {"stop":true}'],
+    ['POST /api/audio','{"url":"http://…mp3"} | {"volume":40} | {"volume_step":5} (−/+) | {"stop":true}'],
     ['POST /api/screen','{"on":false}'],
     ['POST /api/power','{"screen_off_minutes":15,"shutdown_after_minutes":0}'],
     ['POST /api/shutdown','{"in_minutes":30} (0 = teraz) | {"cancel":true}'],
@@ -6763,7 +6866,8 @@ async function loadExt(){ const r=await api('api/extras'); EXT=r;
   $('sysnow').textContent=['Temperatura: '+(s.cpu_temp??'—')+' °C','obciążenie: '+(s.load??'—'),'wolna pamięć: '+(s.mem_free_mb??'—')+' MB','dysk: '+(s.disk_free_gb??'—')+' GB'+(s.power_w!=null?', procesor: '+s.power_w+' W':'')].join(', ')+(Object.keys(pr).length?'\nProblemy: '+Object.values(pr).join('; '):'');
   const sa=r.satellite; $('satst').textContent=(sa.mic.available?'Mikrofon: '+sa.mic.devices[0]:'Brak mikrofonu — podłącz mikrofon USB albo kamerę z mikrofonem.')+' · Asystent: '+(sa.installed?(sa.state==='active'?'działa':'zainstalowany, '+sa.state):'nie zainstalowany');
   $('httpsinfo').innerHTML=''; const hi=$('httpsinfo');
-  if(r.https_port){ const a=document.createElement('a'); a.href='https://'+location.hostname+':'+r.https_port+'/'; a.textContent=a.href; a.style.color='var(--blue)'; hi.append('Panel przez HTTPS: ', a, ' — za pierwszym razem przeglądarka ostrzeże o certyfikacie kiosku (wybierz „Zaawansowane → Przejdź”). Przez HTTPS działa mikrofon w przeglądarce.'); }
+  if(r.https_port){ const a=document.createElement('a'); a.href='https://'+location.hostname+':'+r.https_port+'/'; a.textContent=a.href; a.style.color='var(--blue)'; hi.append('Panel przez HTTPS: ', a, ' — za pierwszym razem przeglądarka ostrzeże o certyfikacie kiosku (wybierz „Zaawansowane → Przejdź”). Przez HTTPS działa mikrofon w przeglądarce.');
+    if(r.https_fp){ const c=document.createElement('code'); c.textContent=r.https_fp; c.style.wordBreak='break-all'; hi.append(document.createElement('br'), 'Odcisk SHA-256 certyfikatu (porównaj w aplikacji Kiosk): ', c); } }
   else hi.textContent='HTTPS niedostępne (brak certyfikatu w /etc/kiosk-setup/tls).';
   loadClips().catch(()=>{});
 }

@@ -901,6 +901,22 @@ w menu bocznym HA: stan każdego kiosku, pełny panel kiosku bez osobnego logowa
 akcje na wszystkich naraz (powiedz, dymek, widok, ekrany, odświeżenie, aktualizacja
 z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 
+## Panel na telefonie i aplikacja na Androida
+
+- Na telefonie panel ma na dole **pasek pilota**: głośność −/+, stop dźwięku, ekran kiosku
+  wł./wył. (działa też dla kont domowników). Pola i przyciski są większe pod palec.
+- **Na ekran główny:** menu przeglądarki → „Dodaj do ekranu głównego” — ikona kiosku,
+  kolor paska. Pełny ekran bez paska adresu przeglądarka daje tylko przy zaufanym HTTPS.
+- **Przyciski głośności telefonu:** Dźwięk → Głośność i głos → „Przyciski głośności tego
+  urządzenia sterują kioskiem”. Chrome na Androidzie zwykle nie przekazuje ich stronom —
+  wtedy użyj aplikacji.
+- **Aplikacja Kiosk** (`releases/kiosk-android-1.0.apk`, Android 5.0+): panel na pełnym ekranie,
+  przyciski głośności telefonu zawsze sterują kioskiem, wyszukiwanie kiosków w sieci, zapamiętany
+  token lub konto domownika, HTTPS kiosku (zaufanie po porównaniu odcisku SHA-256), „wstecz”
+  cofa zakładki, ⚙ na pasku pilota otwiera ustawienia aplikacji. Instalacja: skopiuj plik na
+  telefon i otwórz (zezwól na instalowanie aplikacji z tego źródła).
+- API: `POST /api/audio {"volume_step": 5}` (albo `-5`), MQTT `<prefiks>/volume/step`.
+
 ## Wi-Fi (panel → Połączenia → Wi-Fi i sieć)
 
 - **Stan:** sieć, siła sygnału, adres i oszczędzanie energii każdej karty Wi-Fi.
@@ -919,7 +935,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
   (`sudo kiosk-update github`).
 - **Aktualizuj z gita (najnowszy kod)** — kiosk pobiera kod gałęzi `main` z
   github.com/kecajtop/Kiosk, sam buduje pakiet swojej edycji (pełnej z głosami Piper albo light)
-  i go instaluje; wersja np. `1:1.0.8+git20261017.abc1234`. W terminalu:
+  i go instaluje; wersja np. `1:1.0.9+git20261017.abc1234`. W terminalu:
   `sudo kiosk-update git [gałąź]`. Na czas pobierania zapora dopuszcza serwery GitHuba.
 
 ## Wersja light (kiosk-setup-light)
@@ -949,6 +965,9 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.9** (18.10.2026) — aplikacja Kiosk na Androida (przyciski głośności telefonu sterują
+  kioskiem, wyszukiwanie kiosków, HTTPS z odciskiem certyfikatu); panel na telefonie: pasek
+  pilota, większe pola dotyku, ikona na ekran główny; `volume_step` w API i MQTT.
 - **1.0.8** (18.10.2026) — rozpoznawanie twarzy lokalnie na kiosku (YuNet + SFace, OpenCV):
   osoby ze zdjęć albo z kamery, czujniki i zdarzenie w HA, powitanie głosem, alarm i nagranie
   przy nieznanej osobie; `update-grub` i `update-initramfs` tylko po zmianie logo/linii startowej.

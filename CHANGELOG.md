@@ -1,5 +1,15 @@
 # Zmiany
 
+## 1.0.9 (2026-10-18)
+- **Aplikacja na Androida** (`releases/kiosk-android-1.0.apk`, kod w `kiosk-android/`): panel kiosku na pełnym
+  ekranie, fizyczne przyciski głośności telefonu sterują głośnością kiosku, wyszukiwanie kiosków w sieci,
+  zapamiętany token, HTTPS kiosku z potwierdzeniem odcisku certyfikatu, przycisk „wstecz” cofa zakładki.
+- **Panel na telefonie:** pasek pilota na dole (głośność −/+, stop, ekran wł./wył.), większe pola dotyku,
+  instalacja na ekranie głównym (manifest aplikacji, ikona, kolor paska), przyciski −/+ przy głośności.
+- **Przyciski głośności w przeglądarce:** gdy przeglądarka je przekazuje (klawiatury, część przeglądarek),
+  sterują głośnością kiosku; API `{"volume_step": 5}` w `POST /api/audio` i MQTT `volume/step`.
+- Gotowe pakiety: `releases/kiosk-setup_1.0.9_amd64.deb`, `releases/kiosk-setup-light_1.0.9_amd64.deb`.
+
 ## 1.0.8 (2026-10-18)
 - **Rozpoznawanie twarzy (lokalnie):** Automatyka → Rozpoznawanie twarzy. Kiosk wykrywa twarze na wybranych kamerach
   (YuNet) i rozpoznaje dodane osoby (SFace, OpenCV) — bez chmury. Osoby: zdjęcia albo zapis twarzy prosto z kamery.
