@@ -1,5 +1,11 @@
 # Zmiany
 
+## 1.0.28 (2026-10-25)
+- Nowy wygląd zegara: **nuklearny** (żart) — zielony wyświetlacz jak w panelu reaktora, żółto-czarne pasy
+  ostrzegawcze i znak radioaktywny. Ustawienia → Ekran → Wygląd zegara.
+- Zegar **nixie** dostał delikatne kliknięcie przy zmianie minuty (jak przełączenie prawdziwej lampki).
+- Zegar **bomba** dostał syrenę alarmową, odtwarzaną raz przy wyborze tego wyglądu.
+
 ## 1.0.27 (2026-10-25)
 - Dwa nowe wyglądy zegara: **kukulka** (drewniana szafka z wahadłem i ciężarkami-szyszkami) i **bomba**
   (żartobliwy zegar z czerwonymi cyframi i wiązką dynamitu). Ustawienia → Ekran → Wygląd zegara.

@@ -8,7 +8,8 @@
 Wygląd (/etc/kiosk-setup/clock.json, panel → Ekran): classic, flip (klapki),
 analog (wskazówki), volt (woltomierze), seg7 (wyświetlacz 7-segmentowy),
 matrix (matryca LED z kropek), nixie (szklane lampy Nixie ze świecącymi cyframi),
-kukulka (drewniany zegar z wahadłem i ciężarkami), bomba (żartobliwy zegar-bomba z lontem),
+kukulka (drewniany zegar z wahadłem i ciężarkami), bomba (żartobliwy zegar-bomba z lontem, syrena
+przy wyborze), nuklearny (zielony wyświetlacz reaktora, pasy ostrzegawcze, znak radioaktywny),
 lcd1602 / lcd2004 (wyświetlacz znakowy LCD z dużymi
 cyframi; podświetlenie lcd_color: green, blue, amber) oraz animowane: snake (wąż), platform (platformówka
 z robotem), c64 (ekran 8-bitowego komputera), bsod (niebieski ekran), eyes (oczy z zegarem)
@@ -28,10 +29,13 @@ kamery ani strona.
 import argparse
 import json
 import os
+import random
+import struct
 import subprocess
 import tempfile
 import time
 import math
+import wave
 
 BG, INK, MUTED, LINE, ACCENT = "#0E1216", "#F3F5F7", "#A3AEB9", "#26303A", "#F2A900"
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
@@ -42,7 +46,7 @@ MONTHS = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca",
 SIZES = {"s": 0.050, "m": 0.075, "l": 0.110}
 WEATHER_CACHE = "/run/kiosk-weather.json"  # zapisuje kiosk-api co 10 min
 STYLE_FILE = "/etc/kiosk-setup/clock.json"
-STYLES = ("classic", "flip", "analog", "volt", "seg7", "matrix", "nixie", "kukulka", "bomba",
+STYLES = ("classic", "flip", "analog", "volt", "seg7", "matrix", "nixie", "kukulka", "bomba", "nuklearny",
           "snake", "platform", "c64", "bsod", "lcd1602", "lcd2004",
           "eyes", "eyes_only", "robot", "robot_only", "words_pl", "words_en", "dcf", "ledring", "dcf77",
           "minimal", "voltsq")
@@ -88,6 +92,85 @@ DOTS = {"0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
 
 def _png(cmd):
     subprocess.run(cmd, check=True, timeout=20)
+
+
+# ---------------------------------------------------------------- dźwięki (nixie: klik, bomba: syrena)
+
+SOUND_DIR = "/run/kiosk-clock-sounds"
+
+
+def _write_wave(path, buf, sr, gain=0.6):
+    peak = max(1e-6, max(abs(x) for x in buf))
+    scale = gain * 32767 / peak
+    tmp = path + ".tmp"
+    with wave.open(tmp, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        frames = bytearray()
+        for x in buf:
+            v = int(max(-32767, min(32767, x * scale)))
+            frames += struct.pack("<h", v)
+        w.writeframes(bytes(frames))
+    os.replace(tmp, path)
+
+
+def _synth_click(path):
+    """Krótkie, metaliczne kliknięcie — jak przełączenie prawdziwej lampki Nixie."""
+    sr = 44100
+    n = int(sr * 0.028)
+    rng = random.Random(7)
+    buf = [0.0] * n
+    for i in range(n):
+        t = i / sr
+        env = math.exp(-t * 260)
+        noise = (rng.random() * 2 - 1) * 0.5
+        tone = math.sin(2 * math.pi * 3200 * t) * 0.5
+        buf[i] = env * (noise + tone)
+    _write_wave(path, buf, sr, gain=0.55)
+
+
+def _synth_siren(path):
+    """Syrena alarmowa (wznosząco-opadająca) — żartobliwy akcent zegara-bomby."""
+    sr = 44100
+    dur = 4.6
+    n = int(sr * dur)
+    f_lo, f_hi = 500.0, 1100.0
+    period = 2.3
+    buf = [0.0] * n
+    phase = 0.0
+    for i in range(n):
+        t = i / sr
+        cyc = (t % period) / period
+        tri = cyc * 2 if cyc < 0.5 else 2 - cyc * 2
+        f = f_lo + (f_hi - f_lo) * tri
+        phase += 2 * math.pi * f / sr
+        env = min(1.0, t / 0.15) * min(1.0, (dur - t) / 0.3)
+        buf[i] = math.sin(phase) * env
+    _write_wave(path, buf, sr, gain=0.9)
+
+
+def ensure_click():
+    os.makedirs(SOUND_DIR, exist_ok=True)
+    p = os.path.join(SOUND_DIR, "nixie-click.wav")
+    if not os.path.exists(p):
+        _synth_click(p)
+    return p
+
+
+def ensure_siren():
+    os.makedirs(SOUND_DIR, exist_ok=True)
+    p = os.path.join(SOUND_DIR, "bomba-siren.wav")
+    if not os.path.exists(p):
+        _synth_siren(p)
+    return p
+
+
+def play_async(path):
+    try:
+        subprocess.Popen(["aplay", "-q", "-D", "default", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
 
 
 SEG_ON, SEG_OFF = "#FF5A30", "#170E0D"
@@ -381,6 +464,58 @@ def draw_bomba(t, H, out):
     _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
 
 
+GREEN_GLOW = ["#06240A", "#1E8C2E", "#49E85A", "#C8FFCE"]
+
+
+def draw_nuklearny(t, H, out):
+    """Żartobliwy zegar nuklearny: panel reaktora z zielonym wyświetlaczem i znakiem radioaktywnym."""
+    hhmm = time.strftime("%H:%M", t)
+    pt = H * 0.95
+    pad = H * 0.22
+    digit_w = pt * 0.6
+    n_digits = sum(1 for c in hhmm if c != ":")
+    panel_w = int(pad * 2 + digit_w * n_digits + pt * 0.3)
+    panel_h = int(pt * 1.3)
+    trefoil_d = H * 0.85
+    stripe = H * 0.09
+    W = int(panel_w + stripe * 2)
+    Ht = int(stripe * 2 + panel_h + H * 0.1 + trefoil_d)
+
+    mvg = ["stroke none"]
+    n_s = 14
+    sw = (W + Ht) / n_s
+    mvg += ["fill '#F2C100'", "rectangle 0,0 %.1f,%.1f" % (W, Ht)]
+    for i in range(-2, n_s + 2):
+        x0 = i * sw
+        pts = [(x0, 0), (x0 + sw * 0.5, 0), (x0 + sw * 0.5 - Ht, Ht), (x0 - Ht, Ht)]
+        mvg += ["fill '#17140a'", "polygon " + " ".join("%.1f,%.1f" % p for p in pts)]
+
+    px0, py0 = stripe, stripe
+    px1, py1 = W - stripe, stripe + panel_h
+    mvg += ["fill '#0c1410'", "roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (px0, py0, px1, py1, H * 0.04, H * 0.04)]
+    cy = (py0 + py1) / 2.0
+    for size, col in zip((pt * 0.5, pt * 0.45, pt * 0.4, pt * 0.36), GREEN_GLOW):
+        mvg += ["font '%s'" % FONT_BOLD, "font-size %.1f" % size, "fill '%s'" % col, "gravity center",
+                "text %.1f,%.1f '%s'" % (0, -(Ht - cy) + Ht / 2.0, hhmm)]
+
+    tcx, tcy = W / 2.0, py1 + H * 0.1 + trefoil_d / 2.0
+    tr = trefoil_d / 2.0
+    mvg += ["fill '#F2C100'", "circle %.1f,%.1f %.1f,%.1f" % (tcx, tcy, tcx + tr, tcy)]
+    for k in range(3):
+        a0 = -90 - 30 + k * 120
+        a1 = a0 + 60
+        x0 = tcx + tr * 0.92 * math.cos(math.radians(a0))
+        y0 = tcy + tr * 0.92 * math.sin(math.radians(a0))
+        x1 = tcx + tr * 0.92 * math.cos(math.radians(a1))
+        y1 = tcy + tr * 0.92 * math.sin(math.radians(a1))
+        path = "M %.1f,%.1f L %.1f,%.1f A %.1f,%.1f 0 0,1 %.1f,%.1f Z" % (tcx, tcy, x0, y0, tr * 0.92, tr * 0.92, x1, y1)
+        mvg += ["fill '#15120a'", "path '%s'" % path]
+    mvg += ["fill '#F2C100'", "circle %.1f,%.1f %.1f,%.1f" % (tcx, tcy, tcx + tr * 0.14, tcy)]
+    mvg += ["fill '#15120a'", "circle %.1f,%.1f %.1f,%.1f" % (tcx, tcy, tcx + tr * 0.09, tcy)]
+
+    _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
+
+
 def draw_flip(t, H, out):
     card, card2, ink = "#1E252C", "#252D35", "#F3F5F7"
     cw, ch = int(H * 1.5), int(H * 1.25)
@@ -507,7 +642,7 @@ def draw_volt(t, H, out, needles=True, now=None):
 
 
 DRAW = {"flip": draw_flip, "analog": draw_analog, "volt": draw_volt, "seg7": draw_seg7, "matrix": draw_matrix,
-        "nixie": draw_nixie, "kukulka": draw_kukulka, "bomba": draw_bomba}
+        "nixie": draw_nixie, "kukulka": draw_kukulka, "bomba": draw_bomba, "nuklearny": draw_nuklearny}
 
 
 # ---------------------------------------------------------------- zegary animowane (Tk Canvas)
@@ -2120,6 +2255,8 @@ def main():
             t = time.localtime()
             key = (t.tm_year, t.tm_yday, t.tm_hour, t.tm_min, weather_key())
             if key != state["minute"]:
+                hm = (t.tm_hour, t.tm_min)
+                click = style == "nixie" and state["minute"] is not None and hm != state.get("hm")
                 fd, png = tempfile.mkstemp(suffix=".png", prefix="kiosk-clock-")
                 os.close(fd)
                 try:
@@ -2128,10 +2265,20 @@ def main():
                 finally:
                     os.unlink(png)
                 label.configure(image=img)
-                state["img"], state["minute"] = img, key
+                state["img"], state["minute"], state["hm"] = img, key, hm
                 place(img.width(), img.height())
+                if click:
+                    try:
+                        play_async(ensure_click())
+                    except Exception:
+                        pass
             root.after(1000, tick)
         tick()
+        if style == "bomba":
+            try:
+                play_async(ensure_siren())
+            except Exception:
+                pass
 
     def watch():
         st = a.style or read_style()

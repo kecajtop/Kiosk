@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.27",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.27_amd64.deb",
-  "sha256": "d98fd48aa35db71138181aa93d7a09828382ea02040ffcfd6f6b845e61ae9fc4",
-  "size": 23060208,
+  "version": "1:1.0.28",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.28_amd64.deb",
+  "sha256": "d87e9825eaeee60d8696e5a1eed8675435031b08af6182714130d1a61b68d8ae",
+  "size": 23061220,
   "date": "2026-10-25",
-  "notes": "Nowe zegary: kukulka (wahadlo) i bomba (zart); nowy minutnik (odliczanie z karta na ekranie, dzwiek i dymek po koncu)."
+  "notes": "Nowy zegar nuklearny (zart); dzwiek klik w nixie przy zmianie minuty i syrena przy wyborze zegara bomba."
 }
