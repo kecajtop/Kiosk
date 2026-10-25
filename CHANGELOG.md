@@ -1,5 +1,10 @@
 # Zmiany
 
+## 1.0.29 (2026-10-25)
+- Zegar **nixie**: bardziej realistyczna grafika — miękka, rozmyta poświata katody (bez "schodków"),
+  siateczka anody (sześciokątne oczka jak na prawdziwych lampach), połysk szkła i delikatna winieta
+  wewnątrz tuby.
+
 ## 1.0.28 (2026-10-25)
 - Nowy wygląd zegara: **nuklearny** (żart) — zielony wyświetlacz jak w panelu reaktora, żółto-czarne pasy
   ostrzegawcze i znak radioaktywny. Ustawienia → Ekran → Wygląd zegara.

@@ -1010,6 +1010,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.29** (25.10.2026) — zegar **nixie**: bardziej realistyczna grafika (miękka rozmyta poświata,
+  siateczka anody, połysk szkła, winieta).
 - **1.0.28** (25.10.2026) — nowy wygląd zegara **nuklearny** (żart: zielony wyświetlacz reaktora, pasy
   ostrzegawcze, znak radioaktywny); **nixie** dostał kliknięcie przy zmianie minuty, **bomba** — syrenę
   alarmową przy wyborze tego wyglądu.

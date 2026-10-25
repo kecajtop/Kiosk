@@ -250,54 +250,88 @@ def draw_matrix(t, H, out):
           "-bordercolor", BG, "-border", "%dx%d" % (pad, pad), "PNG24:" + out])
 
 
-NIXIE_GLOW = ["#2A0E00", "#FF6A1A", "#FFB36B", "#FFE3C4"]  # kolejne warstwy poświaty -> jądro
-
-
 def draw_nixie(t, H, out):
-    """Lampy Nixie: szklane tuby ze świecącymi pomarańczowymi cyframi (retro elektronika)."""
+    """Lampy Nixie: szklane tuby ze świecącymi pomarańczowymi cyframi (retro elektronika).
+    Poświata jest rozmywana (-blur) w osobnej warstwie zamiast rysowana jako ułożone w stos
+    teksty o różnych rozmiarach — dzięki temu wygląda jak prawdziwa, miękka poświata katody,
+    bez "schodków"; dodatkowo szklany połysk (ukośny jasny pas) i winieta u góry wnęki."""
     digs = time.strftime("%H%M", t)
     tw = H * 0.50          # szerokość tuby
     th = H * 1.42          # wysokość tuby (szkło)
     gap = H * 0.13
     colon_w = H * 0.22
     base_h = H * 0.12
-    pad = H * 0.10
+    pad = H * 0.16
     W = int(pad * 2 + tw * 4 + gap * 4 + colon_w)
     Ht = int(pad * 2 + th + base_h)
-    mvg = ["stroke none"]
+
+    base_mvg = ["stroke none"]
+    glow_mvg = []     # poświata — rozmywana osobno (-blur)
+    bright_mvg = []   # ostre jądro cyfry na wierzchu
+    mesh_mvg = []     # siateczka anody nad poświatą (jak na prawdziwych lampach)
 
     def tube(x0, digit):
         x1 = x0 + tw
         y0, y1 = pad, pad + th
-        r = tw * 0.22
-        mvg.append("fill '#15181b'")
-        mvg.append("roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f"
-                    % (x0 - tw * 0.04, y1 - H * 0.02, x1 + tw * 0.04, y1 + base_h, r * 0.4, r * 0.4))
+        r = tw * 0.24
+        cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0 + th * 0.02
+
+        base_mvg.extend(["fill '#111417'", "roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f"
+                          % (x0 - tw * 0.04, y1 - H * 0.02, x1 + tw * 0.04, y1 + base_h, r * 0.4, r * 0.4)])
+        base_mvg.extend(["fill '#2b3138'", "rectangle %.1f,%.1f %.1f,%.1f"
+                          % (x0 - tw * 0.03, y1 - H * 0.015, x1 + tw * 0.03, y1 - H * 0.005)])
         for i in range(3):
             px = x0 + tw * (0.2 + i * 0.3)
-            mvg.append("fill '#3a4049'")
-            mvg.append("rectangle %.1f,%.1f %.1f,%.1f" % (px, y1 + base_h * 0.3, px + tw * 0.06, y1 + base_h))
-        mvg.append("fill '#171b1f'")
-        mvg.append("stroke '#434c56'")
-        mvg.append("stroke-width %.1f" % max(1.5, tw * 0.025))
-        mvg.append("roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (x0, y0, x1, y1, r, r))
-        mvg.append("stroke none")
-        ix0, iy0, ix1, iy1 = x0 + tw * 0.08, y0 + th * 0.06, x1 - tw * 0.08, y1 - th * 0.06
-        mvg.append("fill '#1a0d06'")
-        mvg.append("roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (ix0, iy0, ix1, iy1, r * 0.7, r * 0.7))
-        mvg.append("stroke '#4a3426'")
-        mvg.append("stroke-width %.1f" % max(1.0, tw * 0.012))
-        for i in range(5):
-            ly = iy0 + (iy1 - iy0) * (0.12 + i * 0.045)
-            mvg.append("line %.1f,%.1f %.1f,%.1f" % (ix0 + tw * 0.04, ly, ix1 - tw * 0.04, ly))
-        mvg.append("stroke none")
-        cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0 + th * 0.02
-        for size, col in zip((th * 0.50, th * 0.45, th * 0.40, th * 0.37), NIXIE_GLOW):
-            mvg.append("font '%s'" % FONT_BOLD)
-            mvg.append("font-size %.1f" % size)
-            mvg.append("fill '%s'" % col)
-            mvg.append("gravity center")
-            mvg.append("text %.1f,%.1f '%s'" % (cx - W / 2.0, cy - Ht / 2.0, digit))
+            base_mvg.extend(["fill '#3d4349'", "rectangle %.1f,%.1f %.1f,%.1f" % (px, y1 + base_h * 0.3, px + tw * 0.06, y1 + base_h)])
+            base_mvg.extend(["fill '#56606a'", "rectangle %.1f,%.1f %.1f,%.1f" % (px, y1 + base_h * 0.3, px + tw * 0.015, y1 + base_h)])
+
+        base_mvg.extend(["fill '#13171b'", "stroke '#4a545e'", "stroke-width %.1f" % max(1.3, tw * 0.02),
+                          "roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (x0, y0, x1, y1, r, r), "stroke none"])
+        ix0, iy0, ix1, iy1 = x0 + tw * 0.08, y0 + th * 0.05, x1 - tw * 0.08, y1 - th * 0.05
+        base_mvg.extend(["fill '#190d06'", "roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (ix0, iy0, ix1, iy1, r * 0.7, r * 0.7)])
+        for yy, op in ((iy0, 0.55), (iy0 + th * 0.05, 0.3), (iy0 + th * 0.1, 0.12)):
+            base_mvg.extend(["fill-opacity %.2f" % op, "fill '#000000'", "rectangle %.1f,%.1f %.1f,%.1f" % (ix0, iy0, ix1, yy + 6)])
+        base_mvg.append("fill-opacity 1")
+
+        base_mvg.extend(["stroke '#55382a'", "stroke-width %.1f" % max(0.9, tw * 0.01)])
+        for i in range(6):
+            ly = iy0 + (iy1 - iy0) * (0.1 + i * 0.04)
+            base_mvg.append("line %.1f,%.1f %.1f,%.1f" % (ix0 + tw * 0.04, ly, ix1 - tw * 0.04, ly))
+        base_mvg.append("stroke none")
+
+        glow_mvg.extend(["font '%s'" % FONT_BOLD, "font-size %.1f" % (th * 0.50), "fill '#FF8A3D'", "gravity center",
+                     "text %.1f,%.1f '%s'" % (cx - W / 2.0, cy - Ht / 2.0, digit)])
+        bright_mvg.extend(["font '%s'" % FONT_BOLD, "font-size %.1f" % (th * 0.44), "fill '#FFE9CF'", "gravity center",
+                       "text %.1f,%.1f '%s'" % (cx - W / 2.0, cy - Ht / 2.0, digit)])
+
+        # siatka siateczkowa anody (jak na prawdziwych lampach Nixie) — cienkie sześciokątne oczka
+        # rysowane NAD poświatą, ale pod ostrym rdzeniem, żeby przecinały blask jak prawdziwa siatka
+        hexr = tw * 0.065
+        hx_step = hexr * 1.73
+        hy_step = hexr * 1.5
+        mesh = []
+        row = 0
+        yy = iy0 + hexr
+        while yy < iy1 - hexr * 0.3:
+            xoff = (hx_step / 2.0) if (row % 2) else 0.0
+            xx = ix0 + hexr + xoff
+            while xx < ix1 - hexr * 0.3:
+                pts = []
+                for k in range(6):
+                    ang = math.radians(60 * k + 30)
+                    pts.append((xx + hexr * math.cos(ang), yy + hexr * math.sin(ang)))
+                mesh.append("polyline " + " ".join("%.1f,%.1f" % p for p in pts) + " %.1f,%.1f" % pts[0])
+                xx += hx_step
+            yy += hy_step
+            row += 1
+        mesh_mvg.extend(["stroke '#8a8f95'", "stroke-width %.1f" % max(0.6, tw * 0.008), "fill none"])
+        mesh_mvg.extend(mesh)
+        mesh_mvg.append("stroke none")
+
+        hx0, hw = x0 + tw * 0.16, tw * 0.14
+        base_mvg.extend(["fill-opacity 0.10", "fill '#ffffff'", "polygon %.1f,%.1f %.1f,%.1f %.1f,%.1f %.1f,%.1f"
+                          % (hx0, y0 + th * 0.08, hx0 + hw, y0 + th * 0.05, hx0 + hw * 0.6, y1 - th * 0.1, hx0 - hw * 0.3, y1 - th * 0.14)])
+        base_mvg.append("fill-opacity 1")
         return x1
 
     x = pad
@@ -306,20 +340,25 @@ def draw_nixie(t, H, out):
         if i == 1:
             cx = x + colon_w / 2.0
             y0, y1 = pad, pad + th
-            mvg.append("fill '#171b1f'")
-            mvg.append("stroke '#434c56'")
-            mvg.append("stroke-width %.1f" % max(1.5, tw * 0.02))
-            mvg.append("roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f"
-                        % (x, y0, x + colon_w, y1, colon_w * 0.4, colon_w * 0.4))
-            mvg.append("stroke none")
+            base_mvg.extend(["fill '#13171b'", "stroke '#4a545e'", "stroke-width %.1f" % max(1.3, tw * 0.02),
+                              "roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f"
+                              % (x, y0, x + colon_w, y1, colon_w * 0.4, colon_w * 0.4), "stroke none"])
             for frac in (0.38, 0.62):
                 dy = y0 + th * frac
-                for size, col in zip((colon_w * 0.34, colon_w * 0.28, colon_w * 0.22, colon_w * 0.17), NIXIE_GLOW):
-                    mvg.append("fill '%s'" % col)
-                    mvg.append("circle %.1f,%.1f %.1f,%.1f" % (cx, dy, cx + size, dy))
+                glow_mvg.extend(["fill '#FF8A3D'", "circle %.1f,%.1f %.1f,%.1f" % (cx, dy, cx + colon_w * 0.30, dy)])
+                bright_mvg.extend(["fill '#FFE9CF'", "circle %.1f,%.1f %.1f,%.1f" % (cx, dy, cx + colon_w * 0.15, dy)])
             x += colon_w + gap
 
-    _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
+    _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG,
+          "-draw", "\n".join(base_mvg),
+          "(", "-size", "%dx%d" % (W, Ht), "xc:none", "-draw", "\n".join(glow_mvg), "-blur", "0x14", ")",
+          "-compose", "plus", "-composite",
+          "(", "-size", "%dx%d" % (W, Ht), "xc:none", "-draw", "\n".join(glow_mvg), "-blur", "0x5", ")",
+          "-compose", "over", "-composite",
+          "(", "-size", "%dx%d" % (W, Ht), "xc:none", "-draw", "\n".join(mesh_mvg), ")",
+          "-compose", "over", "-composite",
+          "-draw", "\n".join(bright_mvg),
+          "PNG24:" + out])
 
 
 def draw_kukulka(t, H, out):

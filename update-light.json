@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.28",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.28_amd64.deb",
-  "sha256": "0e0851d3521c86e479366ab4b8080855d4dbe49e460d90c9e9fbdee7aaf8b9b9",
-  "size": 439980,
+  "version": "1:1.0.29",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.29_amd64.deb",
+  "sha256": "990067001c3d46c6754f9a2ff3652729e73ef06870cbe336cbdbe71f095cf928",
+  "size": 440682,
   "date": "2026-10-25",
-  "notes": "Nowy zegar nuklearny (zart); dzwiek klik w nixie przy zmianie minuty i syrena przy wyborze zegara bomba."
+  "notes": "Zegar nixie: bardziej realistyczna grafika (siateczka anody, miekka poswiata, polysk szkla, winieta)."
 }
