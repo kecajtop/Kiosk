@@ -6,7 +6,8 @@
   kiosk-clock --preview plik.png [--style flip]  sam obrazek (podgląd w panelu WWW)
 
 Wygląd (/etc/kiosk-setup/clock.json, panel → Ekran): classic, flip (klapki),
-analog (wskazówki), volt (woltomierze), seg7 (wyświetlacz 7-segmentowy),
+flipdot (żółta tablica z obracającymi się krążkami, jak na dworcu; krążki zmieniające stan
+animują się przez chwilę przy zmianie minuty), analog (wskazówki), volt (woltomierze), seg7 (wyświetlacz 7-segmentowy),
 matrix (matryca LED z kropek), nixie (szklane lampy Nixie ze świecącymi cyframi),
 kukulka (drewniany zegar z wahadłem i ciężarkami), bomba (żartobliwy zegar-bomba z lontem, syrena
 przy wyborze), nuklearny (zielony wyświetlacz reaktora, pasy ostrzegawcze, znak radioaktywny),
@@ -46,7 +47,7 @@ MONTHS = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca",
 SIZES = {"s": 0.050, "m": 0.075, "l": 0.110}
 WEATHER_CACHE = "/run/kiosk-weather.json"  # zapisuje kiosk-api co 10 min
 STYLE_FILE = "/etc/kiosk-setup/clock.json"
-STYLES = ("classic", "flip", "analog", "volt", "seg7", "matrix", "nixie", "kukulka", "bomba", "nuklearny",
+STYLES = ("classic", "flip", "flipdot", "analog", "volt", "seg7", "matrix", "nixie", "kukulka", "bomba", "nuklearny",
           "snake", "platform", "c64", "bsod", "lcd1602", "lcd2004",
           "eyes", "eyes_only", "robot", "robot_only", "words_pl", "words_en", "dcf", "ledring", "dcf77",
           "minimal", "voltsq")
@@ -555,6 +556,66 @@ def draw_nuklearny(t, H, out):
     _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
 
 
+FLIPDOT_FONT = {
+    "0": ["01110", "10001", "10011", "10101", "11001", "10001", "01110"],
+    "1": ["00100", "01100", "00100", "00100", "00100", "00100", "01110"],
+    "2": ["01110", "10001", "00001", "00010", "00100", "01000", "11111"],
+    "3": ["11111", "00010", "00100", "00010", "00001", "10001", "01110"],
+    "4": ["00010", "00110", "01010", "10010", "11111", "00010", "00010"],
+    "5": ["11111", "10000", "11110", "00001", "00001", "10001", "01110"],
+    "6": ["00110", "01000", "10000", "11110", "10001", "10001", "01110"],
+    "7": ["11111", "00001", "00010", "00100", "01000", "01000", "01000"],
+    "8": ["01110", "10001", "10001", "01110", "10001", "10001", "01110"],
+    "9": ["01110", "10001", "10001", "01111", "00001", "00010", "01100"],
+    ":": ["0", "1", "0", "0", "1", "0", "0"],
+}
+FLIPDOT_ON = "#F2C100"
+FLIPDOT_OFF = "#2a2a28"
+
+
+def draw_flipdot(t, H, out, prog=1.0, prev_hhmm=None):
+    """Żółty zegar flip-dot (tablica dworcowa z obracającymi się krążkami, czarno/żółtymi).
+    Gdy prog<1 i podano prev_hhmm, krążki które właśnie zmieniają stan są rysowane w trakcie
+    "obrotu" (ściśnięte poziomo, jak krążek widziany z boku w połowie obrotu)."""
+    hhmm = time.strftime("%H:%M", t)
+    chars = list(hhmm)
+    prev_chars = list(prev_hhmm) if prev_hhmm and len(prev_hhmm) == len(hhmm) else chars
+    dot = H * 0.17
+    dot_gap = dot * 0.30
+    char_gap = dot * 0.9
+    rows = 7
+    widths = [len(FLIPDOT_FONT.get(c, FLIPDOT_FONT["0"])[0]) for c in chars]
+    total_w = sum(w * (dot + dot_gap) - dot_gap for w in widths) + char_gap * (len(chars) - 1)
+    pad = dot * 1.1
+    W = int(pad * 2 + total_w)
+    Ht = int(pad * 2 + rows * (dot + dot_gap) - dot_gap)
+
+    mvg = ["stroke none", "fill '#0c0c0b'", "roundrectangle 0,0 %d,%d %.1f,%.1f" % (W, Ht, dot * 0.4, dot * 0.4)]
+
+    x = pad
+    for ci, c in enumerate(chars):
+        pat = FLIPDOT_FONT.get(c, FLIPDOT_FONT["0"])
+        prev_pat = FLIPDOT_FONT.get(prev_chars[ci], pat) if ci < len(prev_chars) else pat
+        cols = len(pat[0])
+        for ri in range(rows):
+            for cj in range(cols):
+                cx = x + cj * (dot + dot_gap) + dot / 2.0
+                cy = pad + ri * (dot + dot_gap) + dot / 2.0
+                new_on = pat[ri][cj] == "1"
+                old_on = (prev_pat[ri][cj] == "1") if ri < len(prev_pat) and cj < len(prev_pat[ri]) else new_on
+                if old_on != new_on and prog < 1.0:
+                    squash = abs(math.cos(math.pi * prog))
+                    rx = max(0.6, dot / 2.0 * squash)
+                    col = FLIPDOT_ON if (old_on if prog < 0.5 else new_on) else FLIPDOT_OFF
+                    mvg += ["fill '%s'" % col, "ellipse %.1f,%.1f %.1f,%.1f 0,360" % (cx, cy, rx, dot / 2.0)]
+                else:
+                    col = FLIPDOT_ON if new_on else FLIPDOT_OFF
+                    mvg += ["fill '%s'" % col, "circle %.1f,%.1f %.1f,%.1f" % (cx, cy, cx + dot / 2.0, cy)]
+        x += cols * (dot + dot_gap) - dot_gap + char_gap
+
+    _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
+
+
 def draw_flip(t, H, out):
     card, card2, ink = "#1E252C", "#252D35", "#F3F5F7"
     cw, ch = int(H * 1.5), int(H * 1.25)
@@ -680,8 +741,8 @@ def draw_volt(t, H, out, needles=True, now=None):
     return W, Hm, gap
 
 
-DRAW = {"flip": draw_flip, "analog": draw_analog, "volt": draw_volt, "seg7": draw_seg7, "matrix": draw_matrix,
-        "nixie": draw_nixie, "kukulka": draw_kukulka, "bomba": draw_bomba, "nuklearny": draw_nuklearny}
+DRAW = {"flip": draw_flip, "flipdot": draw_flipdot, "analog": draw_analog, "volt": draw_volt, "seg7": draw_seg7,
+        "matrix": draw_matrix, "nixie": draw_nixie, "kukulka": draw_kukulka, "bomba": draw_bomba, "nuklearny": draw_nuklearny}
 
 
 # ---------------------------------------------------------------- zegary animowane (Tk Canvas)
@@ -2288,6 +2349,19 @@ def main():
         label = tk.Label(holder, borderwidth=0, highlightthickness=0, bg=BG)
         label.pack()
 
+        def finish(t, key, hm):
+            fd, png = tempfile.mkstemp(suffix=".png", prefix="kiosk-clock-")
+            os.close(fd)
+            try:
+                render(png, t, pt_time, pt_date, box, read_weather(), style)
+                img = tk.PhotoImage(file=png)
+            finally:
+                os.unlink(png)
+            label.configure(image=img)
+            state["img"], state["minute"], state["hm"] = img, key, hm
+            state["hhmm"] = time.strftime("%H:%M", t)
+            place(img.width(), img.height())
+
         def tick():
             if not alive():
                 return
@@ -2296,16 +2370,34 @@ def main():
             if key != state["minute"]:
                 hm = (t.tm_hour, t.tm_min)
                 click = style == "nixie" and state["minute"] is not None and hm != state.get("hm")
-                fd, png = tempfile.mkstemp(suffix=".png", prefix="kiosk-clock-")
-                os.close(fd)
-                try:
-                    render(png, t, pt_time, pt_date, box, read_weather(), style)
-                    img = tk.PhotoImage(file=png)
-                finally:
-                    os.unlink(png)
-                label.configure(image=img)
-                state["img"], state["minute"], state["hm"] = img, key, hm
-                place(img.width(), img.height())
+                flip = style == "flipdot" and state["minute"] is not None and hm != state.get("hm") and state.get("hhmm")
+
+                if flip:
+                    prev_hhmm = state["hhmm"]
+                    steps = 6
+
+                    def step(i):
+                        if not alive():
+                            return
+                        if i > steps:
+                            finish(t, key, hm)
+                            root.after(1000, tick)
+                            return
+                        fd, png = tempfile.mkstemp(suffix=".png", prefix="kiosk-clock-")
+                        os.close(fd)
+                        try:
+                            draw_flipdot(t, int(pt_time * 0.95), png, prog=i / steps, prev_hhmm=prev_hhmm)
+                            img = tk.PhotoImage(file=png)
+                        finally:
+                            os.unlink(png)
+                        label.configure(image=img)
+                        state["img"] = img
+                        place(img.width(), img.height())
+                        root.after(90, lambda: step(i + 1))
+                    step(0)
+                    return
+
+                finish(t, key, hm)
                 if click:
                     try:
                         play_async(ensure_click())

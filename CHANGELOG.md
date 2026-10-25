@@ -1,5 +1,10 @@
 # Zmiany
 
+## 1.0.30 (2026-10-25)
+- Nowy wygląd zegara: **flipdot** — żółta tablica z obracającymi się krążkami (jak dworcowa tablica
+  odjazdów). Krążki, które zmieniają stan przy zmianie minuty, animują przez chwilę "obrót na boku".
+  Ustawienia → Ekran → Wygląd zegara.
+
 ## 1.0.29 (2026-10-25)
 - Zegar **nixie**: bardziej realistyczna grafika — miękka, rozmyta poświata katody (bez "schodków"),
   siateczka anody (sześciokątne oczka jak na prawdziwych lampach), połysk szkła i delikatna winieta

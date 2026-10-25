@@ -1010,6 +1010,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.30** (25.10.2026) — nowy wygląd zegara **flipdot** (żółta tablica z obracającymi się krążkami,
+  jak na dworcu; animacja "obrotu" krążków przy zmianie minuty). Ustawienia → Ekran → Wygląd zegara.
 - **1.0.29** (25.10.2026) — zegar **nixie**: bardziej realistyczna grafika (miękka rozmyta poświata,
   siateczka anody, połysk szkła, winieta).
 - **1.0.28** (25.10.2026) — nowy wygląd zegara **nuklearny** (żart: zielony wyświetlacz reaktora, pasy

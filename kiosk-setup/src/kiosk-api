@@ -2047,7 +2047,8 @@ def set_kiosk_name(body):
 
 CLOCK_BIN = "/usr/local/bin/kiosk-clock"
 CLOCK_STYLE_FILE = ETC + "/clock.json"
-CLOCK_STYLES = (("classic", "Klasyczny"), ("flip", "Klapkowy (flip)"), ("analog", "Analogowy"),
+CLOCK_STYLES = (("classic", "Klasyczny"), ("flip", "Klapkowy (flip)"), ("flipdot", "Flip-dot (krążki, dworcowy)"),
+                ("analog", "Analogowy"),
                 ("volt", "Woltomierze"), ("seg7", "7-segmentowy"), ("matrix", "Matryca LED"),
                 ("nixie", "Lampy Nixie"), ("kukulka", "Zegar z kukułką"), ("bomba", "Zegar-bomba (żart)"),
                 ("nuklearny", "Zegar nuklearny (żart)"),

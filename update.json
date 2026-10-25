@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.29",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.29_amd64.deb",
-  "sha256": "738a82ff6e79543c0f2b97c1f2d7c2460cb18f391b6432cab93532b06bd1ba3c",
-  "size": 23059034,
+  "version": "1:1.0.30",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.30_amd64.deb",
+  "sha256": "7bb51bd00b126fe22a0f199aba41a6ae35253ceaa8c50df31a6199b3bda9c726",
+  "size": 23060592,
   "date": "2026-10-25",
-  "notes": "Zegar nixie: bardziej realistyczna grafika (siateczka anody, miekka poswiata, polysk szkla, winieta)."
+  "notes": "Nowy wyglad zegara: flipdot (zolte krazki, jak tablica dworcowa) z animacja obrotu krazkow przy zmianie minuty."
 }
