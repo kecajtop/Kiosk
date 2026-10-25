@@ -30,6 +30,17 @@ MPV_OPTS="--no-border --no-osc --no-input-default-bindings --cursor-autohide=alw
 # (obraz widoczny w VNC kosztem większego użycia CPU).
 MPV_OPTS="$MPV_OPTS ${KIOSK_MPV_EXTRA:-}"
 CHROME_OPTS="--no-first-run --no-default-browser-check --noerrdialogs --disable-session-crashed-bubble --disable-infobars --check-for-update-interval=31536000"
+# Port debugowania (tylko 127.0.0.1): pozwala panelowi WWW/API podmienić adres w już
+# działającym Chromium przez CDP, bez zabijania i restartu przeglądarki (szybsza zmiana widoku).
+DBGPORT=9222
+[ -n "${KIOSK_SECONDARY:-}" ] && DBGPORT=9223
+CHROME_OPTS="$CHROME_OPTS --remote-debugging-port=$DBGPORT --remote-debugging-address=127.0.0.1"
+# Gniazda IPC mpv (jedno na pole siatki kamer): panel/API mogą wysłać "loadfile" z nowym
+# adresem RTSP bez restartu procesu mpv. Osobny prefiks dla drugiego monitora/alarmu,
+# żeby indeksy pól nie kolidowały ze sobą.
+MPV_SOCK_PREFIX="/tmp/kiosk-mpv-main"
+[ -n "${KIOSK_SECONDARY:-}" ] && MPV_SOCK_PREFIX="/tmp/kiosk-mpv-second"
+[ -n "$ALERT" ] && MPV_SOCK_PREFIX="/tmp/kiosk-mpv-alert"
 
 MAIN_AREA=""; SECOND_AREA=""; SCREEN_OFF=""
 [ -r /tmp/kiosk-areas ] && . /tmp/kiosk-areas
@@ -127,9 +138,12 @@ cam_grid() {
         x=$(( gx + (i % cols) * cw )); y=$(( gy + (i / cols) * ch ))
         geom="--geometry=${cw}x${ch}+${x}+${y}"
         num=$((i + 1))
+        sock="${MPV_SOCK_PREFIX}-${i}.sock"
         (
             while true; do
-                mpv $MPV_OPTS --rtsp-transport=tcp --demuxer-lavf-o-add=fflags=+nobuffer "$geom" "$url"
+                rm -f "$sock"
+                mpv $MPV_OPTS --rtsp-transport=tcp --demuxer-lavf-o-add=fflags=+nobuffer \
+                    --input-ipc-server="$sock" "$geom" "$url"
                 echo "Kamera $num rozłączona, ponawiam za 3 s"
                 sleep 3
             done

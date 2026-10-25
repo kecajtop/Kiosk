@@ -1,5 +1,13 @@
 # Zmiany
 
+## 1.0.37 (2026-10-25)
+- Zmiana widoku jest teraz dużo szybsza, gdy układ ekranu zostaje taki sam (ten sam tryb, podział
+  mix, zegar) i zmienia się tylko adres strony (web/mix) i/lub treść kamer (rtsp/mix, bez zmiany
+  ich liczby): zamiast przeładowywać cały ekran, kiosk podmienia adres w już działającym
+  Chromium (przez lokalny port debugowania, 127.0.0.1) i/lub źródło w już działającym mpv
+  (przez jego gniazdo IPC) — bez zabijania i restartu procesów. Każda inna zmiana (tryb, podział,
+  zegar, liczba kamer) działa jak dotychczas (pełne przeładowanie).
+
 ## 1.0.36 (2026-10-25)
 - Panel → Ekran: przyciski do odsłuchania dźwięków zegara na żądanie — klik lampy Nixie, syrena
   zegara-bomby i kurant Westminster zegara kukułka — bez czekania na pełną minutę/godzinę.

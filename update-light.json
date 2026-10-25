@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.36",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.36_amd64.deb",
-  "sha256": "5409e406e4a1cced8505b5deefa4da016f17b0b7a19fa856d552f338ed4ba30a",
-  "size": 445664,
+  "version": "1:1.0.37",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.37_amd64.deb",
+  "sha256": "d92aa87b82c42eee91130042614a1a3784b4d8857a120d49f02cdaa84b20c173",
+  "size": 447278,
   "date": "2026-10-25",
-  "notes": "Panel: przyciski do odsluchania dzwiekow zegara na zadanie (klik nixie, syrena bomby, kurant Westminster)."
+  "notes": "Zmiana widoku bez przeladowania ekranu, gdy uklad zostaje taki sam (CDP dla Chromium, IPC dla mpv)."
 }

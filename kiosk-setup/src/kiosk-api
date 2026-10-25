@@ -29,6 +29,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ETC = "/etc/kiosk-setup"
@@ -155,6 +156,91 @@ def run_cmd(args, env_extra=None, timeout=120):
     return r.returncode, mask((r.stdout + r.stderr).strip())
 
 
+# ---------------------------------------------------------------- szybka zmiana widoku (bez
+# przeładowania ekranu): podmiana adresu w już działającym Chromium przez CDP i podmiana
+# źródła już działającego mpv (kamera RTSP) przez jego gniazdo IPC — patrz apply_mode().
+
+CDP_PORT = 9222
+MPV_SOCK_PREFIX = "/tmp/kiosk-mpv-main"
+
+
+def _cdp_frame(payload):
+    """Jedna ramka tekstowa WebSocket (RFC 6455) z danymi od klienta — maskowana."""
+    data = payload.encode()
+    mkey = os.urandom(4)
+    masked = bytes(b ^ mkey[i % 4] for i, b in enumerate(data))
+    if len(data) < 126:
+        head = struct.pack("!BB", 0x81, 0x80 | len(data))
+    elif len(data) < 65536:
+        head = struct.pack("!BBH", 0x81, 0x80 | 126, len(data))
+    else:
+        head = struct.pack("!BBQ", 0x81, 0x80 | 127, len(data))
+    return head + mkey + masked
+
+
+def _cdp_send(host, port, path, payload, timeout):
+    """Minimalny klient WebSocket (bez zależności) — handshake + jedna ramka do Chrome
+    DevTools Protocol, tylko żeby wysłać jedną komendę (Page.navigate) i odebrać ack."""
+    key = base64.b64encode(os.urandom(16)).decode()
+    req = ("GET %s HTTP/1.1\r\nHost: %s:%d\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+           "Sec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n") % (path, host, port, key)
+    s = socket.create_connection((host, port), timeout=timeout)
+    try:
+        s.settimeout(timeout)
+        s.sendall(req.encode())
+        resp = b""
+        while b"\r\n\r\n" not in resp:
+            chunk = s.recv(4096)
+            if not chunk:
+                raise RuntimeError("brak odpowiedzi handshake")
+            resp += chunk
+        if b" 101 " not in resp.split(b"\r\n", 1)[0]:
+            raise RuntimeError("handshake nieudany")
+        s.sendall(_cdp_frame(payload))
+        s.recv(4096)
+    finally:
+        s.close()
+
+
+def cdp_navigate(url, port=CDP_PORT, timeout=4):
+    """Przełącz już działające okno Chromium (web/mix) na nowy adres przez Chrome DevTools
+    Protocol (127.0.0.1) — bez zabijania i restartu przeglądarki."""
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:%d/json/list" % port, timeout=timeout) as r:
+            targets = json.loads(r.read().decode())
+        page = next((t for t in targets if t.get("type") == "page" and t.get("webSocketDebuggerUrl")), None)
+        if not page:
+            return False
+        m = re.match(r"ws://([^:/]+):(\d+)(/.*)", page["webSocketDebuggerUrl"])
+        if not m:
+            return False
+        _cdp_send(m.group(1), int(m.group(2)), m.group(3),
+                  json.dumps({"id": 1, "method": "Page.navigate", "params": {"url": url}}), timeout)
+        return True
+    except Exception as e:
+        log("cdp_navigate: %s" % e)
+        return False
+
+
+def mpv_loadfile(index, url, timeout=3):
+    """Zmień źródło już działającego mpv (kamera RTSP) przez jego gniazdo IPC — bez restartu procesu."""
+    sock_path = "%s-%d.sock" % (MPV_SOCK_PREFIX, index)
+    if not os.path.exists(sock_path):
+        return False
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.settimeout(timeout)
+        s.connect(sock_path)
+        s.sendall((json.dumps({"command": ["loadfile", url, "replace"]}) + "\n").encode())
+        s.recv(4096)
+        return True
+    except Exception as e:
+        log("mpv_loadfile[%d]: %s" % (index, e))
+        return False
+    finally:
+        s.close()
+
+
 def apply_mode(body):
     """Zmiana trybu i/lub zawartości. Pola pominięte zostają bez zmian."""
     cur = read_conf()
@@ -197,10 +283,31 @@ def apply_mode(body):
         for c in cams:
             if not RTSP_RE.match(c):
                 raise ValueError("adres kamery musi zaczynać się od rtsp:// i nie zawierać spacji, przecinków ani cudzysłowów: " + mask(c))
+    # Szybka ścieżka: układ ekranu (tryb, podział mix, zegar) zostaje bez zmian, zmienia się
+    # tylko adres (web/mix) i/lub treść kamer (rtsp/mix, bez zmiany ich liczby) — podmieniamy
+    # zawartość już działającego Chromium/mpv (cdp_navigate/mpv_loadfile) zamiast przeładowywać
+    # cały ekran. Każda inna zmiana (tryb, podział, zegar, liczba kamer) idzie starą ścieżką.
+    structural = (mode != cur["mode"]
+                  or ("KM_PCT" in env and int(env["KM_PCT"]) != cur["web_percent"])
+                  or any(k in env for k in ("KM_CLOCK", "KM_CLOCK_POS", "KM_CLOCK_SIZE")))
+    cams_count_changed = mode in ("rtsp", "mix") and len(cams) != len(cur["cameras"])
+    fast_note = ""
+    if not structural and not cams_count_changed and mode in ("web", "rtsp", "mix"):
+        fast_ok = True
+        if mode in ("web", "mix") and url != cur["url"]:
+            fast_ok = cdp_navigate(url)
+        if fast_ok and mode in ("rtsp", "mix"):
+            for i, (old_c, new_c) in enumerate(zip(cur["cameras"], cams)):
+                if new_c != old_c and not mpv_loadfile(i, new_c):
+                    fast_ok = False
+                    break
+        if fast_ok and (url != cur["url"] or cams != cur["cameras"]):
+            env["KIOSK_NO_RESTART"] = "1"
+            fast_note = "\n(zmiana bez przeładowania ekranu)"
     code, out = run_cmd([KIOSK_MODE, "apply"], env)
     if code != 0:
         raise RuntimeError(out)
-    return out
+    return out + fast_note
 
 
 # ---------------------------------------------------------------- widoki

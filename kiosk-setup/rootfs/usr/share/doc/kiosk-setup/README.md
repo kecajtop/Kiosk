@@ -1010,6 +1010,9 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.37** (25.10.2026) — zmiana widoku dużo szybsza, gdy układ ekranu zostaje taki sam: zamiast
+  przeładowywać cały ekran, kiosk podmienia adres w już działającym Chromium (CDP, 127.0.0.1)
+  i/lub źródło kamery w już działającym mpv (gniazdo IPC), bez restartu procesów.
 - **1.0.36** (25.10.2026) — panel → Ekran: przyciski do odsłuchania dźwięków zegara na żądanie (klik
   Nixie, syrena bomby, kurant Westminster), bez czekania na pełną minutę/godzinę.
 - **1.0.35** (25.10.2026) — zegar słowny (words_pl/words_en): nowo zapalane litery przy zmianie minuty
