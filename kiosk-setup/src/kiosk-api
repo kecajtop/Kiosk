@@ -7420,7 +7420,7 @@ let volTouched=false;
 async function loadStatus(){
   try{
     const s=await api('api/status');
-    $('host').replaceChildren('Kiosk '+(s.name||s.hostname), Object.assign(document.createElement('small'),{textContent:s.hostname+' · '+s.time})); if(s.name){ document.querySelectorAll('.kname').forEach(e=>{ e.textContent=s.name; }); document.title='Kiosk '+s.name+' — panel'; }
+    $('host').replaceChildren('Kiosk '+(s.name||s.hostname), Object.assign(document.createElement('small'),{textContent:s.hostname+' · '+s.time+(s.version?' · v'+s.version+(s.edition==='light'?' (light)':''):'')})); if(s.name){ document.querySelectorAll('.kname').forEach(e=>{ e.textContent=s.name; }); document.title='Kiosk '+s.name+' — panel'; }
     if(s.device_id && DID!==s.device_id){ DID=s.device_id; fillHelp($('mprefix').value||'kecaj/kiosk', $('mhost').value||'192.168.0.1'); } if(host!==s.hostname.replace(/[^A-Za-z0-9_]/g,'_')){ host=s.hostname.replace(/[^A-Za-z0-9_]/g,'_'); loadMqtt().catch(()=>{}); }
     const a=s.audio||{};
     rdNow(a); npUpdate(s.now_playing, a); if(RADIO && a.state==='stopped' && RADIO.playing){ RADIO.playing=null; rdTiles(); }

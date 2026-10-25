@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.24",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.24_amd64.deb",
-  "sha256": "7f48e28478ce5e0b6f89c306a53cc2bf309fd8f9fdcae7b7d65694aeeff6348e",
-  "size": 23053528,
+  "version": "1:1.0.25",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.25_amd64.deb",
+  "sha256": "71ddb70ba4b23a2892a4f33688dfa6bd492857abc8fedfecd55d524d5eab4fb9",
+  "size": 23053460,
   "date": "2026-10-25",
-  "notes": "Naprawa: zapis kalendarza na telefonie mogl wyczyscic link iCal (checkbox); czestsze sprawdzanie kalendarzy (90 s zamiast 5 min)."
+  "notes": "Wersja oprogramowania widoczna w naglowku panelu WWW (przy nazwie kiosku i godzinie)."
 }

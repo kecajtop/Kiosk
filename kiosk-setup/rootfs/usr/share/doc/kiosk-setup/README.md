@@ -1010,6 +1010,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.25** (25.10.2026) — panel WWW pokazuje wersję zainstalowanego oprogramowania w nagłówku, obok nazwy
+  kiosku i godziny — widoczne dla każdego, bez wchodzenia w Ustawienia → System.
 - **1.0.24** (25.10.2026) — naprawa: zapis ustawień kalendarza na telefonie (np. przełączenie „Kalendarz
   włączony”) mógł wyczyścić wpisany link iCal, jeśli panel w międzyczasie odświeżył pola z serwera; teraz
   panel nie nadpisuje pól kalendarza do czasu zapisu. Sprawdzanie kalendarzy działa częściej — co 90 s

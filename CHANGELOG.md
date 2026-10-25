@@ -1,5 +1,9 @@
 # Zmiany
 
+## 1.0.25 (2026-10-25)
+- Panel WWW pokazuje teraz wersję zainstalowanego oprogramowania w nagłówku (przy nazwie kiosku i godzinie),
+  widoczną dla każdego, bez wchodzenia w Ustawienia → System.
+
 ## 1.0.24 (2026-10-25)
 - Naprawa: na telefonie zapis ustawień kalendarza (np. przełączenie „Kalendarz włączony”) mógł wyczyścić
   wpisany link iCal, jeśli w międzyczasie panel odświeżył pola z serwera. Teraz panel nie nadpisuje pól
