@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.20",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.20_amd64.deb",
-  "sha256": "f2c4e319e071daa5414f58f8f98af79691b0577eef7b39dd3646e2504c54490c",
-  "size": 430636,
-  "date": "2026-10-18",
-  "notes": "Naprawa: automatyczna naprawa przerwanego dpkg przed ponowną instalacją aktualizacji."
+  "version": "1:1.0.21",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.21_amd64.deb",
+  "sha256": "c0c755ef4e7b3af08721a85e73755717d487f8cc5d8efe96db31ed98e60d1905",
+  "size": 433120,
+  "date": "2026-10-25",
+  "notes": "Kalendarz bez Home Assistant: bezposrednie linki iCal (.ics), np. z Google Calendar, do 5 linkow; obsluga wydarzen cyklicznych (RRULE) i wyjatkow (EXDATE)."
 }

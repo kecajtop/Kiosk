@@ -1,5 +1,13 @@
 # Zmiany
 
+## 1.0.21 (2026-10-25)
+- **Kalendarz bez Home Assistant:** Ustawienia → Kalendarz — nowe pole na tajne linki iCal (.ics), np. z Google
+  Calendar (Ustawienia kalendarza → Scalanie kalendarza → Tajny adres w formacie iCal). Kiosk pobiera je
+  bezpośrednio, bez żadnej integracji w Home Assistant i bez konta dewelopera Google. Do 5 linków naraz, można
+  łączyć z encjami `calendar.*` z HA. Obsługiwane są też wydarzenia cykliczne (RRULE: codziennie/co tydzień/co
+  miesiąc/co rok) i wyjątki (EXDATE). Plik z linkami zapisywany teraz z uprawnieniami 600 (tylko root), bo
+  zawiera tajne adresy.
+
 ## 1.0.20 (2026-10-18)
 - Naprawa: gdy dpkg zostało przerwane wcześniej (np. restart w trakcie instalacji), każda kolejna aktualizacja
   kończyła się błędem „dpkg został przerwany, należy wykonać ręcznie dpkg --configure -a”, mimo ponawiania

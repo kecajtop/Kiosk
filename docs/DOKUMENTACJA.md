@@ -153,6 +153,9 @@ To, co kiosk pokazuje, ustawiasz w panelu (zakładki Ekran i Widoki), z HA albo 
 - **Widoki:** zapisane zestawy (tryb + adres + kamery + zegar) przełączane jednym kliknięciem, z HA (lista „Widok”) i MQTT `view/set`.
 - **Zegar:** w rogu (4 rogi, 3 rozmiary) albo jako kafelek w siatce kamer: `sudo kiosk-mode clock corner tr m`.
 - **Pogoda:** przy zegarze i na głos; źródło Home Assistant (adres + token długoterminowy + encja `weather.*`) albo Open-Meteo. Ten sam adres i token HA wykorzystują obecność, kalendarz, pasek i powiadomienia.
+- **Kalendarz:** dwa niezależne, łączone źródła — encje `calendar.*` z Home Assistant, oraz (od 1.0.21) bezpośrednie
+  tajne linki iCal (.ics), np. z Google Calendar, bez żadnej integracji w HA. Do 5 linków, obsługa wydarzeń
+  cyklicznych (RRULE) i wyjątków (EXDATE). Plik `/etc/kiosk-setup/calendar.json` ma uprawnienia 600.
 - **Pasek informacyjny** (Automatyka): przewijany tekst na dole — własne teksty, stany encji HA, pogoda, plan dnia; chwilowy komunikat z HA (encja „Komunikat na pasku”, MQTT `ticker/set`).
 - **Kalendarz** (Automatyka): encje `calendar.*` z HA — karta „Plan dnia” w rogu i wpisy na pasku, co 5 min.
 - **Dymek:** komunikat na środku ekranu (tytuł, tekst, kolor: info/ok/warning/alert, czas), opcjonalnie czytany na głos; HA: notify „Dymek”, MQTT `bubble/set`.
@@ -587,10 +590,11 @@ Kopia zapasowa z panelu (System → Kopia) obejmuje cały ten katalog.
 
 ## Historia wersji kiosk-setup
 
-Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, 1.0.5 — wersję light, 1.0.6 — Wi-Fi w panelu i aktualizację z gita, 1.0.7 — przełączanie edycji pełna/light z panelu, 1.0.8 — lokalne rozpoznawanie twarzy, 1.0.9 — aplikację na Androida, 1.0.10 — aplikację startującą od radia, 1.0.11 — nowy układ panelu z Pilotem, 1.0.12 — ekran kiosku na żywo w panelu, 1.0.13 — szybszy podgląd ekranu (strumień wideo), 1.0.14 — aktualizacje kiosku w Home Assistant, 1.0.15 — parowanie z dodatkiem Kioski bez tokenu, 1.0.16 — odtwarzacz w telefonie i Pilot jak odtwarzacz, 1.0.17 — MAC i Wake-on-LAN (włączanie kiosków z dodatku Kioski), 1.0.18 — automatyczną jasność wg słońca i porządek w panelu na telefonie (opisy sekcji i drugorzędne przyciski schowane, mniejsze przyciski i ikonki), 1.0.19 — naprawę pustej wersji po aktualizacji, a 1.0.20 — automatyczną naprawę przerwanego dpkg przy aktualizacji.
+Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, 1.0.5 — wersję light, 1.0.6 — Wi-Fi w panelu i aktualizację z gita, 1.0.7 — przełączanie edycji pełna/light z panelu, 1.0.8 — lokalne rozpoznawanie twarzy, 1.0.9 — aplikację na Androida, 1.0.10 — aplikację startującą od radia, 1.0.11 — nowy układ panelu z Pilotem, 1.0.12 — ekran kiosku na żywo w panelu, 1.0.13 — szybszy podgląd ekranu (strumień wideo), 1.0.14 — aktualizacje kiosku w Home Assistant, 1.0.15 — parowanie z dodatkiem Kioski bez tokenu, 1.0.16 — odtwarzacz w telefonie i Pilot jak odtwarzacz, 1.0.17 — MAC i Wake-on-LAN (włączanie kiosków z dodatku Kioski), 1.0.18 — automatyczną jasność wg słońca i porządek w panelu na telefonie (opisy sekcji i drugorzędne przyciski schowane, mniejsze przyciski i ikonki), 1.0.19 — naprawę pustej wersji po aktualizacji, 1.0.20 — automatyczną naprawę przerwanego dpkg przy aktualizacji, a 1.0.21 — bezpośrednie linki iCal w kalendarzu (bez Home Assistant).
 
 | Wersja | Data | Zawartość |
 | --- | --- | --- |
+| 1.0.21 | 25.10.2026 | Kalendarz: bezpośrednie linki iCal (.ics), np. z Google Calendar, bez integracji w Home Assistant; obsługa wydarzeń cyklicznych (RRULE) i wyjątków (EXDATE); do 5 linków, można łączyć z encjami calendar.* z HA |
 | 1.0.20 | 18.10.2026 | Naprawa: automatyczna naprawa przerwanego dpkg (dpkg --configure -a) przed ponowną próbą instalacji aktualizacji |
 | 1.0.19 | 18.10.2026 | Naprawa: po aktualizacji panel/ping/dodatek Kioski pokazywały pustą wersję aż do kolejnego restartu kiosk-api |
 | 1.0.18 | 18.10.2026 | Automatyczna jasność ekranu wg położenia słońca (sun.sun w HA albo szerokość/długość); porządek w panelu na telefonie: opisy sekcji pod „ⓘ Co to jest”, drugorzędne przyciski Pilota pod „Więcej”, mniejsze przyciski, „Na żywo”/„Odśwież” na Kamerach jako ikonki; dodatek Kioski 1.3.1 — ten sam porządek i naprawiony układ na wąskich ekranach |

@@ -506,8 +506,15 @@ połączeniu HTTPS (wymóg przeglądarek); przez HTTP służy wybór pliku/dykta
   MQTT `photos/set` ON/OFF. Zdjęcia: `/var/lib/kiosk-photos`.
 
 ### Kalendarz
-Encje kalendarzy HA (`calendar.rodzina`…): karta „Plan dnia” w rogu ekranu
-i wpisy na pasku informacyjnym; odświeżane co 5 min. Adres i token HA jak dla pogody.
+Dwa niezależne źródła wydarzeń, można je łączyć:
+- Encje kalendarzy HA (`calendar.rodzina`…) — adres i token HA jak dla pogody.
+- Bezpośrednie linki iCal (.ics), np. tajny adres z Google Calendar (Ustawienia kalendarza →
+  Scalanie kalendarza → „Tajny adres w formacie iCal”) — bez żadnej integracji w Home Assistant,
+  do 5 linków. Obsługiwane są wydarzenia cykliczne (RRULE: dziennie/tygodniowo/miesięcznie/rocznie)
+  i wyjątki (EXDATE). Plik z linkami (`/etc/kiosk-setup/calendar.json`) ma uprawnienia 600, bo
+  zawiera tajne adresy — nie udostępniaj ich nikomu.
+
+Wydarzenia: karta „Plan dnia” w rogu ekranu i/lub wpisy na pasku informacyjnym; odświeżane co 5 min.
 
 ### Ruch na kamerach, nagrania, Frigate/go2rtc
 - Wykrywanie ruchu porównuje kolejne klatki kluczowe (co 1–4 s, mało CPU).
@@ -998,6 +1005,10 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.21** (25.10.2026) — kalendarz bez Home Assistant: w Ustawienia → Kalendarz można teraz wkleić tajne
+  linki iCal (.ics), np. z Google Calendar, i kiosk pobierze je bezpośrednio — bez integracji w HA, bez konta
+  dewelopera. Obsługa wydarzeń cyklicznych (RRULE) i wyjątków (EXDATE). Do 5 linków, można łączyć z encjami
+  `calendar.*` z HA.
 - **1.0.20** (18.10.2026) — naprawa: przerwane wcześniej dpkg (np. restart w trakcie instalacji) blokowało
   każdą kolejną aktualizację — `kiosk-update` wykrywa to i sam kończy przerwaną konfigurację przed ponowną próbą.
 - **1.0.19** (18.10.2026) — naprawa: po aktualizacji panel/ping/dodatek Kioski pokazywały pustą wersję aż do

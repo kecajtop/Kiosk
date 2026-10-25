@@ -10,6 +10,7 @@ oraz zakładka „Jak używać” w panelu.
 """
 import base64
 import collections
+import datetime
 import hmac
 import html
 import json
@@ -1067,6 +1068,19 @@ def http_json(url, headers=None, timeout=15):
     req = urllib.request.Request(url, headers=dict(headers or {}, **{"User-Agent": "kecaj-kiosk"}))
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
+
+
+def http_text(url, timeout=15):
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "kecaj-kiosk"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        raw = r.read()
+    for enc in ("utf-8", "cp1250", "latin-1"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", "replace")
 
 
 def fetch_weather(cfg):
@@ -3347,7 +3361,7 @@ class Automation:
 
     def _agenda(self):
         cfg = read_calendar()
-        if not cfg["enabled"] or not cfg["entities"]:
+        if not cfg["enabled"] or not (cfg["entities"] or cfg["ics_urls"]):
             self.agenda = []
             if os.path.exists(AGENDA_JSON):
                 os.unlink(AGENDA_JSON)
@@ -3752,6 +3766,7 @@ OVERLAY_CONF = ETC + "/overlay.conf"
 AGENDA_JSON = "/run/kiosk-agenda.json"
 BRIGHT_RUN = "/run/kiosk-brightness"
 CAL_RE = re.compile(r"^calendar\.[a-z0-9_]{1,80}$")
+ICS_URL_RE = re.compile(r"^https://\S{10,2000}$")
 NOTIFY_RE = re.compile(r"^notify\.[a-z0-9_]{1,80}$")
 NAME_RE = re.compile(r"^[a-z0-9_.-]{2,32}$")
 IMG_EXT = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")
@@ -3990,6 +4005,7 @@ def safe_name(name, exts):
 def read_calendar():
     c = read_json(CALENDAR_FILE, {})
     return {"enabled": bool(c.get("enabled", False)), "entities": [e for e in c.get("entities", []) if CAL_RE.match(str(e))],
+            "ics_urls": [u for u in c.get("ics_urls", []) if ICS_URL_RE.match(str(u))][:5],
             "days": int(c.get("days", 3)) if str(c.get("days", 3)).isdigit() else 3,
             "overlay": c.get("overlay") if c.get("overlay") in ("off", "tl", "tr", "bl", "br") else "bl",
             "ticker": bool(c.get("ticker", True))}
@@ -4001,27 +4017,241 @@ def write_overlay():
     tmp = OVERLAY_CONF + ".tmp"
     with open(tmp, "w") as f:
         f.write("# Nakładki ekranu kiosku — zmieniaj w panelu WWW\n")
-        f.write("KIOSK_AGENDA=%s\n" % (c["overlay"] if c["enabled"] and c["entities"] else "off"))
+        f.write("KIOSK_AGENDA=%s\n" % (c["overlay"] if c["enabled"] and (c["entities"] or c["ics_urls"]) else "off"))
         f.write("KIOSK_STATUS_ICONS=%s\nKIOSK_STATUS_PROBLEMS=%s\n" % (ic["corner"], "yes" if ic["problems"] else "no"))
         f.write("KIOSK_NOWPLAYING=%s\n" % ic["nowplaying"])
     os.chmod(tmp, 0o644)
     os.replace(tmp, OVERLAY_CONF)
 
 
+# --- parser iCal (.ics) — minimalny, bez zależności zewnętrznych -----------
+
+_ICS_WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+
+
+def _ics_unfold(text):
+    """RFC5545: linia zaczynająca się spacją/tabem to kontynuacja poprzedniej."""
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    out = []
+    for ln in lines:
+        if ln[:1] in (" ", "\t") and out:
+            out[-1] += ln[1:]
+        else:
+            out.append(ln)
+    return out
+
+
+def _ics_parse_line(line):
+    if ":" not in line:
+        return None, {}, None
+    head, value = line.split(":", 1)
+    parts = head.split(";")
+    name = parts[0].upper()
+    params = {}
+    for p in parts[1:]:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            params[k.upper()] = v
+    return name, params, value
+
+
+def _ics_parse_dt(value, params):
+    """Zwraca (napis daty/czasu lokalnego, czy_caly_dzien)."""
+    value = (value or "").strip()
+    if not value:
+        return None, False
+    if params.get("VALUE") == "DATE" or (len(value) == 8 and value.isdigit()):
+        try:
+            d = datetime.datetime.strptime(value, "%Y%m%d").date()
+        except ValueError:
+            return None, True
+        return d.isoformat(), True
+    try:
+        if value.endswith("Z"):
+            dt = datetime.datetime.strptime(value, "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
+            dt = dt.astimezone()
+        else:
+            dt = datetime.datetime.strptime(value.rstrip("Z"), "%Y%m%dT%H%M%S")
+            tzid = params.get("TZID")
+            if tzid:
+                try:
+                    import zoneinfo
+                    dt = dt.replace(tzinfo=zoneinfo.ZoneInfo(tzid)).astimezone()
+                except Exception:
+                    pass  # brak bazy stref — zostaw jako czas lokalny
+    except ValueError:
+        return None, False
+    return dt.strftime("%Y-%m-%dT%H:%M:%S"), False
+
+
+def _ics_events(text):
+    events = []
+    cur = None
+    for ln in _ics_unfold(text):
+        s = ln.strip()
+        if s == "BEGIN:VEVENT":
+            cur = {}
+        elif s == "END:VEVENT":
+            if cur is not None:
+                events.append(cur)
+            cur = None
+        elif cur is not None and ":" in s:
+            name, params, value = _ics_parse_line(s)
+            if name in ("DTSTART", "DTEND"):
+                cur[name] = (value, params)
+            elif name == "SUMMARY":
+                cur["SUMMARY"] = value.replace("\\,", ",").replace("\\;", ";").replace("\\n", " ").replace("\\N", " ")
+            elif name == "RRULE":
+                cur["RRULE"] = value
+            elif name == "EXDATE":
+                cur.setdefault("EXDATE", []).append((value, params))
+    return events
+
+
+def _rrule_parse(s):
+    d = {}
+    for part in s.split(";"):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            d[k.upper()] = v
+    return d
+
+
+def _expand_rrule(dtstart, rrule_str, exdates, range_start, range_end):
+    """Uproszczony rozwijacz RRULE: DAILY/WEEKLY/MONTHLY/YEARLY + INTERVAL/COUNT/UNTIL.
+    BYDAY jest pomijane (dla pojedynczego dnia w tygodniu i tak wynik jest ten sam,
+    bo krok co INTERVAL tygodni zachowuje dzień tygodnia z DTSTART)."""
+    rule = _rrule_parse(rrule_str)
+    freq = rule.get("FREQ", "")
+    if freq not in ("DAILY", "WEEKLY", "MONTHLY", "YEARLY"):
+        return [dtstart] if range_start <= dtstart <= range_end else []
+    try:
+        interval = max(1, int(rule.get("INTERVAL", "1")))
+    except ValueError:
+        interval = 1
+    count = int(rule["COUNT"]) if rule.get("COUNT", "").isdigit() else None
+    until = None
+    uv = rule.get("UNTIL")
+    if uv:
+        try:
+            if uv.endswith("Z"):
+                until = datetime.datetime.strptime(uv, "%Y%m%dT%H%M%SZ").replace(tzinfo=datetime.timezone.utc)
+                until = until.astimezone().replace(tzinfo=None)
+            elif "T" in uv:
+                until = datetime.datetime.strptime(uv, "%Y%m%dT%H%M%S")
+            else:
+                until = datetime.datetime.strptime(uv, "%Y%m%d")
+        except ValueError:
+            until = None
+
+    out = []
+    cur = dtstart
+    n = 0
+    while n < 4000 and cur <= range_end:
+        n += 1
+        if until and cur > until:
+            break
+        if count is not None and n > count:
+            break
+        if cur >= range_start and cur.strftime("%Y%m%d") not in exdates:
+            out.append(cur)
+        if freq == "DAILY":
+            cur = cur + datetime.timedelta(days=interval)
+        elif freq == "WEEKLY":
+            cur = cur + datetime.timedelta(weeks=interval)
+        elif freq == "MONTHLY":
+            m0 = cur.month - 1 + interval
+            y = cur.year + m0 // 12
+            m = m0 % 12 + 1
+            day = cur.day
+            moved = False
+            while day >= 1:
+                try:
+                    cur = cur.replace(year=y, month=m, day=day)
+                    moved = True
+                    break
+                except ValueError:
+                    day -= 1
+            if not moved:
+                break
+        elif freq == "YEARLY":
+            y = cur.year + interval
+            try:
+                cur = cur.replace(year=y)
+            except ValueError:
+                cur = cur.replace(year=y, day=28)
+        else:
+            break
+    return out
+
+
+def fetch_ics_calendar(url, start_dt, end_dt):
+    """Pobiera i parsuje jeden link .ics, zwraca wydarzenia w formacie jak fetch_agenda."""
+    text = http_text(url, timeout=12)
+    out = []
+    for ev in _ics_events(text):
+        if "DTSTART" not in ev:
+            continue
+        s_raw, s_params = ev["DTSTART"]
+        start_s, all_day = _ics_parse_dt(s_raw, s_params)
+        if start_s is None:
+            continue
+        summary = ev.get("SUMMARY", "")
+        exdates = set()
+        for xv, xp in ev.get("EXDATE", []):
+            xs, _ = _ics_parse_dt(xv, xp)
+            if xs:
+                exdates.add(xs[:10].replace("-", ""))
+        if "RRULE" in ev:
+            fmt = "%Y-%m-%d" if all_day else "%Y-%m-%dT%H:%M:%S"
+            try:
+                dtstart_dt = datetime.datetime.strptime(start_s, fmt)
+            except ValueError:
+                continue
+            dur = datetime.timedelta(hours=1)
+            if "DTEND" in ev:
+                e_raw, e_params = ev["DTEND"]
+                end_s0, _ = _ics_parse_dt(e_raw, e_params)
+                if end_s0:
+                    try:
+                        dur = datetime.datetime.strptime(end_s0, fmt) - dtstart_dt
+                    except ValueError:
+                        pass
+            for occ in _expand_rrule(dtstart_dt, ev["RRULE"], exdates, start_dt, end_dt):
+                out.append({"summary": summary[:80], "start": occ.strftime(fmt),
+                            "all_day": all_day, "end": (occ + dur).strftime(fmt)})
+        else:
+            end_s = ""
+            if "DTEND" in ev:
+                e_raw, e_params = ev["DTEND"]
+                end_s, _ = _ics_parse_dt(e_raw, e_params)
+            out.append({"summary": summary[:80], "start": start_s, "all_day": all_day, "end": end_s or ""})
+    return out
+
+
 def fetch_agenda(cfg):
     import urllib.parse
-    url, tok = ha_conn()
     now = time.time()
     start = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now - 3600))
     end = time.strftime("%Y-%m-%dT23:59:59", time.localtime(now + 86400 * max(cfg["days"] - 1, 0)))
     events = []
-    for ent in cfg["entities"]:
-        q = urllib.parse.urlencode({"start": start, "end": end})
-        for e in http_json("%s/api/calendars/%s?%s" % (url, ent, q), {"Authorization": "Bearer " + tok}, timeout=10):
-            st, en = e.get("start", {}), e.get("end", {})
-            s = st.get("dateTime") or st.get("date") or ""
-            events.append({"summary": str(e.get("summary", ""))[:80], "start": s, "all_day": "dateTime" not in st,
-                           "end": en.get("dateTime") or en.get("date") or ""})
+    if cfg["entities"]:
+        url, tok = ha_conn()
+        for ent in cfg["entities"]:
+            q = urllib.parse.urlencode({"start": start, "end": end})
+            for e in http_json("%s/api/calendars/%s?%s" % (url, ent, q), {"Authorization": "Bearer " + tok}, timeout=10):
+                st, en = e.get("start", {}), e.get("end", {})
+                s = st.get("dateTime") or st.get("date") or ""
+                events.append({"summary": str(e.get("summary", ""))[:80], "start": s, "all_day": "dateTime" not in st,
+                               "end": en.get("dateTime") or en.get("date") or ""})
+    if cfg.get("ics_urls"):
+        start_dt = datetime.datetime.strptime(start, "%Y-%m-%dT%H:%M:%S")
+        end_dt = datetime.datetime.strptime(end, "%Y-%m-%dT%H:%M:%S")
+        for u in cfg["ics_urls"]:
+            try:
+                events.extend(fetch_ics_calendar(u, start_dt, end_dt))
+            except Exception as e:
+                log("kalendarz iCal: %s" % mask(str(e)))
     events.sort(key=lambda e: e["start"])
     today = time.strftime("%Y-%m-%d")
     tomorrow = time.strftime("%Y-%m-%d", time.localtime(now + 86400))
@@ -5652,18 +5882,25 @@ class Handler(BaseHTTPRequestHandler):
             bad = [e for e in ents if not CAL_RE.match(e)]
             if bad:
                 raise ValueError("encje kalendarza: calendar.nazwa (błędne: %s)" % ", ".join(bad))
-            cfg = {"enabled": bool(body.get("enabled")), "entities": ents[:10],
+            urls = body.get("ics_urls", [])
+            if isinstance(urls, str):
+                urls = [u.strip() for u in re.split(r"[\r\n]+", urls) if u.strip()]
+            bad_u = [u for u in urls if not ICS_URL_RE.match(u)]
+            if bad_u:
+                raise ValueError("link iCal musi zaczynać się od https:// i być poprawnym adresem (błędny wpis: %d znaków)"
+                                  % len(bad_u[0]))
+            cfg = {"enabled": bool(body.get("enabled")), "entities": ents[:10], "ics_urls": urls[:5],
                    "days": to_int(body.get("days", 3), 1, 14, "days"),
                    "overlay": body.get("overlay") if body.get("overlay") in ("off", "tl", "tr", "bl", "br") else "bl",
                    "ticker": bool(body.get("ticker", True))}
-            if cfg["enabled"] and ents:
-                fetch_agenda(cfg)   # od razu sprawdź HA
-            write_json(CALENDAR_FILE, cfg, 0o644)
+            if cfg["enabled"] and (ents or urls):
+                fetch_agenda(cfg)   # od razu sprawdź HA / linki iCal
+            write_json(CALENDAR_FILE, cfg, 0o600)
             write_overlay()
             AUTO.last_agenda = 0
             AUTO.wake.set()
             run_cmd([KIOSK_MODE, "reload"])
-            return "Kalendarz: " + ("%d kalendarzy" % len(ents) if cfg["enabled"] else "wyłączony")
+            return "Kalendarz: " + ("%d źródeł" % (len(ents) + len(urls)) if cfg["enabled"] else "wyłączony")
         if path == "/api/motion":
             cams = [int(c) for c in body.get("cameras", []) if str(c).isdigit()]
             n = len(read_conf()["cameras"])
@@ -6798,9 +7035,11 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <div id="phlist" class="row" style="gap:8px;margin-top:10px"></div>
 </section>
 <section class="card pane" role="tabpanel" id="kalendarz" aria-labelledby="h-kalendarz" hidden><h2 id="h-kalendarz">Kalendarz</h2>
-<p class="lead">Najbliższe wydarzenia z kalendarzy Home Assistant (adres i token HA jak dla pogody): karta w rogu ekranu i/lub na pasku informacyjnym.</p>
+<p class="lead">Najbliższe wydarzenia: z kalendarzy Home Assistant (adres i token HA jak dla pogody) i/lub bezpośrednio z tajnych linków iCal (np. Google Calendar — bez Home Assistant). Karta w rogu ekranu i/lub na pasku informacyjnym.</p>
 <form id="clf"><label class="check"><input type="checkbox" id="clen"> Kalendarz włączony</label>
-<div class="field"><label for="clents">Encje kalendarzy (po przecinku)</label><input type="text" class="mono" id="clents" placeholder="calendar.rodzina, calendar.smieci"></div>
+<div class="field"><label for="clents">Encje kalendarzy Home Assistant (po przecinku)</label><input type="text" class="mono" id="clents" placeholder="calendar.rodzina, calendar.smieci"></div>
+<div class="field"><label for="clics">Linki iCal (.ics) — jeden na linię, maks. 5</label><textarea class="mono" id="clics" rows="3" spellcheck="false" placeholder="https://calendar.google.com/calendar/ical/.../private-.../basic.ics"></textarea>
+<div class="hint">Tajny adres w formacie iCal: Google Calendar → Ustawienia kalendarza → Scalanie kalendarza. Nie udostępniaj go nikomu — każdy z tym linkiem widzi Twoje wydarzenia.</div></div>
 <div class="grid2"><div class="field"><label for="cldays">Ile dni do przodu</label><input type="number" id="cldays" min="1" max="14" value="3"></div>
 <div class="field"><label for="clpos">Karta na ekranie</label><select id="clpos"><option value="bl">Lewy dolny róg</option><option value="br">Prawy dolny róg</option><option value="tl">Lewy górny róg</option><option value="tr">Prawy górny róg</option><option value="off">Bez karty</option></select></div></div>
 <label class="check"><input type="checkbox" id="cltick" checked> Także na pasku informacyjnym</label>
@@ -7595,7 +7834,7 @@ async function loadExt(){ const r=await api('api/extras'); EXT=r;
     const x=document.createElement('button'); x.type='button'; x.textContent='×'; x.title='Usuń '+f; x.style.cssText='position:absolute;top:2px;right:2px;min-height:26px;padding:0 8px';
     x.onclick=()=>act(()=>api('api/photos/'+encodeURIComponent(f),{method:'DELETE'})).then(()=>loadExt()); d.append(i,x); return d; }));
   if(!r.photos.length) $('phlist').textContent='Brak zdjęć.';
-  const c=r.calendar; $('clen').checked=c.enabled; $('clents').value=c.entities.join(', '); $('cldays').value=c.days; $('clpos').value=c.overlay; $('cltick').checked=c.ticker;
+  const c=r.calendar; $('clen').checked=c.enabled; $('clents').value=c.entities.join(', '); $('clics').value=(c.ics_urls||[]).join('\n'); $('cldays').value=c.days; $('clpos').value=c.overlay; $('cltick').checked=c.ticker;
   const ag=(r.info||{}).agenda||{}; $('clnow').textContent=ag.error?('Błąd: '+ag.error):((ag.events||[]).map(e=>e.when+(e.time?' '+e.time:'')+'  '+e.summary).join('\n'));
   const m=r.motion; $('moen').checked=m.enabled; const cams=[...Array(r.cameras).keys()].map(i=>String(i+1));
   chkList($('mocams'), cams, m.cameras.map(String), 'Kamera '); if(!cams.length) $('mocams').textContent='(brak kamer)';
@@ -7631,7 +7870,7 @@ $('nton').onclick=()=>nightCmd('ON'); $('ntoff').onclick=()=>nightCmd('OFF'); $(
 $('phfiles').onchange=async()=>{ const fs=[...$('phfiles').files]; $('phfiles').value=''; for(const f of fs){ try{ await upload('api/photos/upload?name='+encodeURIComponent(f.name), f, 'Dodano '+f.name); }catch(e){} } loadExt().catch(()=>{}); };
 $('phshow').onclick=()=>act(()=>post('api/rotation',{photo_seconds:Number($('phsec').value)}).then(()=>post('api/photos/show',{on:true})));
 $('phhide').onclick=()=>act(()=>post('api/photos/show',{on:false}));
-$('clf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/calendar',{enabled:$('clen').checked, entities:$('clents').value, days:Number($('cldays').value), overlay:$('clpos').value, ticker:$('cltick').checked})).then(()=>setTimeout(()=>loadExt().catch(()=>{}),3000)); });
+$('clf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/calendar',{enabled:$('clen').checked, entities:$('clents').value, ics_urls:$('clics').value, days:Number($('cldays').value), overlay:$('clpos').value, ticker:$('cltick').checked})).then(()=>setTimeout(()=>loadExt().catch(()=>{}),3000)); });
 $('mosens').oninput=()=>{ $('mosensv').textContent=$('mosens').value; };
 $('mof').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/motion',{enabled:$('moen').checked, cameras:checkedOf($('mocams')).map(Number), sensitivity:Number($('mosens').value), action:$('moact').value, alert_seconds:Number($('mosec').value), record:$('morec').checked, record_alerts:$('moreca').checked})); });
 $('cliprecb').onclick=()=>act(()=>post('api/clips/record',{camera:Number($('cliprec').value), seconds:20})).then(()=>setTimeout(()=>loadClips().catch(()=>{}),25000));
