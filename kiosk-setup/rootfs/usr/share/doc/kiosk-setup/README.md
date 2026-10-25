@@ -1010,6 +1010,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.23** (25.10.2026) — naprawa: pojedyncze wydarzenia z linków iCal pokazywały się nawet sprzed lat (brak
+  filtrowania po dacie); teraz liczy się tylko ustawione „ile dni do przodu”.
 - **1.0.22** (25.10.2026) — ekran kiosku jako kamera RTSP (Ustawienia → MQTT i integracje), dla Frigate/go2rtc/
   NVR-ów które potrzebują RTSP zamiast MJPEG: `rtsp://<kiosk>:8554/kiosk`.
 - **1.0.21** (25.10.2026) — kalendarz bez Home Assistant: w Ustawienia → Kalendarz można teraz wkleić tajne

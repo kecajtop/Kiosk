@@ -4225,7 +4225,16 @@ def fetch_ics_calendar(url, start_dt, end_dt):
             if "DTEND" in ev:
                 e_raw, e_params = ev["DTEND"]
                 end_s, _ = _ics_parse_dt(e_raw, e_params)
-            out.append({"summary": summary[:80], "start": start_s, "all_day": all_day, "end": end_s or ""})
+            end_s = end_s or start_s
+            fmt = "%Y-%m-%d" if all_day else "%Y-%m-%dT%H:%M:%S"
+            try:
+                ev_start_dt = datetime.datetime.strptime(start_s, fmt)
+                ev_end_dt = datetime.datetime.strptime(end_s, fmt)
+            except ValueError:
+                continue
+            if ev_end_dt < start_dt or ev_start_dt > end_dt:
+                continue   # poza oknem dat — pomiń (bez tego wracały też wydarzenia archiwalne)
+            out.append({"summary": summary[:80], "start": start_s, "all_day": all_day, "end": end_s})
     return out
 
 
@@ -4255,12 +4264,22 @@ def fetch_agenda(cfg):
     events.sort(key=lambda e: e["start"])
     today = time.strftime("%Y-%m-%d")
     tomorrow = time.strftime("%Y-%m-%d", time.localtime(now + 86400))
+    weekday_pl = ("pon", "wt", "śr", "czw", "pt", "sob", "niedz")
     out = []
     for e in events:
         d = e["start"][:10]
         if e["end"] and e["end"][:16] < time.strftime("%Y-%m-%dT%H:%M") and not e["all_day"]:
             continue
-        when = "dziś" if d == today else "jutro" if d == tomorrow else "%s.%s" % (d[8:10], d[5:7])
+        if d == today:
+            when = "dziś"
+        elif d == tomorrow:
+            when = "jutro"
+        else:
+            try:
+                wd = weekday_pl[datetime.datetime.strptime(d, "%Y-%m-%d").weekday()]
+            except ValueError:
+                wd = ""
+            when = "%s%s.%s" % (wd + " " if wd else "", d[8:10], d[5:7])
         hhmm = "" if e["all_day"] else e["start"][11:16]
         out.append({"when": when, "time": hhmm, "summary": e["summary"]})
     return out[:8]

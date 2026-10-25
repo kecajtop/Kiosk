@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.22",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.22_amd64.deb",
-  "sha256": "1ca6fc605452d33a92500bc56ebb469ee4569af7f7668ac0ba917e2a6a4f201a",
-  "size": 23052880,
+  "version": "1:1.0.23",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.23_amd64.deb",
+  "sha256": "f94488a773487c2e0f2d2e98c7dfc954635be268e876270b6513725d77461e09",
+  "size": 23053230,
   "date": "2026-10-25",
-  "notes": "Ekran kiosku jako kamera RTSP (rtsp://kiosk:8554/kiosk) obok MJPEG - dla Frigate/go2rtc/NVR-ow."
+  "notes": "Naprawa: wydarzenia iCal sprzed lat pokazywaly sie na ekranie (brak filtrowania po dacie); data w agendzie pokazuje teraz dzien tygodnia."
 }

@@ -1,5 +1,12 @@
 # Zmiany
 
+## 1.0.23 (2026-10-25)
+- Naprawa: pojedyncze (niecykliczne) wydarzenia z linków iCal (.ics) pokazywały się na kiosku nawet jeśli były
+  dawno w przeszłości — brakowało filtrowania po zakresie dat (działało ono tylko dla wydarzeń cyklicznych).
+  Teraz liczy się tylko „ile dni do przodu” ustawione w Kalendarzu, tak jak dla encji Home Assistant.
+- Data wydarzenia w agendzie (karta w rogu, pasek) pokazuje teraz dzień tygodnia, np. „czw 29.10” zamiast
+  samej daty (dla dni innych niż dziś/jutro).
+
 ## 1.0.22 (2026-10-25)
 - **Ekran kiosku jako kamera RTSP:** Ustawienia → MQTT i integracje → „Ekran jako kamera RTSP”. Dla Frigate,
   go2rtc i NVR-ów, które potrzebują RTSP zamiast dotychczasowego MJPEG. Adres: `rtsp://<kiosk>:8554/kiosk`.
