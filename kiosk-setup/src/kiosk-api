@@ -3442,7 +3442,7 @@ class Automation:
         self.agenda_error = ""
         tmp = AGENDA_JSON + ".tmp"
         with open(tmp, "w") as f:
-            json.dump({"events": self.agenda, "updated": hm_now()}, f, ensure_ascii=False)
+            json.dump({"events": self.agenda, "updated": hm_now(), "style": cfg.get("style", "normal")}, f, ensure_ascii=False)
         os.chmod(tmp, 0o644)
         os.replace(tmp, AGENDA_JSON)
         self.last_ticker = 0
@@ -4074,13 +4074,17 @@ def safe_name(name, exts):
 
 # ---------------------------------------------------------------- kalendarz
 
+AGENDA_STYLES = (("normal", "Zwykła karta"), ("splitflap", "Tablica (split-flap)"))
+
+
 def read_calendar():
     c = read_json(CALENDAR_FILE, {})
     return {"enabled": bool(c.get("enabled", False)), "entities": [e for e in c.get("entities", []) if CAL_RE.match(str(e))],
             "ics_urls": [u for u in c.get("ics_urls", []) if ICS_URL_RE.match(str(u))][:5],
             "days": int(c.get("days", 3)) if str(c.get("days", 3)).isdigit() else 3,
             "overlay": c.get("overlay") if c.get("overlay") in ("off", "tl", "tr", "bl", "br") else "bl",
-            "ticker": bool(c.get("ticker", True))}
+            "ticker": bool(c.get("ticker", True)),
+            "style": c.get("style") if c.get("style") in dict(AGENDA_STYLES) else "normal"}
 
 
 def write_overlay():
@@ -6072,7 +6076,8 @@ class Handler(BaseHTTPRequestHandler):
             cfg = {"enabled": bool(body.get("enabled")), "entities": ents[:10], "ics_urls": urls[:5],
                    "days": to_int(body.get("days", 3), 1, 14, "days"),
                    "overlay": body.get("overlay") if body.get("overlay") in ("off", "tl", "tr", "bl", "br") else "bl",
-                   "ticker": bool(body.get("ticker", True))}
+                   "ticker": bool(body.get("ticker", True)),
+                   "style": body.get("style") if body.get("style") in dict(AGENDA_STYLES) else "normal"}
             if cfg["enabled"] and (ents or urls):
                 fetch_agenda(cfg)   # od razu sprawdź HA / linki iCal
             write_json(CALENDAR_FILE, cfg, 0o600)
@@ -7234,6 +7239,7 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <div class="hint">Tajny adres w formacie iCal: Google Calendar → Ustawienia kalendarza → Scalanie kalendarza. Nie udostępniaj go nikomu — każdy z tym linkiem widzi Twoje wydarzenia.</div></div>
 <div class="grid2"><div class="field"><label for="cldays">Ile dni do przodu</label><input type="number" id="cldays" min="1" max="14" value="3"></div>
 <div class="field"><label for="clpos">Karta na ekranie</label><select id="clpos"><option value="bl">Lewy dolny róg</option><option value="br">Prawy dolny róg</option><option value="tl">Lewy górny róg</option><option value="tr">Prawy górny róg</option><option value="off">Bez karty</option></select></div></div>
+<div class="field"><label for="clstyle">Styl karty</label><select id="clstyle"><option value="normal">Zwykła karta</option><option value="splitflap">Tablica (split-flap, jak na dworcu)</option></select></div>
 <label class="check"><input type="checkbox" id="cltick" checked> Także na pasku informacyjnym</label>
 <div class="row"><button type="submit" class="primary">Zapisz kalendarz</button></div></form>
 <pre id="clnow" class="hint"></pre>
@@ -8051,7 +8057,7 @@ async function loadExt(){ const r=await api('api/extras'); EXT=r;
     const x=document.createElement('button'); x.type='button'; x.textContent='×'; x.title='Usuń '+f; x.style.cssText='position:absolute;top:2px;right:2px;min-height:26px;padding:0 8px';
     x.onclick=()=>act(()=>api('api/photos/'+encodeURIComponent(f),{method:'DELETE'})).then(()=>loadExt()); d.append(i,x); return d; }));
   if(!r.photos.length) $('phlist').textContent='Brak zdjęć.';
-  const c=r.calendar; if(!clDirty){ $('clen').checked=c.enabled; $('clents').value=c.entities.join(', '); $('clics').value=(c.ics_urls||[]).join('\n'); $('cldays').value=c.days; $('clpos').value=c.overlay; $('cltick').checked=c.ticker; }
+  const c=r.calendar; if(!clDirty){ $('clen').checked=c.enabled; $('clents').value=c.entities.join(', '); $('clics').value=(c.ics_urls||[]).join('\n'); $('cldays').value=c.days; $('clpos').value=c.overlay; $('clstyle').value=c.style||'normal'; $('cltick').checked=c.ticker; }
   const rt=r.screen_rtsp||{}; $('rten').checked=!!rt.enabled; $('rtw').value=rt.width||960; $('rtfps').value=rt.fps||8;
   $('rtst').textContent=rt.enabled?(rt.running?'działa':(rt.error?('błąd: '+rt.error):'uruchamianie…')):'';
   const ag=(r.info||{}).agenda||{}; $('clnow').textContent=ag.error?('Błąd: '+ag.error):((ag.events||[]).map(e=>e.when+(e.time?' '+e.time:'')+'  '+e.summary).join('\n'));
@@ -8090,7 +8096,7 @@ $('phfiles').onchange=async()=>{ const fs=[...$('phfiles').files]; $('phfiles').
 $('phshow').onclick=()=>act(()=>post('api/rotation',{photo_seconds:Number($('phsec').value)}).then(()=>post('api/photos/show',{on:true})));
 $('phhide').onclick=()=>act(()=>post('api/photos/show',{on:false}));
 $('clf').addEventListener('input', ()=>{ clDirty=true; }); $('clf').addEventListener('change', ()=>{ clDirty=true; });
-$('clf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/calendar',{enabled:$('clen').checked, entities:$('clents').value, ics_urls:$('clics').value, days:Number($('cldays').value), overlay:$('clpos').value, ticker:$('cltick').checked})).then(()=>{ clDirty=false; setTimeout(()=>loadExt().catch(()=>{}),3000); }); });
+$('clf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/calendar',{enabled:$('clen').checked, entities:$('clents').value, ics_urls:$('clics').value, days:Number($('cldays').value), overlay:$('clpos').value, style:$('clstyle').value, ticker:$('cltick').checked})).then(()=>{ clDirty=false; setTimeout(()=>loadExt().catch(()=>{}),3000); }); });
 $('mosens').oninput=()=>{ $('mosensv').textContent=$('mosens').value; };
 $('mof').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/motion',{enabled:$('moen').checked, cameras:checkedOf($('mocams')).map(Number), sensitivity:Number($('mosens').value), action:$('moact').value, alert_seconds:Number($('mosec').value), record:$('morec').checked, record_alerts:$('moreca').checked})); });
 $('cliprecb').onclick=()=>act(()=>post('api/clips/record',{camera:Number($('cliprec').value), seconds:20})).then(()=>setTimeout(()=>loadClips().catch(()=>{}),25000));

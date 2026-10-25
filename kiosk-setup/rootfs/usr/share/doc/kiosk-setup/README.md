@@ -1010,6 +1010,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.32** (25.10.2026) — karta „Plan dnia” (kalendarz) ma opcjonalny styl **tablica (split-flap)**,
+  jak dworcowa/lotniskowa tablica odjazdów. Ustawienia → Kalendarz → Styl karty.
 - **1.0.31** (25.10.2026) — zegar **kukulka**: kurant w stylu Westminster (krótka melodia o :15/:30/:45,
   pełna melodia + uderzenia godzin o pełnej godzinie).
 - **1.0.30** (25.10.2026) — nowy wygląd zegara **flipdot** (żółta tablica z obracającymi się krążkami,

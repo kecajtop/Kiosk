@@ -5,7 +5,8 @@
 
 Wydarzenia zapisuje kiosk-api do /run/kiosk-agenda.json (co 5 min). Kartę
 rysuje ImageMagick (czcionka DejaVu), Tk ją tylko wyświetla. Bez wydarzeń
-karta się chowa.
+karta się chowa. Styl karty (panel → Kalendarz → Styl karty): normal (zwykła
+karta tekstowa) albo splitflap (tablica dworcowa z osobnymi klapkami na znak).
 """
 import argparse
 import json
@@ -29,6 +30,14 @@ def read_events():
         return []
 
 
+def read_style():
+    try:
+        with open(SRC) as f:
+            return json.load(f).get("style", "normal")
+    except Exception:
+        return "normal"
+
+
 def render(events, pt, out):
     rows = ["(", "-background", BG, "-fill", ACCENT, "-font", FONT_BOLD, "-pointsize", str(int(pt * 0.9)),
             "label:Plan dnia", ")"]
@@ -44,6 +53,41 @@ def render(events, pt, out):
                                 "-bordercolor", BG, "-border", "%dx%d" % (pad * 2, pad),
                                 "-bordercolor", LINE, "-border", "2", "PNG24:" + out]
     subprocess.run(cmd, check=True, timeout=20)
+
+
+def render_splitflap(events, pt, out):
+    """Tablica split-flap (jak na dworcu/lotnisku): każdy znak to osobna klapka, ciemny
+    panel z poziomą szparą pośrodku (jak w stylu zegara 'flip')."""
+    tile_w, tile_h = int(pt * 0.78), int(pt * 1.05)
+    gap = max(2, pt // 16)
+    card, card2, ink = "#1E252C", "#262E37", "#F3F5F7"
+    r = int(pt * 0.1)
+
+    rows_text = ["PLAN DNIA"]
+    for e in events:
+        when = (e.get("when", "") + ((" " + e["time"]) if e.get("time") else "")).upper()
+        summ = e.get("summary", "")[:22].upper()
+        rows_text.append((when + "  " + summ)[:30].replace("%", "%%"))
+    maxlen = max(len(row) for row in rows_text)
+    pad = max(8, pt // 2)
+    W = int(maxlen * (tile_w + gap) - gap + pad * 2)
+    Ht = int(len(rows_text) * (tile_h + gap) - gap + pad * 2)
+
+    cmd = ["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG]
+    for ri, row in enumerate(rows_text):
+        for ci in range(maxlen):
+            ch = row[ci] if ci < len(row) else " "
+            x = int(pad + ci * (tile_w + gap))
+            y = int(pad + ri * (tile_h + gap))
+            cmd += ["(", "-size", "%dx%d" % (tile_w, tile_h), "xc:none",
+                    "-fill", card2, "-draw", "roundrectangle 0,0 %d,%d %d,%d" % (tile_w - 1, tile_h - 1, r, r),
+                    "-fill", card, "-draw", "roundrectangle 0,0 %d,%d %d,%d" % (tile_w - 1, tile_h // 2, r, r),
+                    "-font", FONT_BOLD, "-pointsize", str(int(tile_h * 0.6)), "-fill", ink, "-gravity", "center",
+                    "-annotate", "+0+%d" % int(tile_h * 0.02), ch,
+                    "-stroke", BG, "-strokewidth", "2", "-draw", "line 0,%d %d,%d" % (tile_h // 2, tile_w, tile_h // 2),
+                    "-stroke", "none", ")", "-geometry", "+%d+%d" % (x, y), "-composite"]
+    cmd += ["-bordercolor", LINE, "-border", "2", "PNG24:" + out]
+    subprocess.run(["convert", "-respect-parentheses"] + cmd[1:], check=True, timeout=25)
 
 
 def main():
@@ -67,14 +111,18 @@ def main():
 
     def refresh():
         ev = read_events()
-        key = json.dumps(ev, ensure_ascii=False)
+        style = read_style()
+        key = json.dumps(ev, ensure_ascii=False) + "|" + style
         if key != state["key"]:
             state["key"] = key
             if not ev:
                 root.withdraw()
             else:
                 try:
-                    render(ev, pt, tmp)
+                    if style == "splitflap":
+                        render_splitflap(ev, pt, tmp)
+                    else:
+                        render(ev, pt, tmp)
                     img = tk.PhotoImage(file=tmp)
                     state["img"] = img
                     label.configure(image=img)

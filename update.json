@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.31",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.31_amd64.deb",
-  "sha256": "ff7938852f7a34949979675854fdf1cfeedeb3cd193b038fa5bd854870da759b",
-  "size": 23061478,
+  "version": "1:1.0.32",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.32_amd64.deb",
+  "sha256": "34949744f098d574a77bc733a258c1ac2308baa4a33c21280a748c77f354d832",
+  "size": 23062382,
   "date": "2026-10-25",
-  "notes": "Zegar kukulka: kurant w stylu Westminster o :15/:30/:45 i pelnej godzinie (z uderzeniami godzin)."
+  "notes": "Karta Plan dnia (kalendarz): opcjonalny styl tablica split-flap (jak na dworcu/lotnisku)."
 }

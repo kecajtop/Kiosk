@@ -1,5 +1,9 @@
 # Zmiany
 
+## 1.0.32 (2026-10-25)
+- Karta „Plan dnia” (kalendarz) dostała opcjonalny styl **tablica (split-flap)** — jak dworcowa/lotniskowa
+  tablica odjazdów, każdy znak jako osobna klapka. Ustawienia → Kalendarz → Styl karty.
+
 ## 1.0.31 (2026-10-25)
 - Zegar **kukulka** dostał kurant w stylu Westminster (jak Big Ben): krótka melodia o :15/:30/:45 oraz
   pełna melodia z uderzeniami godzin o pełnej godzinie.
