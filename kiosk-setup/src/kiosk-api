@@ -2051,7 +2051,7 @@ CLOCK_STYLES = (("classic", "Klasyczny"), ("flip", "Klapkowy (flip)"), ("flipdot
                 ("analog", "Analogowy"),
                 ("volt", "Woltomierze"), ("seg7", "7-segmentowy"), ("matrix", "Matryca LED"),
                 ("nixie", "Lampy Nixie"), ("kukulka", "Zegar z kukułką"), ("bomba", "Zegar-bomba (żart)"),
-                ("nuklearny", "Zegar nuklearny (żart)"),
+                ("nuklearny", "Zegar nuklearny (żart)"), ("flux", "Kondensator przepływu (retro sci-fi)"),
                 ("snake", "Wąż (animacja)"), ("platform", "Platformówka (animacja)"), ("c64", "Komputer 8-bit"),
                 ("bsod", "Niebieski ekran"), ("lcd1602", "LCD 1602"), ("lcd2004", "LCD 2004"),
                 ("eyes", "Oczy z zegarem"), ("eyes_only", "Same oczy"), ("robot", "Oczy robota z zegarem"),

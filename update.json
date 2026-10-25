@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.32",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.32_amd64.deb",
-  "sha256": "34949744f098d574a77bc733a258c1ac2308baa4a33c21280a748c77f354d832",
-  "size": 23062382,
+  "version": "1:1.0.33",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.33_amd64.deb",
+  "sha256": "6982996a49a4f8d4409514104c0dd206a3457810857d5c115fc4c672a89b191e",
+  "size": 23063066,
   "date": "2026-10-25",
-  "notes": "Karta Plan dnia (kalendarz): opcjonalny styl tablica split-flap (jak na dworcu/lotnisku)."
+  "notes": "Nowy wyglad zegara: flux (retro sci-fi, trzy swiecace ramiona zbiegajace sie w rdzeniu, czerwony wyswietlacz)."
 }

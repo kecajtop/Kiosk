@@ -1,5 +1,9 @@
 # Zmiany
 
+## 1.0.33 (2026-10-25)
+- Nowy wygląd zegara: **flux** — panel retro sci-fi z trzema świecącymi ramionami zbiegającymi się
+  w rdzeniu i czerwonym cyfrowym wyświetlaczem czasu (oryginalna grafika). Ustawienia → Ekran → Wygląd zegara.
+
 ## 1.0.32 (2026-10-25)
 - Karta „Plan dnia” (kalendarz) dostała opcjonalny styl **tablica (split-flap)** — jak dworcowa/lotniskowa
   tablica odjazdów, każdy znak jako osobna klapka. Ustawienia → Kalendarz → Styl karty.
