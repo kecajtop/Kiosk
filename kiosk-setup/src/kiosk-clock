@@ -4,6 +4,7 @@
   kiosk-clock --corner tr --size m          nakładka w rogu (tl, tr, bl, br)
   kiosk-clock --geometry 720x450+720+450    kafelek w podanym polu siatki
   kiosk-clock --preview plik.png [--style flip]  sam obrazek (podgląd w panelu WWW)
+  kiosk-clock --test-sound click|siren|westminster  zagraj dźwięk zegara i zakończ (test w panelu WWW)
 
 Wygląd (/etc/kiosk-setup/clock.json, panel → Ekran): classic, flip (klapki),
 flipdot (żółta tablica z obracającymi się krążkami, jak na dworcu; krążki zmieniające stan
@@ -2430,6 +2431,7 @@ def main():
     ap.add_argument("--area", help="WxH+X+Y — monitor, w którego rogu stoi nakładka")
     ap.add_argument("--preview", help="zapisz sam obrazek do pliku PNG i zakończ")
     ap.add_argument("--style", choices=STYLES, help="wygląd (domyślnie z clock.json)")
+    ap.add_argument("--test-sound", choices=["click", "siren", "westminster"], help="zagraj dźwięk zegara i zakończ")
     a = ap.parse_args()
     if a.preview:
         st = a.style or read_style()
@@ -2437,6 +2439,18 @@ def main():
             preview_anim(st, time.localtime(), a.preview)
         else:
             render(a.preview, time.localtime(), 64, 18, None, None, st)
+        return
+    if a.test_sound:
+        if a.test_sound == "click":
+            p = ensure_click()
+        elif a.test_sound == "siren":
+            p = ensure_siren()
+        else:
+            os.makedirs(SOUND_DIR, exist_ok=True)
+            fd, p = tempfile.mkstemp(suffix=".wav", prefix="westminster-test-", dir=SOUND_DIR)
+            os.close(fd)
+            synth_westminster(p, 4, 3)
+        subprocess.run(["aplay", "-q", "-D", "default", p], timeout=20)
         return
     import tkinter as tk
 

@@ -1010,6 +1010,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.36** (25.10.2026) — panel → Ekran: przyciski do odsłuchania dźwięków zegara na żądanie (klik
+  Nixie, syrena bomby, kurant Westminster), bez czekania na pełną minutę/godzinę.
 - **1.0.35** (25.10.2026) — zegar słowny (words_pl/words_en): nowo zapalane litery przy zmianie minuty
   przewijają się przez chwilę po alfabecie, zanim ustawią się na właściwej.
 - **1.0.34** (25.10.2026) — karta „Plan dnia” ma trzeci styl: **Lampy Nixie** (każdy znak jako

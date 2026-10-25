@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.35",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.35_amd64.deb",
-  "sha256": "a3148507bf61d8d9af0264c72a361a6eafe4a270a23fa6829d61008442ff96ed",
-  "size": 445238,
+  "version": "1:1.0.36",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.36_amd64.deb",
+  "sha256": "5409e406e4a1cced8505b5deefa4da016f17b0b7a19fa856d552f338ed4ba30a",
+  "size": 445664,
   "date": "2026-10-25",
-  "notes": "Zegar slowny: nowo zapalane litery przewijaja sie po alfabecie zanim ustawia sie na wlasciwej."
+  "notes": "Panel: przyciski do odsluchania dzwiekow zegara na zadanie (klik nixie, syrena bomby, kurant Westminster)."
 }

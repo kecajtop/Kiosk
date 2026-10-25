@@ -1,5 +1,9 @@
 # Zmiany
 
+## 1.0.36 (2026-10-25)
+- Panel → Ekran: przyciski do odsłuchania dźwięków zegara na żądanie — klik lampy Nixie, syrena
+  zegara-bomby i kurant Westminster zegara kukułka — bez czekania na pełną minutę/godzinę.
+
 ## 1.0.35 (2026-10-25)
 - Zegar słowny (**words_pl** / **words_en**): nowo zapalane litery przy zmianie minuty przez chwilę
   przewijają się po przypadkowych literach alfabetu — jak dekodowanie hasła — zanim ustawią się

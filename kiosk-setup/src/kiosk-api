@@ -2095,6 +2095,18 @@ def clock_preview(style):
     return data
 
 
+CLOCK_SOUNDS = (("click", "Klik lampy Nixie"), ("siren", "Syrena (zegar-bomba)"), ("westminster", "Kurant Westminster (kukułka)"))
+
+
+def clock_test_sound(name):
+    if name not in dict(CLOCK_SOUNDS):
+        raise ValueError("dźwięk: " + ", ".join(k for k, _ in CLOCK_SOUNDS))
+    r = subprocess.run(["python3", CLOCK_BIN, "--test-sound", name], capture_output=True, timeout=20)
+    if r.returncode != 0:
+        raise RuntimeError("dźwięk zegara: " + r.stderr.decode(errors="replace")[-300:])
+    return dict(CLOCK_SOUNDS)[name]
+
+
 # ---------------------------------------------------------------- teraz gra (karta na ekranie)
 
 NOWP_JSON = "/run/kiosk-nowplaying.json"
@@ -6569,6 +6581,8 @@ class Handler(BaseHTTPRequestHandler):
                 WEATHER.refresh()
             return "Pogoda: " + {"off": "wyłączona", "ha": "z Home Assistant (%s)" % cfg["entity"],
                                  "open-meteo": "z Open-Meteo (%s, %s)" % (cfg["lat"], cfg["lon"])}[cfg["source"]]
+        if path == "/api/clock/testsound":
+            return clock_test_sound(str(body.get("sound", "")))
         if path == "/api/displays":
             return apply_displays(body)
         if path == "/api/weather/say":
@@ -7000,6 +7014,12 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <p class="hint" style="margin-top:0">Dotyczy zegara w rogu, kafelka w siatce kamer i nocnego zegara. Zmiana działa od razu.</p>
 <div id="clkstyles" class="clkstyles" role="radiogroup" aria-label="Wygląd zegara"></div>
 <div class="field" id="lcdcolf" style="max-width:340px"><label for="lcdcol">Podświetlenie LCD (zegary LCD 1602 / 2004)</label><select id="lcdcol"></select></div>
+<p class="hint" style="margin-top:12px">Dźwięki zegara — odsłuchaj bez czekania na pełną godzinę/kwadrans:</p>
+<div class="row" id="clksounds">
+<button type="button" data-sound="click">🔊 Klik (Nixie)</button>
+<button type="button" data-sound="siren">🔊 Syrena (bomba)</button>
+<button type="button" data-sound="westminster">🔊 Kurant Westminster (kukułka)</button>
+</div>
 <h3>Ikony stanu na ekranie</h3>
 <p class="hint" style="margin-top:0">Małe ikony połączeń w rogu ekranu kiosku: <b>LAN</b>, <b>Wi-Fi</b> (siła sygnału), <b>internet</b>, <b>Home Assistant</b> i <b>MQTT</b>. Zielona = działa, czerwona przekreślona = brak połączenia. Podczas aktualizacji na środku ekranu pokazuje się jej postęp.</p>
 <form id="icf"><div class="grid2">
@@ -7544,6 +7564,7 @@ async function loadClockStyles(){ const r=await api('api/clockstyle'); const t=D
     const im=document.createElement('img'); im.alt=''; im.loading='lazy'; im.src='api/clock/preview?style='+st.id+'&t='+t; b.append(im, st.name);
     b.onclick=()=>act(()=>post('api/clockstyle',{style:st.id})).then(()=>{ $('clkstyles').querySelectorAll('button').forEach(x=>x.setAttribute('aria-checked', x===b)); }); return b; })); }
 $('lcdcol').onchange=()=>act(()=>post('api/clockstyle',{lcd_color:$('lcdcol').value})).then(()=>loadClockStyles().catch(()=>{}));
+$('clksounds').querySelectorAll('button').forEach(b=>{ b.onclick=()=>act(()=>post('api/clock/testsound',{sound:b.dataset.sound})); });
 async function loadIcons(){ const r=await api('api/screenicons'); $('iccorner').value=r.corner; $('icprob').checked=r.problems; $('icnp').value=r.nowplaying||'bc';
   const n=r.net||{}; $('icnow').textContent=Object.keys(NETN).filter(k=>n[k]).map(k=>NETN[k]+': '+({ok:'działa',warn:'słaby sygnał',bad:'brak'}[n[k].state]||'?')).join(' · '); }
 $('icf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/screenicons',{corner:$('iccorner').value, problems:$('icprob').checked, nowplaying:$('icnp').value})).then(()=>loadIcons().catch(()=>{})); });
