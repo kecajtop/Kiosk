@@ -2049,6 +2049,7 @@ CLOCK_BIN = "/usr/local/bin/kiosk-clock"
 CLOCK_STYLE_FILE = ETC + "/clock.json"
 CLOCK_STYLES = (("classic", "Klasyczny"), ("flip", "Klapkowy (flip)"), ("analog", "Analogowy"),
                 ("volt", "Woltomierze"), ("seg7", "7-segmentowy"), ("matrix", "Matryca LED"),
+                ("nixie", "Lampy Nixie"),
                 ("snake", "Wąż (animacja)"), ("platform", "Platformówka (animacja)"), ("c64", "Komputer 8-bit"),
                 ("bsod", "Niebieski ekran"), ("lcd1602", "LCD 1602"), ("lcd2004", "LCD 2004"),
                 ("eyes", "Oczy z zegarem"), ("eyes_only", "Same oczy"), ("robot", "Oczy robota z zegarem"),

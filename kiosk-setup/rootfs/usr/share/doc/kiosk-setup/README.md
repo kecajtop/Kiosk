@@ -1010,6 +1010,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.26** (25.10.2026) — nowy wygląd zegara **nixie**: szklane lampy Nixie ze świecącymi pomarańczowymi
+  cyframi, retro styl elektroniki lat 60. Ustawienia → Ekran → Wygląd zegara.
 - **1.0.25** (25.10.2026) — panel WWW pokazuje wersję zainstalowanego oprogramowania w nagłówku, obok nazwy
   kiosku i godziny — widoczne dla każdego, bez wchodzenia w Ustawienia → System.
 - **1.0.24** (25.10.2026) — naprawa: zapis ustawień kalendarza na telefonie (np. przełączenie „Kalendarz

@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.25",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.25_amd64.deb",
-  "sha256": "c0b6cb9c1649d9abbd530e729574707a6e03157009cc107d5d2d2a5362fccfdc",
-  "size": 434878,
+  "version": "1:1.0.26",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.26_amd64.deb",
+  "sha256": "fe6bff1d811383700eb28122b508cad0e436583d98a28829c8a9be4acf81c4f0",
+  "size": 435738,
   "date": "2026-10-25",
-  "notes": "Wersja oprogramowania widoczna w naglowku panelu WWW (przy nazwie kiosku i godzinie)."
+  "notes": "Nowy wyglad zegara: lampy Nixie - szklane tuby ze swiecacymi pomaranczowymi cyframi (retro elektronika)."
 }

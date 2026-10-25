@@ -7,7 +7,8 @@
 
 Wygląd (/etc/kiosk-setup/clock.json, panel → Ekran): classic, flip (klapki),
 analog (wskazówki), volt (woltomierze), seg7 (wyświetlacz 7-segmentowy),
-matrix (matryca LED z kropek), lcd1602 / lcd2004 (wyświetlacz znakowy LCD z dużymi
+matrix (matryca LED z kropek), nixie (szklane lampy Nixie ze świecącymi cyframi),
+lcd1602 / lcd2004 (wyświetlacz znakowy LCD z dużymi
 cyframi; podświetlenie lcd_color: green, blue, amber) oraz animowane: snake (wąż), platform (platformówka
 z robotem), c64 (ekran 8-bitowego komputera), bsod (niebieski ekran), eyes (oczy z zegarem)
 i eyes_only (same oczy) — oczy rozglądają się i mrugają; robot i robot_only — świecące
@@ -40,7 +41,7 @@ MONTHS = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca",
 SIZES = {"s": 0.050, "m": 0.075, "l": 0.110}
 WEATHER_CACHE = "/run/kiosk-weather.json"  # zapisuje kiosk-api co 10 min
 STYLE_FILE = "/etc/kiosk-setup/clock.json"
-STYLES = ("classic", "flip", "analog", "volt", "seg7", "matrix", "snake", "platform", "c64", "bsod", "lcd1602", "lcd2004",
+STYLES = ("classic", "flip", "analog", "volt", "seg7", "matrix", "nixie", "snake", "platform", "c64", "bsod", "lcd1602", "lcd2004",
           "eyes", "eyes_only", "robot", "robot_only", "words_pl", "words_en", "dcf", "ledring", "dcf77",
           "minimal", "voltsq")
 ICON_COLORS = {"sunny": "#F2A900", "partlycloudy": "#F2A900", "lightning": "#F2A900", "lightning-rainy": "#F2A900",
@@ -162,6 +163,78 @@ def draw_matrix(t, H, out):
     pad = int(p * 0.6)
     _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG, "-draw", "\n".join(mvg),
           "-bordercolor", BG, "-border", "%dx%d" % (pad, pad), "PNG24:" + out])
+
+
+NIXIE_GLOW = ["#2A0E00", "#FF6A1A", "#FFB36B", "#FFE3C4"]  # kolejne warstwy poświaty -> jądro
+
+
+def draw_nixie(t, H, out):
+    """Lampy Nixie: szklane tuby ze świecącymi pomarańczowymi cyframi (retro elektronika)."""
+    digs = time.strftime("%H%M", t)
+    tw = H * 0.50          # szerokość tuby
+    th = H * 1.42          # wysokość tuby (szkło)
+    gap = H * 0.13
+    colon_w = H * 0.22
+    base_h = H * 0.12
+    pad = H * 0.10
+    W = int(pad * 2 + tw * 4 + gap * 4 + colon_w)
+    Ht = int(pad * 2 + th + base_h)
+    mvg = ["stroke none"]
+
+    def tube(x0, digit):
+        x1 = x0 + tw
+        y0, y1 = pad, pad + th
+        r = tw * 0.22
+        mvg.append("fill '#15181b'")
+        mvg.append("roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f"
+                    % (x0 - tw * 0.04, y1 - H * 0.02, x1 + tw * 0.04, y1 + base_h, r * 0.4, r * 0.4))
+        for i in range(3):
+            px = x0 + tw * (0.2 + i * 0.3)
+            mvg.append("fill '#3a4049'")
+            mvg.append("rectangle %.1f,%.1f %.1f,%.1f" % (px, y1 + base_h * 0.3, px + tw * 0.06, y1 + base_h))
+        mvg.append("fill '#171b1f'")
+        mvg.append("stroke '#434c56'")
+        mvg.append("stroke-width %.1f" % max(1.5, tw * 0.025))
+        mvg.append("roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (x0, y0, x1, y1, r, r))
+        mvg.append("stroke none")
+        ix0, iy0, ix1, iy1 = x0 + tw * 0.08, y0 + th * 0.06, x1 - tw * 0.08, y1 - th * 0.06
+        mvg.append("fill '#1a0d06'")
+        mvg.append("roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (ix0, iy0, ix1, iy1, r * 0.7, r * 0.7))
+        mvg.append("stroke '#4a3426'")
+        mvg.append("stroke-width %.1f" % max(1.0, tw * 0.012))
+        for i in range(5):
+            ly = iy0 + (iy1 - iy0) * (0.12 + i * 0.045)
+            mvg.append("line %.1f,%.1f %.1f,%.1f" % (ix0 + tw * 0.04, ly, ix1 - tw * 0.04, ly))
+        mvg.append("stroke none")
+        cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0 + th * 0.02
+        for size, col in zip((th * 0.50, th * 0.45, th * 0.40, th * 0.37), NIXIE_GLOW):
+            mvg.append("font '%s'" % FONT_BOLD)
+            mvg.append("font-size %.1f" % size)
+            mvg.append("fill '%s'" % col)
+            mvg.append("gravity center")
+            mvg.append("text %.1f,%.1f '%s'" % (cx - W / 2.0, cy - Ht / 2.0, digit))
+        return x1
+
+    x = pad
+    for i, d in enumerate(digs):
+        x = tube(x, d) + gap
+        if i == 1:
+            cx = x + colon_w / 2.0
+            y0, y1 = pad, pad + th
+            mvg.append("fill '#171b1f'")
+            mvg.append("stroke '#434c56'")
+            mvg.append("stroke-width %.1f" % max(1.5, tw * 0.02))
+            mvg.append("roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f"
+                        % (x, y0, x + colon_w, y1, colon_w * 0.4, colon_w * 0.4))
+            mvg.append("stroke none")
+            for frac in (0.38, 0.62):
+                dy = y0 + th * frac
+                for size, col in zip((colon_w * 0.34, colon_w * 0.28, colon_w * 0.22, colon_w * 0.17), NIXIE_GLOW):
+                    mvg.append("fill '%s'" % col)
+                    mvg.append("circle %.1f,%.1f %.1f,%.1f" % (cx, dy, cx + size, dy))
+            x += colon_w + gap
+
+    _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
 
 
 def draw_flip(t, H, out):
@@ -289,7 +362,8 @@ def draw_volt(t, H, out, needles=True, now=None):
     return W, Hm, gap
 
 
-DRAW = {"flip": draw_flip, "analog": draw_analog, "volt": draw_volt, "seg7": draw_seg7, "matrix": draw_matrix}
+DRAW = {"flip": draw_flip, "analog": draw_analog, "volt": draw_volt, "seg7": draw_seg7, "matrix": draw_matrix,
+        "nixie": draw_nixie}
 
 
 # ---------------------------------------------------------------- zegary animowane (Tk Canvas)

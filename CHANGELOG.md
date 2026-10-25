@@ -1,5 +1,9 @@
 # Zmiany
 
+## 1.0.26 (2026-10-25)
+- Nowy wygląd zegara: **nixie** — szklane lampy Nixie ze świecącymi pomarańczowymi cyframi (retro
+  elektronika lat 60.). Ustawienia → Ekran → Wygląd zegara.
+
 ## 1.0.25 (2026-10-25)
 - Panel WWW pokazuje teraz wersję zainstalowanego oprogramowania w nagłówku (przy nazwie kiosku i godzinie),
   widoczną dla każdego, bez wchodzenia w Ustawienia → System.
