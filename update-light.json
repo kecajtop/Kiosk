@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.23",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.23_amd64.deb",
-  "sha256": "f4f00a4da213db93409c0b2f459fca00835c600750b0b630aca5777a68c5b2ab",
-  "size": 434570,
+  "version": "1:1.0.24",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.24_amd64.deb",
+  "sha256": "b2a24010eaf14f4f175ca711712f90ff285de198fedddc167442152814e7a8ea",
+  "size": 434714,
   "date": "2026-10-25",
-  "notes": "Naprawa: wydarzenia iCal sprzed lat pokazywaly sie na ekranie (brak filtrowania po dacie); data w agendzie pokazuje teraz dzien tygodnia."
+  "notes": "Naprawa: zapis kalendarza na telefonie mogl wyczyscic link iCal (checkbox); czestsze sprawdzanie kalendarzy (90 s zamiast 5 min)."
 }

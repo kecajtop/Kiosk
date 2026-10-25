@@ -3291,7 +3291,7 @@ class Automation:
                     step()
                 except Exception as e:
                     log("automatyka: %s" % e)
-            if time.time() - self.last_agenda > 300:
+            if time.time() - self.last_agenda > 90:
                 self.last_agenda = time.time()
                 try:
                     self._agenda()
@@ -7844,7 +7844,7 @@ $('dcf').addEventListener('submit', async e=>{ e.preventDefault(); const cmd=$('
   catch(err){ out.textContent+=line+'\n✗ '+err.message+'\n\n'; }
   out.scrollTop=out.scrollHeight; setTimeout(loadStatus, 2000); });
 // ---- rotacja, noc, zdjęcia, kalendarz, ruch, nagrania, Frigate, radio, interkom, asystent, jasność, powiadomienia, konta, kioski
-let EXT=null, ME='admin';
+let EXT=null, ME='admin', clDirty=false;
 // ---- Ustawienia jako lista (telefon) i Kamery
 let KMT=0;
 function buildMenu(){ const mk=(t,c)=>{ const e=document.createElement(t); if(c) e.className=c; return e; }; const out=[];
@@ -7956,7 +7956,7 @@ async function loadExt(){ const r=await api('api/extras'); EXT=r;
     const x=document.createElement('button'); x.type='button'; x.textContent='×'; x.title='Usuń '+f; x.style.cssText='position:absolute;top:2px;right:2px;min-height:26px;padding:0 8px';
     x.onclick=()=>act(()=>api('api/photos/'+encodeURIComponent(f),{method:'DELETE'})).then(()=>loadExt()); d.append(i,x); return d; }));
   if(!r.photos.length) $('phlist').textContent='Brak zdjęć.';
-  const c=r.calendar; $('clen').checked=c.enabled; $('clents').value=c.entities.join(', '); $('clics').value=(c.ics_urls||[]).join('\n'); $('cldays').value=c.days; $('clpos').value=c.overlay; $('cltick').checked=c.ticker;
+  const c=r.calendar; if(!clDirty){ $('clen').checked=c.enabled; $('clents').value=c.entities.join(', '); $('clics').value=(c.ics_urls||[]).join('\n'); $('cldays').value=c.days; $('clpos').value=c.overlay; $('cltick').checked=c.ticker; }
   const rt=r.screen_rtsp||{}; $('rten').checked=!!rt.enabled; $('rtw').value=rt.width||960; $('rtfps').value=rt.fps||8;
   $('rtst').textContent=rt.enabled?(rt.running?'działa':(rt.error?('błąd: '+rt.error):'uruchamianie…')):'';
   const ag=(r.info||{}).agenda||{}; $('clnow').textContent=ag.error?('Błąd: '+ag.error):((ag.events||[]).map(e=>e.when+(e.time?' '+e.time:'')+'  '+e.summary).join('\n'));
@@ -7994,7 +7994,8 @@ $('nton').onclick=()=>nightCmd('ON'); $('ntoff').onclick=()=>nightCmd('OFF'); $(
 $('phfiles').onchange=async()=>{ const fs=[...$('phfiles').files]; $('phfiles').value=''; for(const f of fs){ try{ await upload('api/photos/upload?name='+encodeURIComponent(f.name), f, 'Dodano '+f.name); }catch(e){} } loadExt().catch(()=>{}); };
 $('phshow').onclick=()=>act(()=>post('api/rotation',{photo_seconds:Number($('phsec').value)}).then(()=>post('api/photos/show',{on:true})));
 $('phhide').onclick=()=>act(()=>post('api/photos/show',{on:false}));
-$('clf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/calendar',{enabled:$('clen').checked, entities:$('clents').value, ics_urls:$('clics').value, days:Number($('cldays').value), overlay:$('clpos').value, ticker:$('cltick').checked})).then(()=>setTimeout(()=>loadExt().catch(()=>{}),3000)); });
+$('clf').addEventListener('input', ()=>{ clDirty=true; }); $('clf').addEventListener('change', ()=>{ clDirty=true; });
+$('clf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/calendar',{enabled:$('clen').checked, entities:$('clents').value, ics_urls:$('clics').value, days:Number($('cldays').value), overlay:$('clpos').value, ticker:$('cltick').checked})).then(()=>{ clDirty=false; setTimeout(()=>loadExt().catch(()=>{}),3000); }); });
 $('mosens').oninput=()=>{ $('mosensv').textContent=$('mosens').value; };
 $('mof').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/motion',{enabled:$('moen').checked, cameras:checkedOf($('mocams')).map(Number), sensitivity:Number($('mosens').value), action:$('moact').value, alert_seconds:Number($('mosec').value), record:$('morec').checked, record_alerts:$('moreca').checked})); });
 $('cliprecb').onclick=()=>act(()=>post('api/clips/record',{camera:Number($('cliprec').value), seconds:20})).then(()=>setTimeout(()=>loadClips().catch(()=>{}),25000));

@@ -1,5 +1,11 @@
 # Zmiany
 
+## 1.0.24 (2026-10-25)
+- Naprawa: na telefonie zapis ustawień kalendarza (np. przełączenie „Kalendarz włączony”) mógł wyczyścić
+  wpisany link iCal, jeśli w międzyczasie panel odświeżył pola z serwera. Teraz panel nie nadpisuje pól
+  kalendarza, dopóki nie zapiszesz zmian (albo nie przeładujesz strony).
+- Sprawdzanie kalendarzy (encje Home Assistant i linki iCal) działa częściej — co 90 s zamiast co 5 minut.
+
 ## 1.0.23 (2026-10-25)
 - Naprawa: pojedyncze (niecykliczne) wydarzenia z linków iCal (.ics) pokazywały się na kiosku nawet jeśli były
   dawno w przeszłości — brakowało filtrowania po zakresie dat (działało ono tylko dla wydarzeń cyklicznych).
