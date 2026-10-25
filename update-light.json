@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup-light",
-  "version": "1:1.0.30",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.30_amd64.deb",
-  "sha256": "49d3688ae1a1657ac717b7fd06c414ad0dd3a71362cde63fb632a9e44fe6558f",
-  "size": 441974,
+  "version": "1:1.0.31",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup-light_1.0.31_amd64.deb",
+  "sha256": "a8aa0c0d22b8d20f8d128746b8164db85a0d11b64659b4be6f70ee27fc147036",
+  "size": 442542,
   "date": "2026-10-25",
-  "notes": "Nowy wyglad zegara: flipdot (zolte krazki, jak tablica dworcowa) z animacja obrotu krazkow przy zmianie minuty."
+  "notes": "Zegar kukulka: kurant w stylu Westminster o :15/:30/:45 i pelnej godzinie (z uderzeniami godzin)."
 }

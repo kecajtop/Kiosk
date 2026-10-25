@@ -1,5 +1,9 @@
 # Zmiany
 
+## 1.0.31 (2026-10-25)
+- Zegar **kukulka** dostał kurant w stylu Westminster (jak Big Ben): krótka melodia o :15/:30/:45 oraz
+  pełna melodia z uderzeniami godzin o pełnej godzinie.
+
 ## 1.0.30 (2026-10-25)
 - Nowy wygląd zegara: **flipdot** — żółta tablica z obracającymi się krążkami (jak dworcowa tablica
   odjazdów). Krążki, które zmieniają stan przy zmianie minuty, animują przez chwilę "obrót na boku".
