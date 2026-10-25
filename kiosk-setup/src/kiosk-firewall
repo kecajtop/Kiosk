@@ -13,7 +13,7 @@ CONF=/etc/kiosk-setup/kiosk.conf
 FWCONF=/etc/kiosk-setup/firewall.conf
 UBUNTU_DOMAINS="archive.ubuntu.com security.ubuntu.com changelogs.ubuntu.com ppa.launchpad.net esm.ubuntu.com api.snapcraft.io keyserver.ubuntu.com ntp.ubuntu.com motd.ubuntu.com api.open-meteo.com"
 GITHUB_DOMAINS="github.com api.github.com raw.githubusercontent.com objects.githubusercontent.com release-assets.githubusercontent.com codeload.github.com"
-PORTS="22 5900 8088 8443 6600"
+PORTS="22 5900 8088 8443 6600 8554"
 PRIVATE="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
 
 active() { iptables -S OUTPUT 2>/dev/null | grep -q -- '--match-set kiosk_'; }

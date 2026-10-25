@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.21",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.21_amd64.deb",
-  "sha256": "94ee980dc1a2f47e99d29f5f494a16b2dffe1af56412f190e06ea8c0ab4c099a",
-  "size": 23054060,
+  "version": "1:1.0.22",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.22_amd64.deb",
+  "sha256": "1ca6fc605452d33a92500bc56ebb469ee4569af7f7668ac0ba917e2a6a4f201a",
+  "size": 23052880,
   "date": "2026-10-25",
-  "notes": "Kalendarz bez Home Assistant: bezposrednie linki iCal (.ics), np. z Google Calendar, do 5 linkow; obsluga wydarzen cyklicznych (RRULE) i wyjatkow (EXDATE)."
+  "notes": "Ekran kiosku jako kamera RTSP (rtsp://kiosk:8554/kiosk) obok MJPEG - dla Frigate/go2rtc/NVR-ow."
 }

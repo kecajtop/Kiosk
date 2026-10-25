@@ -1,5 +1,11 @@
 # Zmiany
 
+## 1.0.22 (2026-10-25)
+- **Ekran kiosku jako kamera RTSP:** Ustawienia → MQTT i integracje → „Ekran jako kamera RTSP”. Dla Frigate,
+  go2rtc i NVR-ów, które potrzebują RTSP zamiast dotychczasowego MJPEG. Adres: `rtsp://<kiosk>:8554/kiosk`.
+  Serwer (ffmpeg x11grab → h264, tryb nasłuchu) obsługuje jednego widza na raz i wznawia się automatycznie po
+  rozłączeniu. Port 8554 dodany do firewalla kiosku.
+
 ## 1.0.21 (2026-10-25)
 - **Kalendarz bez Home Assistant:** Ustawienia → Kalendarz — nowe pole na tajne linki iCal (.ics), np. z Google
   Calendar (Ustawienia kalendarza → Scalanie kalendarza → Tajny adres w formacie iCal). Kiosk pobiera je

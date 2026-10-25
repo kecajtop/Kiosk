@@ -800,6 +800,11 @@ są w panelu: Połączenia → MQTT i Home Assistant. Połączenie idzie przez
 panel (WebSocket → x11vnc na 127.0.0.1:5900) z jednorazowym biletem dla administratora; hasło VNC panel bierze
 z usługi x11vnc (`-passwd` albo plik `-rfbauth`).
 
+**Jako RTSP** (Frigate, go2rtc, NVR-y): Połączenia → MQTT i Home Assistant → „Ekran jako kamera RTSP” —
+`rtsp://<kiosk>:8554/kiosk`. Osobny serwer od MJPEG (ffmpeg x11grab → h264, tryb nasłuchu ffmpeg); obsługuje
+jednego widza na raz, po rozłączeniu wznawia się sam w kilka sekund. Port 8554 trzeba dodać do firewalla, jeśli
+ustawiono własny (kiosk-firewall ma go już w domyślnej liście).
+
 `x11vnc` udostępnia na porcie **5900** dokładnie tę sesję Xorg, którą
 widać na ekranie kiosku (nie osobny wirtualny pulpit).
 
@@ -1005,6 +1010,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.22** (25.10.2026) — ekran kiosku jako kamera RTSP (Ustawienia → MQTT i integracje), dla Frigate/go2rtc/
+  NVR-ów które potrzebują RTSP zamiast MJPEG: `rtsp://<kiosk>:8554/kiosk`.
 - **1.0.21** (25.10.2026) — kalendarz bez Home Assistant: w Ustawienia → Kalendarz można teraz wkleić tajne
   linki iCal (.ics), np. z Google Calendar, i kiosk pobierze je bezpośrednio — bez integracji w HA, bez konta
   dewelopera. Obsługa wydarzeń cyklicznych (RRULE) i wyjątków (EXDATE). Do 5 linków, można łączyć z encjami

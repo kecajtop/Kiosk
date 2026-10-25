@@ -4416,6 +4416,92 @@ class Motion:
 MOTION = None
 
 
+# ---------------------------------------------------------------- ekran kiosku jako kamera RTSP
+
+SCREEN_RTSP_FILE = ETC + "/screen-rtsp.json"
+SCREEN_RTSP_PORT = 8554
+SCREEN_RTSP_PATH = "kiosk"
+
+
+def read_screen_rtsp():
+    s = read_json(SCREEN_RTSP_FILE, {})
+    return {"enabled": bool(s.get("enabled", False)),
+            "width": int(s.get("width", 960)) if str(s.get("width", 960)).isdigit() else 960,
+            "fps": int(s.get("fps", 8)) if str(s.get("fps", 8)).isdigit() else 8}
+
+
+class ScreenRtsp:
+    """Wystawia ekran kiosku jako kamerę RTSP (ffmpeg x11grab -> h264 -> serwer RTSP ffmpeg
+    w trybie nasłuchu). Serwer ffmpeg w trybie listen obsługuje jednego klienta na raz i kończy
+    działanie po jego rozłączeniu — wątek niżej uruchamia go ponownie w kilka sekund, więc kolejne
+    połączenie (np. odtworzenie podglądu, restart Frigate/go2rtc) od razu dostaje nowy strumień."""
+
+    def __init__(self):
+        self.proc = None
+        self.sig = None
+        self.last_error = ""
+        threading.Thread(target=self._watch, daemon=True).start()
+
+    def status(self):
+        return {"running": self.proc is not None and self.proc.poll() is None, "error": self.last_error,
+                "port": SCREEN_RTSP_PORT, "path": SCREEN_RTSP_PATH}
+
+    def _watch(self):
+        while True:
+            try:
+                cfg = read_screen_rtsp()
+                sig = (cfg["width"], cfg["fps"]) if cfg["enabled"] else None
+                if sig != self.sig:
+                    self.sig = sig
+                    if self.proc is not None:
+                        self.proc.terminate()
+                        try:
+                            self.proc.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            self.proc.kill()
+                        self.proc = None
+                if cfg["enabled"] and (self.proc is None or self.proc.poll() is not None):
+                    self.proc = self._spawn(cfg["width"], cfg["fps"])
+            except Exception as e:
+                self.last_error = str(e)
+                log("ekran RTSP: %s" % e)
+            time.sleep(3)
+
+    def _spawn(self, width, fps):
+        user = read_conf()["user"]
+        if not user:
+            raise RuntimeError("brak KIOSK_USER")
+        src, size = ":0", []
+        if session_mode() == "desktop":
+            area = display_areas().get("main_area", "")
+            m = re.match(r"^(\d+)x(\d+)\+(\d+)\+(\d+)$", area)
+            if not m:
+                raise RuntimeError("monitor kiosku jest odłączony albo wyłączony")
+            size = ["-video_size", "%sx%s" % (m.group(1), m.group(2))]
+            src = ":0+%s,%s" % (m.group(3), m.group(4))
+        cmd = ["runuser", "-u", user, "--", "env", "DISPLAY=:0", "XAUTHORITY=%s/.Xauthority" % user_home(),
+               "ffmpeg", "-nostdin", "-v", "error", "-f", "x11grab", "-draw_mouse", "0", "-framerate", str(fps)] + \
+              size + ["-i", src,
+              "-vf", "scale='min(%d,iw)':-2:flags=fast_bilinear,format=yuv420p" % width,
+              "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-g", str(fps * 2),
+              "-f", "rtsp", "-rtsp_flags", "listen",
+              "rtsp://0.0.0.0:%d/%s" % (SCREEN_RTSP_PORT, SCREEN_RTSP_PATH)]
+        p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, errors="replace")
+        threading.Thread(target=self._read_err, args=(p,), daemon=True).start()
+        self.last_error = ""
+        log("ekran RTSP: nasłuch na porcie %d (%dx@%dfps)" % (SCREEN_RTSP_PORT, width, fps))
+        return p
+
+    def _read_err(self, p):
+        for line in p.stderr:
+            line = line.strip()
+            if line:
+                self.last_error = line[-200:]
+
+
+SCREEN_RTSP = None
+
+
 # ---------------------------------------------------------------- rozpoznawanie twarzy (lokalnie)
 
 FACES_FILE = ETC + "/faces.json"
@@ -5753,6 +5839,7 @@ class Handler(BaseHTTPRequestHandler):
                                                                          "method": BRIGHT.method, "how": read_bright()["method"],
                                                                          "invert": read_bright()["invert"]},
                                 "sun": sun_status(),
+                                "screen_rtsp": dict(read_screen_rtsp(), **(SCREEN_RTSP.status() if SCREEN_RTSP else {})),
                                 "photos": list_photos(), "views": sorted(read_views()), "cameras": len(cams),
                                 "satellite": satellite_info(), "https_port": HTTPS_PORT if os.path.exists(TLS_DIR + "/cert.pem") else None,
                                 "https_fp": tls_fingerprint(),
@@ -5915,6 +6002,13 @@ class Handler(BaseHTTPRequestHandler):
             if BRIDGE:
                 threading.Thread(target=BRIDGE.publish_discovery, daemon=True).start()
             return "Wykrywanie ruchu: " + ("kamery " + ", ".join(map(str, cams)) if cfg["enabled"] and cams else "wyłączone")
+        if path == "/api/screen-rtsp":
+            cfg = {"enabled": bool(body.get("enabled")),
+                   "width": to_int(body.get("width", 960), 320, 1920, "width"),
+                   "fps": to_int(body.get("fps", 8), 1, 15, "fps")}
+            write_json(SCREEN_RTSP_FILE, cfg, 0o644)
+            return "Ekran jako RTSP: " + ("rtsp://<adres-kiosku>:%d/%s" % (SCREEN_RTSP_PORT, SCREEN_RTSP_PATH)
+                                          if cfg["enabled"] else "wyłączony")
         if path == "/api/faces":
             cams = [int(c) for c in body.get("cameras", []) if str(c).isdigit()]
             n = len(read_conf()["cameras"])
@@ -7152,6 +7246,13 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <div class="field"><span class="lbl">Adres MJPEG</span><code id="hamjpeg" class="mono" style="word-break:break-all"></code></div>
 <div class="field"><span class="lbl">Adres zdjęcia (still image)</span><code id="hastill" class="mono" style="word-break:break-all"></code></div>
 <p class="hint">Użytkownik: nazwa konta domownika (albo dowolna z tokenem jako hasłem), hasło: hasło konta albo token. Przy adresie https wyłącz „Weryfikuj certyfikat SSL”. W HA pojawiają się też encje „Aktualizacja”, „Automatyczne aktualizacje” i „Sprawdź aktualizacje” — kiosk widać w Ustawienia → Aktualizacje.</p>
+<h3>Ekran jako kamera RTSP</h3>
+<p class="hint">Dla Frigate, go2rtc i NVR-ów, które potrzebują RTSP zamiast MJPEG — mniejsze opóźnienie i przepustowość. Serwer RTSP działa na kiosku i obsługuje jednego widza na raz (typowe dla NVR-a nagrywającego jeden strumień); każde kolejne połączenie dostaje świeży strumień w kilka sekund.</p>
+<form id="rtf"><label class="check"><input type="checkbox" id="rten"> RTSP włączone</label>
+<div class="grid2"><div class="field"><label for="rtw">Szerokość (px)</label><input type="number" id="rtw" min="320" max="1920" value="960"></div>
+<div class="field"><label for="rtfps">Klatki/s</label><input type="number" id="rtfps" min="1" max="15" value="8"></div></div>
+<div class="row"><button type="submit" class="primary">Zapisz</button><span id="rtst" class="hint" style="align-self:center"></span></div></form>
+<div class="field"><span class="lbl">Adres RTSP</span><code id="hartsp" class="mono" style="word-break:break-all"></code></div>
 <h3>Dodatek Kioski w Home Assistant</h3>
 <p class="hint">„Paruj z HA” otwiera parowanie na 5 minut: dodatek Kioski sam znajdzie ten kiosk w sieci i doda go do listy (bez tokenu i SSH). Jedno kliknięcie = jedno sparowanie.</p>
 <div class="row"><button type="button" class="primary" id="hapair">Paruj z HA</button></div>
@@ -7374,7 +7475,9 @@ $('mdetect').onclick=async()=>{
   }catch(e){ $('mdres').textContent=e.message; }
   finally{ b.disabled=false; }
 };
-function haUrls(){ const b=location.origin+location.pathname.replace(/[^/]*$/,''); $('hamjpeg').textContent=b+'api/screen/live?w=960&fps=5'; $('hastill').textContent=b+'api/screenshot'; }
+function haUrls(){ const b=location.origin+location.pathname.replace(/[^/]*$/,''); $('hamjpeg').textContent=b+'api/screen/live?w=960&fps=5'; $('hastill').textContent=b+'api/screenshot';
+  $('hartsp').textContent='rtsp://'+location.hostname+':8554/kiosk'; }
+$('rtf').addEventListener('submit', e=>{ e.preventDefault(); act(()=>post('api/screen-rtsp',{enabled:$('rten').checked, width:Number($('rtw').value), fps:Number($('rtfps').value)})).then(()=>setTimeout(()=>loadExt().catch(()=>{}),2000)); });
 async function loadMqtt(){ try{ haUrls(); }catch(e){}
   const m=await api('api/mqtt');
   $('men').checked=m.enabled; $('mhost').value=m.host||''; $('mport').value=m.port||1883; $('muser').value=m.user||'';
@@ -7835,6 +7938,8 @@ async function loadExt(){ const r=await api('api/extras'); EXT=r;
     x.onclick=()=>act(()=>api('api/photos/'+encodeURIComponent(f),{method:'DELETE'})).then(()=>loadExt()); d.append(i,x); return d; }));
   if(!r.photos.length) $('phlist').textContent='Brak zdjęć.';
   const c=r.calendar; $('clen').checked=c.enabled; $('clents').value=c.entities.join(', '); $('clics').value=(c.ics_urls||[]).join('\n'); $('cldays').value=c.days; $('clpos').value=c.overlay; $('cltick').checked=c.ticker;
+  const rt=r.screen_rtsp||{}; $('rten').checked=!!rt.enabled; $('rtw').value=rt.width||960; $('rtfps').value=rt.fps||8;
+  $('rtst').textContent=rt.enabled?(rt.running?'działa':(rt.error?('błąd: '+rt.error):'uruchamianie…')):'';
   const ag=(r.info||{}).agenda||{}; $('clnow').textContent=ag.error?('Błąd: '+ag.error):((ag.events||[]).map(e=>e.when+(e.time?' '+e.time:'')+'  '+e.summary).join('\n'));
   const m=r.motion; $('moen').checked=m.enabled; const cams=[...Array(r.cameras).keys()].map(i=>String(i+1));
   chkList($('mocams'), cams, m.cameras.map(String), 'Kamera '); if(!cams.length) $('mocams').textContent='(brak kamer)';
@@ -8173,7 +8278,7 @@ def cli():
 
 
 def main():
-    global BRIDGE, WEATHER, ANNOUNCER, AUTO, MOTION, FACES, UPDWATCH, PKG_VERSION, RO
+    global BRIDGE, WEATHER, ANNOUNCER, AUTO, MOTION, FACES, UPDWATCH, PKG_VERSION, RO, SCREEN_RTSP
     if len(sys.argv) > 1:
         sys.exit(cli())
     if not os.path.exists(TOKEN_FILE):
@@ -8182,6 +8287,7 @@ def main():
     ANNOUNCER = Announcer()
     AUTO = Automation()
     MOTION = Motion()
+    SCREEN_RTSP = ScreenRtsp()
     FACES = Faces()
     UPDWATCH = UpdateWatch()
     PKG_VERSION = pkg_version()
