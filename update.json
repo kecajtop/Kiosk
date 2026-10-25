@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.26",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.26_amd64.deb",
-  "sha256": "e5812e592bd9249a200e2ade31595f5124ee34a934dc1f5624bfa17c42f79d4a",
-  "size": 23056704,
+  "version": "1:1.0.27",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.27_amd64.deb",
+  "sha256": "d98fd48aa35db71138181aa93d7a09828382ea02040ffcfd6f6b845e61ae9fc4",
+  "size": 23060208,
   "date": "2026-10-25",
-  "notes": "Nowy wyglad zegara: lampy Nixie - szklane tuby ze swiecacymi pomaranczowymi cyframi (retro elektronika)."
+  "notes": "Nowe zegary: kukulka (wahadlo) i bomba (zart); nowy minutnik (odliczanie z karta na ekranie, dzwiek i dymek po koncu)."
 }

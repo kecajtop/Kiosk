@@ -1,5 +1,11 @@
 # Zmiany
 
+## 1.0.27 (2026-10-25)
+- Dwa nowe wyglądy zegara: **kukulka** (drewniana szafka z wahadłem i ciężarkami-szyszkami) i **bomba**
+  (żartobliwy zegar z czerwonymi cyframi i wiązką dynamitu). Ustawienia → Ekran → Wygląd zegara.
+- Nowa funkcja: **minutnik**. Ustawienia → Automatyka → Minutnik — proste odliczanie (minuty/sekundy,
+  opcjonalna nazwa), karta z czasem w prawym dolnym rogu ekranu, dźwięk i dymek po zakończeniu.
+
 ## 1.0.26 (2026-10-25)
 - Nowy wygląd zegara: **nixie** — szklane lampy Nixie ze świecącymi pomarańczowymi cyframi (retro
   elektronika lat 60.). Ustawienia → Ekran → Wygląd zegara.

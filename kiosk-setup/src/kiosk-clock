@@ -8,6 +8,7 @@
 Wygląd (/etc/kiosk-setup/clock.json, panel → Ekran): classic, flip (klapki),
 analog (wskazówki), volt (woltomierze), seg7 (wyświetlacz 7-segmentowy),
 matrix (matryca LED z kropek), nixie (szklane lampy Nixie ze świecącymi cyframi),
+kukulka (drewniany zegar z wahadłem i ciężarkami), bomba (żartobliwy zegar-bomba z lontem),
 lcd1602 / lcd2004 (wyświetlacz znakowy LCD z dużymi
 cyframi; podświetlenie lcd_color: green, blue, amber) oraz animowane: snake (wąż), platform (platformówka
 z robotem), c64 (ekran 8-bitowego komputera), bsod (niebieski ekran), eyes (oczy z zegarem)
@@ -41,7 +42,8 @@ MONTHS = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca",
 SIZES = {"s": 0.050, "m": 0.075, "l": 0.110}
 WEATHER_CACHE = "/run/kiosk-weather.json"  # zapisuje kiosk-api co 10 min
 STYLE_FILE = "/etc/kiosk-setup/clock.json"
-STYLES = ("classic", "flip", "analog", "volt", "seg7", "matrix", "nixie", "snake", "platform", "c64", "bsod", "lcd1602", "lcd2004",
+STYLES = ("classic", "flip", "analog", "volt", "seg7", "matrix", "nixie", "kukulka", "bomba",
+          "snake", "platform", "c64", "bsod", "lcd1602", "lcd2004",
           "eyes", "eyes_only", "robot", "robot_only", "words_pl", "words_en", "dcf", "ledring", "dcf77",
           "minimal", "voltsq")
 ICON_COLORS = {"sunny": "#F2A900", "partlycloudy": "#F2A900", "lightning": "#F2A900", "lightning-rainy": "#F2A900",
@@ -237,6 +239,148 @@ def draw_nixie(t, H, out):
     _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
 
 
+def draw_kukulka(t, H, out):
+    """Zegar z kukułką: drewniana szafka, tarcza ze wskazówkami, wahadło, ciężarki-szyszki."""
+    W = int(H * 1.15)
+    Ht = int(H * 1.55)
+    wood, wood_d, wood_l = "#6B4226", "#4A2C18", "#8A5A35"
+    face_bg, face_ring = "#F4E9D8", "#C9A876"
+    mvg = ["stroke none"]
+
+    roof_h = H * 0.24
+    body_top = roof_h
+    body_w = W * 0.80
+    bx0 = (W - body_w) / 2.0
+    mvg += ["fill '%s'" % wood_d,
+            "polygon %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (W / 2.0, 0, bx0 - W * 0.05, body_top, bx0 + body_w + W * 0.05, body_top)]
+    mvg += ["fill '%s'" % wood,
+            "polygon %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (W / 2.0, H * 0.025, bx0, body_top, bx0 + body_w, body_top)]
+    mvg += ["fill '%s'" % wood_l, "circle %.1f,%.1f %.1f,%.1f" % (W / 2.0, H * 0.07, W / 2.0 + H * 0.035, H * 0.07)]
+
+    body_bot = body_top + H * 0.95
+    mvg += ["fill '%s'" % wood, "rectangle %.1f,%.1f %.1f,%.1f" % (bx0, body_top, bx0 + body_w, body_bot)]
+    mvg += ["fill none", "stroke '%s'" % wood_d, "stroke-width %.1f" % max(2, W * 0.012),
+            "rectangle %.1f,%.1f %.1f,%.1f" % (bx0 + W * 0.02, body_top + W * 0.02, bx0 + body_w - W * 0.02, body_bot - W * 0.02),
+            "stroke none"]
+
+    door_w, door_h = W * 0.19, H * 0.075
+    door_x, door_y = W / 2.0 - door_w / 2.0, body_top + H * 0.02
+    dm = max(0.8, min(door_w, door_h) * 0.14)
+    mvg += ["fill '%s'" % wood_d,
+            "roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (door_x, door_y, door_x + door_w, door_y + door_h, 4, 4)]
+    mvg += ["fill '#2b1a0f'", "roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f"
+            % (door_x + dm, door_y + dm, door_x + door_w - dm, door_y + door_h - dm, 3, 3)]
+
+    fcy = body_top + H * 0.30
+    fr = body_w * 0.26
+    mvg += ["fill '%s'" % face_ring, "circle %.1f,%.1f %.1f,%.1f" % (W / 2.0, fcy, W / 2.0 + fr + H * 0.02, fcy)]
+    mvg += ["fill '%s'" % face_bg, "circle %.1f,%.1f %.1f,%.1f" % (W / 2.0, fcy, W / 2.0 + fr, fcy)]
+    for i in range(12):
+        x0, y0 = _pt(W / 2.0, fcy, fr * 0.84, i * 30)
+        x1, y1 = _pt(W / 2.0, fcy, fr * 0.95, i * 30)
+        mvg += ["stroke '%s'" % wood_d, "stroke-width %.1f" % max(1.5, fr * 0.04),
+                "line %.1f,%.1f %.1f,%.1f" % (x0, y0, x1, y1), "stroke none"]
+    h, m, sec = t.tm_hour % 12, t.tm_min, t.tm_sec
+    for deg, length, width in (((h + m / 60.0) * 30, 0.48, fr * 0.1), ((m + sec / 60.0) * 6, 0.74, fr * 0.06)):
+        x1, y1 = _pt(W / 2.0, fcy, fr * length, deg)
+        x0, y0 = _pt(W / 2.0, fcy, fr * 0.1, deg + 180)
+        mvg += ["stroke '%s'" % wood_d, "stroke-width %.1f" % width,
+                "line %.1f,%.1f %.1f,%.1f" % (x0, y0, x1, y1), "stroke none"]
+    mvg += ["fill '#B1282B'", "circle %.1f,%.1f %.1f,%.1f" % (W / 2.0, fcy, W / 2.0 + fr * 0.07, fcy)]
+
+    win_y0 = fcy + fr + H * 0.03
+    win_y1 = body_bot - H * 0.03
+    win_x0, win_x1 = W / 2.0 - body_w * 0.17, W / 2.0 + body_w * 0.17
+    mvg += ["fill '#13181c'", "roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (win_x0, win_y0, win_x1, win_y1, 6, 6)]
+    pend_cx, pend_top = W / 2.0, win_y0 + H * 0.015
+    pend_len = (win_y1 - win_y0) * 0.72
+    swing = 13 * math.sin(t.tm_sec * math.pi / 30.0)
+    bxp, byp = _pt(pend_cx, pend_top, pend_len, swing)
+    mvg += ["stroke '#C9A876'", "stroke-width %.1f" % max(2, W * 0.01),
+            "line %.1f,%.1f %.1f,%.1f" % (pend_cx, pend_top, bxp, byp), "stroke none"]
+    mvg += ["fill '#D4AF37'", "circle %.1f,%.1f %.1f,%.1f" % (bxp, byp, bxp + W * 0.045, byp)]
+
+    for side in (-1, 1):
+        cx0 = W / 2.0 + side * body_w * 0.30
+        cy0 = body_top + H * 0.09
+        cy1 = body_bot - H * 0.07
+        mvg += ["stroke '#8a7a5a'", "stroke-width %.1f" % max(1.5, W * 0.006),
+                "line %.1f,%.1f %.1f,%.1f" % (cx0, cy0, cx0, cy1), "stroke none"]
+        pr = W * 0.045
+        mvg += ["fill '#7A5230'", "polygon %.1f,%.1f %.1f,%.1f %.1f,%.1f %.1f,%.1f"
+                % (cx0 - pr, cy1 - pr * 1.6, cx0 + pr, cy1 - pr * 1.6, cx0 + pr * 0.6, cy1 + pr * 1.1, cx0 - pr * 0.6, cy1 + pr * 1.1)]
+
+    mvg += ["fill '%s'" % wood_d,
+            "rectangle %.1f,%.1f %.1f,%.1f" % (bx0 - W * 0.03, body_bot, bx0 + body_w + W * 0.03, body_bot + H * 0.10)]
+
+    _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
+
+
+RED_GLOW = ["#330000", "#C8102E", "#FF3B30", "#FF9B8F"]
+
+
+def draw_bomba(t, H, out):
+    """Żartobliwy zegar-bomba: czerwone cyfry jak w filmach + kreskówkowe laski dynamitu."""
+    hhmm = time.strftime("%H:%M", t)
+    pt = H * 0.95
+    pad = H * 0.18
+    digit_w = pt * 0.62
+    colon_w = pt * 0.28
+    n_digits = sum(1 for c in hhmm if c != ":")
+    W = int(pad * 2 + digit_w * n_digits + colon_w)
+    Ht_digits = int(pt * 1.25)
+
+    bomb_h = H * 1.55
+    stick_w = W * 0.15
+    stick_h = bomb_h * 0.62
+    gap = W * 0.04
+    n_sticks = 3
+    sticks_w = stick_w * n_sticks + gap * (n_sticks - 1)
+    W = max(W, int(sticks_w + pad * 2))
+    Ht = int(Ht_digits + pad * 1.3 + bomb_h)
+
+    mvg = ["stroke none"]
+    panel_y0, panel_y1 = pad * 0.3, pad * 0.3 + Ht_digits
+    mvg += ["fill '#15181b'", "stroke '#3a1414'", "stroke-width %.1f" % max(2, H * 0.01),
+            "roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (pad * 0.5, panel_y0, W - pad * 0.5, panel_y1, H * 0.05, H * 0.05),
+            "stroke none"]
+    cy = (panel_y0 + panel_y1) / 2.0
+    for size, col in zip((pt * 0.52, pt * 0.47, pt * 0.42, pt * 0.38), RED_GLOW):
+        mvg += ["font '%s'" % FONT_BOLD, "font-size %.1f" % size, "fill '%s'" % col, "gravity center",
+                "text %.1f,%.1f '%s'" % (0, -(Ht - cy) + Ht / 2.0, hhmm)]
+
+    sy0 = panel_y1 + pad * 1.3
+    sx0 = (W - sticks_w) / 2.0
+    for i in range(n_sticks):
+        x0 = sx0 + i * (stick_w + gap)
+        x1 = x0 + stick_w
+        y1 = sy0 + stick_h
+        r = stick_w * 0.5
+        mvg += ["fill '#B5301E'", "roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (x0, sy0, x1, y1, r, r)]
+        for sband in (0.18, 0.5, 0.82):
+            by = sy0 + stick_h * sband
+            mvg += ["fill '#E8D9B0'", "rectangle %.1f,%.1f %.1f,%.1f" % (x0, by - stick_h * 0.035, x1, by + stick_h * 0.035)]
+        if i == 1:
+            fuse_x = (x0 + x1) / 2.0
+            fx, fy = fuse_x, sy0
+            pts = [(fx, fy)]
+            for k in range(1, 6):
+                a = k * 0.9
+                pts.append((fx + math.sin(a * 2.3) * stick_w * 0.32, fy - k * stick_h * 0.022))
+            mvg += ["fill none", "stroke '#8a6b3f'", "stroke-width %.1f" % max(2, stick_w * 0.1)]
+            mvg.append("polyline " + " ".join("%.1f,%.1f" % p for p in pts))
+            mvg += ["stroke none"]
+            if (t.tm_sec % 2) == 0:
+                fx2, fy2 = pts[-1]
+                for size, col in zip((stick_w * 0.5, stick_w * 0.36, stick_w * 0.22), ("#FF9B00", "#FFD23B", "#FFF3C4")):
+                    mvg += ["fill '%s'" % col, "circle %.1f,%.1f %.1f,%.1f" % (fx2, fy2, fx2 + size, fy2)]
+
+    mvg += ["fill '#6b4a28'", "rectangle %.1f,%.1f %.1f,%.1f" % (sx0 - W * 0.02, sy0 + stick_h * 0.46,
+                                                                   sx0 + sticks_w + W * 0.02, sy0 + stick_h * 0.46 + stick_h * 0.05)]
+
+    _png(["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG, "-draw", "\n".join(mvg), "PNG24:" + out])
+
+
 def draw_flip(t, H, out):
     card, card2, ink = "#1E252C", "#252D35", "#F3F5F7"
     cw, ch = int(H * 1.5), int(H * 1.25)
@@ -363,7 +507,7 @@ def draw_volt(t, H, out, needles=True, now=None):
 
 
 DRAW = {"flip": draw_flip, "analog": draw_analog, "volt": draw_volt, "seg7": draw_seg7, "matrix": draw_matrix,
-        "nixie": draw_nixie}
+        "nixie": draw_nixie, "kukulka": draw_kukulka, "bomba": draw_bomba}
 
 
 # ---------------------------------------------------------------- zegary animowane (Tk Canvas)

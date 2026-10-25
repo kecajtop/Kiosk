@@ -38,13 +38,13 @@ case "$1" in
         systemctl disable --now kiosk-dlna.service 2>/dev/null || true
         systemctl disable --now kiosk-update.timer 2>/dev/null || true
         rm -f /etc/systemd/system/kiosk-update.timer /etc/systemd/system/kiosk-update.service
-        rm -f /usr/local/sbin/kiosk-update /usr/local/bin/kiosk-ticker /usr/local/bin/kiosk-agenda
+        rm -f /usr/local/sbin/kiosk-update /usr/local/bin/kiosk-ticker /usr/local/bin/kiosk-agenda /usr/local/bin/kiosk-timer
         [ -x /usr/local/sbin/kiosk-satellite ] && /usr/local/sbin/kiosk-satellite remove >/dev/null 2>&1 || true
         [ -x /usr/local/sbin/kiosk-faces ] && /usr/local/sbin/kiosk-faces remove >/dev/null 2>&1 || true
         rm -f /usr/local/sbin/kiosk-faces /usr/local/lib/kiosk-setup/kiosk-faces-worker /var/log/kiosk-faces-install.log
         rmdir /usr/local/lib/kiosk-setup 2>/dev/null || true
         rm -f /usr/local/sbin/kiosk-satellite /usr/local/sbin/kiosk-ro /usr/local/bin/kiosk-status /run/kiosk-netstatus.json /run/kiosk-update.json /run/kiosk-nowplaying.json /run/kiosk-nowplaying-art /etc/modules-load.d/kiosk-i2c.conf
-        rm -f /run/kiosk-agenda.json /run/kiosk-brightness
+        rm -f /run/kiosk-agenda.json /run/kiosk-brightness /run/kiosk-timer.json
         echo "UWAGA: zdjęcia (/var/lib/kiosk-photos) i nagrania z kamer (/var/lib/kiosk-clips) NIE zostały usunięte."
         rm -rf /var/lib/kiosk-setup
         rm -f /run/kiosk-alert.conf /run/kiosk-ticker.txt /var/log/kiosk-update.log

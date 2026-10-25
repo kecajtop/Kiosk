@@ -6,6 +6,7 @@ EOF_BUBBLE kiosk-bubble
 EOF_CLOCK kiosk-clock
 EOF_TICKER kiosk-ticker
 EOF_AGENDA kiosk-agenda
+EOF_TIMER kiosk-timer
 EOF_STATUS kiosk-status
 EOF_POWER kiosk-power
 EOF_MODE kiosk-mode

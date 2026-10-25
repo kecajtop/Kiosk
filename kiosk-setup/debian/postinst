@@ -177,6 +177,11 @@ cat > /usr/local/bin/kiosk-agenda <<'EOF_AGENDA'
 EOF_AGENDA
 chmod 0755 /usr/local/bin/kiosk-agenda
 
+cat > /usr/local/bin/kiosk-timer <<'EOF_TIMER'
+# (treść: src/kiosk-timer — wkleja build.sh)
+EOF_TIMER
+chmod 0755 /usr/local/bin/kiosk-timer
+
 # Ikony połączeń i postęp aktualizacji na ekranie kiosku.
 cat > /usr/local/bin/kiosk-status <<'EOF_STATUS'
 # (treść: src/kiosk-status — wkleja build.sh)

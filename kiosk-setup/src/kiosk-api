@@ -2049,7 +2049,7 @@ CLOCK_BIN = "/usr/local/bin/kiosk-clock"
 CLOCK_STYLE_FILE = ETC + "/clock.json"
 CLOCK_STYLES = (("classic", "Klasyczny"), ("flip", "Klapkowy (flip)"), ("analog", "Analogowy"),
                 ("volt", "Woltomierze"), ("seg7", "7-segmentowy"), ("matrix", "Matryca LED"),
-                ("nixie", "Lampy Nixie"),
+                ("nixie", "Lampy Nixie"), ("kukulka", "Zegar z kukułką"), ("bomba", "Zegar-bomba (żart)"),
                 ("snake", "Wąż (animacja)"), ("platform", "Platformówka (animacja)"), ("c64", "Komputer 8-bit"),
                 ("bsod", "Niebieski ekran"), ("lcd1602", "LCD 1602"), ("lcd2004", "LCD 2004"),
                 ("eyes", "Oczy z zegarem"), ("eyes_only", "Same oczy"), ("robot", "Oczy robota z zegarem"),
@@ -3113,6 +3113,75 @@ class Alert:
 
 
 ALERT = Alert()
+
+
+TIMER_RUN = "/run/kiosk-timer.json"
+
+
+class Minutnik:
+    """Minutnik (odliczanie): panel WWW i ekran kiosku pokazują czas do zera, na koniec dźwięk i dymek."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.timer = None
+        self.ends_at = 0
+        self.total = 0
+        self.label = ""
+
+    def status(self):
+        with self.lock:
+            active, ends_at, total, label = self.timer is not None, self.ends_at, self.total, self.label
+        left = int(round(ends_at - time.time())) if active else 0
+        return {"active": active and left > 0, "seconds_left": max(left, 0), "total": total, "label": label}
+
+    def start(self, body):
+        seconds = to_int(body.get("seconds", 0), 1, 86400, "seconds")
+        label = str(body.get("label", "")).strip()[:60]
+        with self.lock:
+            if self.timer:
+                self.timer.cancel()
+            self.total, self.label = seconds, label
+            self.ends_at = time.time() + seconds
+            self.timer = threading.Timer(seconds, self._finish)
+            self.timer.daemon = True
+            self.timer.start()
+        self._write()
+        return "Minutnik: %s (%d s)" % (label or "bez nazwy", seconds)
+
+    def cancel(self):
+        with self.lock:
+            if self.timer:
+                self.timer.cancel()
+            self.timer, self.ends_at, self.total, self.label = None, 0, 0, ""
+        self._write()
+        return "Minutnik anulowany"
+
+    def _write(self):
+        with self.lock:
+            active, ends_at, total, label = self.timer is not None, self.ends_at, self.total, self.label
+        write_json(TIMER_RUN, {"active": active, "ends_at": ends_at, "total": total, "label": label}, 0o644)
+
+    def _finish(self):
+        with self.lock:
+            self.timer, self.ends_at, label = None, 0, self.label
+        self._write()
+        try:
+            power("screen", "on")
+        except Exception as e:
+            log("minutnik: wybudzenie ekranu: %s" % e)
+        try:
+            BUBBLE.show({"title": "⏰ Minutnik", "text": label or "Czas minął!", "level": "alert", "seconds": 30, "wake": False})
+        except Exception as e:
+            log("minutnik: dymek: %s" % e)
+        try:
+            if ANNOUNCER:
+                ANNOUNCER.put(ensure_chime(), False)
+        except Exception as e:
+            log("minutnik: dźwięk: %s" % e)
+        log("Minutnik: koniec (%s)" % (label or "bez nazwy"))
+
+
+MINUTNIK = Minutnik()
 
 
 def read_schedule():
@@ -5530,6 +5599,8 @@ class Handler(BaseHTTPRequestHandler):
             cfg["has_token"] = bool(cfg.pop("ha_token"))
             return self.send(200, {"config": cfg, "current": WEATHER.current if WEATHER else None,
                                    "error": WEATHER.error if WEATHER else ""})
+        if path == "/api/timer":
+            return self.send(200, MINUTNIK.status())
         if path.startswith("/api/") and self.get_extra(path):
             return
         if path == "/api/screenshot":
@@ -6022,6 +6093,10 @@ class Handler(BaseHTTPRequestHandler):
             if BRIDGE:
                 threading.Thread(target=BRIDGE.publish_discovery, daemon=True).start()
             return "Wykrywanie ruchu: " + ("kamery " + ", ".join(map(str, cams)) if cfg["enabled"] and cams else "wyłączone")
+        if path == "/api/timer":
+            if body.get("cancel"):
+                return MINUTNIK.cancel()
+            return MINUTNIK.start(body)
         if path == "/api/screen-rtsp":
             cfg = {"enabled": bool(body.get("enabled")),
                    "width": to_int(body.get("width", 960), 320, 1920, "width"),
@@ -7115,6 +7190,7 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <a href="#/obecnosc" role="tab" data-pane="obecnosc">Obecność i noc</a>
 <a href="#/zdjecia" role="tab" data-pane="zdjecia">Zdjęcia (wygaszacz)</a>
 <a href="#/kalendarz" role="tab" data-pane="kalendarz">Kalendarz</a>
+<a href="#/minutnik" role="tab" data-pane="minutnik">Minutnik</a>
 <a href="#/ruch" role="tab" data-pane="ruch">Ruch na kamerach</a>
 <a href="#/twarze" role="tab" data-pane="twarze">Rozpoznawanie twarzy</a>
 <a href="#/pogoda" role="tab" data-pane="pogoda">Pogoda</a>
@@ -7159,6 +7235,14 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <label class="check"><input type="checkbox" id="cltick" checked> Także na pasku informacyjnym</label>
 <div class="row"><button type="submit" class="primary">Zapisz kalendarz</button></div></form>
 <pre id="clnow" class="hint"></pre>
+</section>
+<section class="card pane" role="tabpanel" id="minutnik" aria-labelledby="h-minutnik" hidden><h2 id="h-minutnik">Minutnik</h2>
+<p class="lead">Odliczanie na ekranie kiosku (karta w prawym dolnym rogu) i dźwięk + dymek po zakończeniu.</p>
+<div id="tmnow" class="hint" style="font-size:20px;margin-bottom:10px"></div>
+<form id="tmf"><div class="grid2"><div class="field"><label for="tmmin">Minuty</label><input type="number" id="tmmin" min="0" max="1440" value="5"></div>
+<div class="field"><label for="tmsec">Sekundy</label><input type="number" id="tmsec" min="0" max="59" value="0"></div></div>
+<div class="field"><label for="tmlabel">Nazwa (opcjonalnie)</label><input type="text" id="tmlabel" maxlength="60" placeholder="Jajka na twardo"></div>
+<div class="row"><button type="submit" class="primary">Start</button><button type="button" id="tmcancel">Anuluj</button></div></form>
 </section>
 <section class="card pane" role="tabpanel" id="ruch" aria-labelledby="h-ruch" hidden><h2 id="h-ruch">Ruch na kamerach</h2>
 <p class="lead">Proste wykrywanie ruchu na obrazie (porównanie kolejnych klatek kluczowych, mało obciąża procesor). Ruch: czujnik „Ruch kamera N” w HA, alarm na ekranie i/lub nagranie 20 s.</p>
@@ -7900,7 +7984,15 @@ $('kmlive').onclick=vncOpen; $('vncclose').onclick=()=>vncClose();
 $('vncctl').onchange=()=>{ if($('vncctl').checked) vncStart(); else { vncStop(); $('vncst').textContent='Łączę…'; $('vncscreen').append(liveImg()); } };
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('vncov').hidden && !$('vncctl').checked) vncClose(); });
 // ---- rozpoznawanie twarzy
-let FCTIMER=0, FCSIG='';
+let FCTIMER=0, FCSIG='', TMTIMER=0;
+function fmtMS(s){ s=Math.max(0,Math.round(s)); const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); }
+async function loadTimer(){ const r=await api('api/timer');
+  $('tmnow').textContent=r.active?('⏱ '+(r.label||'Minutnik')+' — zostało '+fmtMS(r.seconds_left)):'Minutnik nieaktywny.'; return r; }
+$('tmf').addEventListener('submit', e=>{ e.preventDefault();
+  const seconds=Number($('tmmin').value||0)*60+Number($('tmsec').value||0);
+  if(seconds<=0) return toast('Podaj czas większy od zera','err');
+  act(()=>post('api/timer',{seconds, label:$('tmlabel').value})).then(()=>loadTimer().catch(()=>{})); });
+$('tmcancel').onclick=()=>act(()=>post('api/timer',{cancel:true})).then(()=>loadTimer().catch(()=>{}));
 const fcName=()=>$('fcname').value.trim();
 function fcSnap(){ const n=$('fcsnapcam').value; if(!n) return; const i=$('fcsnap'); i.onload=()=>{ i.style.display='block'; }; i.onerror=()=>{ i.style.display='none'; }; i.src='api/faces/snap/'+n+'?t='+Date.now(); }
 async function loadFaces(quiet){ const r=await api('api/faces'); const c=r.config, st=r.status||{};
@@ -8124,6 +8216,7 @@ function showTab(id, focus){
   if(g==='start') loadRadio().catch(()=>{});
   clearInterval(KMT); KMT=0; if(id==='kamery'){ loadKamery(); KMT=setInterval(()=>{ if(!document.hidden) kmShot(); },6000); }
   clearInterval(FCTIMER); FCTIMER=id==='twarze'?setInterval(()=>{ if(!document.hidden) loadFaces(true).catch(()=>{}); },3000):0;
+  clearInterval(TMTIMER); if(id==='minutnik'){ loadTimer().catch(()=>{}); TMTIMER=setInterval(()=>{ if(!document.hidden) loadTimer().catch(()=>{}); },1000); } else TMTIMER=0;
   if(id==='debug' && !DBTEXT) dbLoad();
   dbLive();
   if(changed && window.scrollY>200) window.scrollTo(0,0);

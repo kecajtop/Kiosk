@@ -163,6 +163,16 @@ if [ -z "${KIOSK_SECONDARY:-}" ] && [ -z "$ALERT" ] && [ "$KIOSK_AGENDA" != off 
     ) &
 fi
 
+# Minutnik (odliczanie), start/stop w panelu WWW — kiosk-api zapisuje /run/kiosk-timer.json.
+if [ -z "${KIOSK_SECONDARY:-}" ] && [ -z "$ALERT" ]; then
+    (
+        while true; do
+            python3 /usr/local/bin/kiosk-timer --corner br --area "${W}x${H}+${AX}+${AY}"
+            sleep 5
+        done
+    ) &
+fi
+
 # Ikony połączeń (LAN, Wi-Fi, internet, HA, MQTT) i postęp aktualizacji na ekranie.
 KIOSK_STATUS_ICONS=${KIOSK_STATUS_ICONS:-tl}; KIOSK_STATUS_PROBLEMS=${KIOSK_STATUS_PROBLEMS:-no}
 if [ -z "${KIOSK_SECONDARY:-}" ]; then

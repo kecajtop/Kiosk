@@ -165,7 +165,7 @@ To, co kiosk pokazuje, ustawiasz w panelu (zakładki Ekran i Widoki), z HA albo 
 
 Zegar ma 23 wyglądy do wyboru w panelu: Ekran → Co wyświetla kiosk → Wygląd zegara. Ten sam wygląd dotyczy nakładki w rogu, kafelka w siatce kamer i zegara nocnego, a zmiana działa od razu, bez mrugnięcia logo.
 
-![Zegary kiosku: 24 wyglądy](img/zegary.png)
+![Zegary kiosku: 26 wyglądów](img/zegary.png)
 
 | Wygląd | Nazwa w `clock.json` | Sekundy | Uwagi |
 | --- | --- | --- | --- |
@@ -176,6 +176,8 @@ Zegar ma 23 wyglądy do wyboru w panelu: Ekran → Co wyświetla kiosk → Wygl�
 | 7-segmentowy | `seg7` | tak | Zgaszone segmenty lekko widoczne |
 | Matryca LED | `matrix` | nie | Cyfry z kropek |
 | Lampy Nixie | `nixie` | nie | Szklane tuby ze świecącymi pomarańczowymi cyframi, retro elektronika lat 60. |
+| Zegar z kukułką | `kukulka` | nie | Drewniana szafka, tarcza ze wskazówkami, wahadło, ciężarki-szyszki |
+| Zegar-bomba (żart) | `bomba` | nie | Czerwone cyfry jak w filmach, wiązka dynamitu z lontem |
 | LCD 1602 | `lcd1602` | tak | Duże cyfry, dzień tygodnia |
 | LCD 2004 | `lcd2004` | tak | Duże cyfry, data i pogoda |
 | Wąż | `snake` | — | Animacja: wąż zjada kropki wokół godziny |
@@ -195,6 +197,10 @@ Zegar ma 23 wyglądy do wyboru w panelu: Ekran → Co wyświetla kiosk → Wygl�
 | Woltomierze kwadratowe | `voltsq` | tak | Trzy kwadratowe mierniki tablicowe, skala 90°, oś pod obudową w prawym dolnym rogu, zero przy podstawie |
 
 Podświetlenie wyświetlaczy LCD: zielone, niebieskie albo bursztynowe (pole pod listy wyglądów). Zegar na cały ekran wyłącza się, wybierając w polu „Zegar” inne miejsce (w rogu albo brak) i klikając „Pokaż na kiosku”.
+
+**Minutnik.** Ustawienia → Automatyka → Minutnik: proste odliczanie (minuty i sekundy, opcjonalna nazwa).
+Karta z pozostałym czasem pokazuje się w prawym dolnym rogu ekranu kiosku i aktualizuje co sekundę; po
+zakończeniu: dźwięk (gong) i dymek „Czas minął!” na 30 sekund. „Anuluj” zatrzymuje odliczanie przed czasem.
 
 **Mimika podczas mowy.** Gdy kiosk mówi (komunikat, mówiący zegar, pogoda, wiadomość głosowa), oczy — ludzkie i robota — patrzą na rozmówcę, pulsują w rytm głosu, częściej mrugają i przybierają wyraz pasujący do treści. Słownik ma ok. 350 słów i fraz po polsku i angielsku, dopasowywanych od początku słowa („deszcz” pasuje też do „deszczowo”); wygrywa nastrój z największą liczbą trafień. Bez trafień: pytanie — zaciekawienie, wykrzyknik — zdziwienie.
 
@@ -591,10 +597,11 @@ Kopia zapasowa z panelu (System → Kopia) obejmuje cały ten katalog.
 
 ## Historia wersji kiosk-setup
 
-Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, 1.0.5 — wersję light, 1.0.6 — Wi-Fi w panelu i aktualizację z gita, 1.0.7 — przełączanie edycji pełna/light z panelu, 1.0.8 — lokalne rozpoznawanie twarzy, 1.0.9 — aplikację na Androida, 1.0.10 — aplikację startującą od radia, 1.0.11 — nowy układ panelu z Pilotem, 1.0.12 — ekran kiosku na żywo w panelu, 1.0.13 — szybszy podgląd ekranu (strumień wideo), 1.0.14 — aktualizacje kiosku w Home Assistant, 1.0.15 — parowanie z dodatkiem Kioski bez tokenu, 1.0.16 — odtwarzacz w telefonie i Pilot jak odtwarzacz, 1.0.17 — MAC i Wake-on-LAN (włączanie kiosków z dodatku Kioski), 1.0.18 — automatyczną jasność wg słońca i porządek w panelu na telefonie (opisy sekcji i drugorzędne przyciski schowane, mniejsze przyciski i ikonki), 1.0.19 — naprawę pustej wersji po aktualizacji, 1.0.20 — automatyczną naprawę przerwanego dpkg przy aktualizacji, 1.0.21 — bezpośrednie linki iCal w kalendarzu (bez Home Assistant), 1.0.22 — ekran kiosku jako kamera RTSP (dla Frigate/go2rtc/NVR-ów), 1.0.23 — naprawę wydarzeń iCal sprzed lat pokazujących się na ekranie, 1.0.24 — naprawę czyszczenia linku iCal przy zapisie kalendarza na telefonie i częstsze sprawdzanie kalendarzy (co 90 s), 1.0.25 — wersję oprogramowania widoczną w nagłówku panelu WWW, a 1.0.26 — nowy wygląd zegara: lampy Nixie.
+Wersja 1.0.1 to pierwsze wydanie kiosk-setup, a wersja 1.0.2 dodaje dwa wyglądy zegara z oczami, a 1.0.3 — dziewięć kolejnych i mimikę oczu podczas mowy, 1.0.4 — większy słownik mimiki, 1.0.5 — wersję light, 1.0.6 — Wi-Fi w panelu i aktualizację z gita, 1.0.7 — przełączanie edycji pełna/light z panelu, 1.0.8 — lokalne rozpoznawanie twarzy, 1.0.9 — aplikację na Androida, 1.0.10 — aplikację startującą od radia, 1.0.11 — nowy układ panelu z Pilotem, 1.0.12 — ekran kiosku na żywo w panelu, 1.0.13 — szybszy podgląd ekranu (strumień wideo), 1.0.14 — aktualizacje kiosku w Home Assistant, 1.0.15 — parowanie z dodatkiem Kioski bez tokenu, 1.0.16 — odtwarzacz w telefonie i Pilot jak odtwarzacz, 1.0.17 — MAC i Wake-on-LAN (włączanie kiosków z dodatku Kioski), 1.0.18 — automatyczną jasność wg słońca i porządek w panelu na telefonie (opisy sekcji i drugorzędne przyciski schowane, mniejsze przyciski i ikonki), 1.0.19 — naprawę pustej wersji po aktualizacji, 1.0.20 — automatyczną naprawę przerwanego dpkg przy aktualizacji, 1.0.21 — bezpośrednie linki iCal w kalendarzu (bez Home Assistant), 1.0.22 — ekran kiosku jako kamera RTSP (dla Frigate/go2rtc/NVR-ów), 1.0.23 — naprawę wydarzeń iCal sprzed lat pokazujących się na ekranie, 1.0.24 — naprawę czyszczenia linku iCal przy zapisie kalendarza na telefonie i częstsze sprawdzanie kalendarzy (co 90 s), 1.0.25 — wersję oprogramowania widoczną w nagłówku panelu WWW, 1.0.26 — nowy wygląd zegara: lampy Nixie, a 1.0.27 — zegary kukułka i bomba oraz minutnik.
 
 | Wersja | Data | Zawartość |
 | --- | --- | --- |
+| 1.0.27 | 25.10.2026 | Zegary kukułka i bomba; nowy minutnik (odliczanie z kartą na ekranie) |
 | 1.0.26 | 25.10.2026 | Nowy wygląd zegara: lampy Nixie (szklane tuby ze świecącymi cyframi) |
 | 1.0.25 | 25.10.2026 | Wersja oprogramowania widoczna w nagłówku panelu WWW |
 | 1.0.24 | 25.10.2026 | Naprawa: zapis kalendarza na telefonie mógł wyczyścić link iCal; częstsze sprawdzanie kalendarzy (90 s) |
