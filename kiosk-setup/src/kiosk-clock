@@ -20,7 +20,8 @@ z robotem), c64 (ekran 8-bitowego komputera), bsod (niebieski ekran), eyes (oczy
 i eyes_only (same oczy) — oczy rozglądają się i mrugają; robot i robot_only — świecące
 oczy robota, które zmieniają wyraz (radość, smutek, złość, senność, zdziwienie). Gdy kiosk mówi,
 oczy patrzą na rozmówcę, pulsują w rytm głosu i przybierają wyraz pasujący do treści.
-words_pl / words_en (zegar słowny), dcf (zegar radiowy LCD), dcf77 (kod czasu DCF77 na pierścieniu
+words_pl / words_en (zegar słowny — nowo zapalane litery przez chwilę przewijają się po alfabecie,
+zanim ustawią się na właściwej), dcf (zegar radiowy LCD), dcf77 (kod czasu DCF77 na pierścieniu
 sekund), ledring (cyfry LED z pierścieniem 60 diod), minimal (minimalistyczna tarcza), voltsq
 (kwadratowe woltomierze ze skalą 90°).
 Zmiana działa w ciągu kilku sekund, bez przeładowania.
@@ -1496,7 +1497,15 @@ def word_keys(lang, t):
     return ["IT", "IS"] + mins[60 - m] + ["TO", EN_HOURS[(h + 1) % 12]]
 
 
-def scene_words(style, W, H, t):
+WORD_ANIM = {}
+WORD_ANIM_DUR = 0.9   # s — jak długo nowo zapalane litery "przewijają się" po alfabecie zanim ustawią się na właściwej
+
+
+def scene_words(style, W, H, t, now=None):
+    """Zegar słowny. Litery, które właśnie się zapalają (zmiana co 5 min), przez chwilę
+    przewijają się po przypadkowych literach alfabetu — jak dekodowanie hasła — zanim
+    ustawią się na docelowej literze z siatki (ta sama siatka cały czas, zmienia się tylko
+    to, co chwilowo widać w zapalających się komórkach)."""
     lang = "pl" if style == "words_pl" else "en"
     grid, pos = word_grid(lang)
     rows, cols = len(grid), len(grid[0])
@@ -1506,13 +1515,26 @@ def scene_words(style, W, H, t):
     for k in word_keys(lang, t):
         r, c, n = pos[k]
         lit.update((r, c + i) for i in range(n))
+
+    now = now if now is not None else time.time()
+    st = WORD_ANIM.setdefault(lang, {"lit": set(lit), "prev": set(), "since": 0.0})
+    if lit != st["lit"]:
+        st["prev"], st["lit"], st["since"] = st["lit"], set(lit), now
+    turning_on = lit - st["prev"]
+    prog = min(1.0, (now - st["since"]) / WORD_ANIM_DUR) if st["since"] else 1.0
+
+    fillset = WORDS[lang]["fill"]
     font = ("DejaVu Sans Mono", max(6, int(cell * 0.62)), True)
     items = []
     for r in range(rows):
         for c in range(cols):
             on = (r, c) in lit
-            items.append(("text", (x0 + (c + 0.5) * cell, y0 + (r + 0.5) * cell), "#FFF1D6" if on else "#262A30",
-                          grid[r][c], font, "center"))
+            ch, col = grid[r][c], "#FFF1D6" if on else "#262A30"
+            if on and (r, c) in turning_on and prog < 1.0:
+                step = int((now - st["since"]) / 0.09)
+                ch = fillset[(r * 131 + c * 17 + step * 13) % len(fillset)]
+                col = "#8A6230" if prog < 0.7 else "#FFF1D6"
+            items.append(("text", (x0 + (c + 0.5) * cell, y0 + (r + 0.5) * cell), col, ch, font, "center"))
     extra = t.tm_min % 5
     d = cell * 0.16
     for i, (cx, cy) in enumerate(((x0 - cell * 0.25, y0 - cell * 0.25), (x0 + cell * cols + cell * 0.25, y0 - cell * 0.25),
@@ -1786,7 +1808,7 @@ def scene_items(style, W, H, t, now=None, weather=None):
         return scene_minimal(style, W, H, t, now)
     if style == "voltsq":
         return scene_voltsq(style, W, H, t, now)
-    return scene_words(style, W, H, t)
+    return scene_words(style, W, H, t, now)
 
 
 def preview_scene(style, t, out, width=360):

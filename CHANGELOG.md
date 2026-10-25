@@ -1,5 +1,10 @@
 # Zmiany
 
+## 1.0.35 (2026-10-25)
+- Zegar słowny (**words_pl** / **words_en**): nowo zapalane litery przy zmianie minuty przez chwilę
+  przewijają się po przypadkowych literach alfabetu — jak dekodowanie hasła — zanim ustawią się
+  na właściwej literze.
+
 ## 1.0.34 (2026-10-25)
 - Karta „Plan dnia” (kalendarz) dostała trzeci styl: **Lampy Nixie** — każdy znak jako świecąca
   pomarańczowa lampa. Ustawienia → Kalendarz → Styl karty.

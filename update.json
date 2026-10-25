@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.34",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.34_amd64.deb",
-  "sha256": "18d98c4086aa532142bee2ebe3453352052b331688882f70eec4781bfee106b5",
-  "size": 23063432,
+  "version": "1:1.0.35",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.35_amd64.deb",
+  "sha256": "11caed564c21f62619b8b19bd48bccd6acb5fba3500e9da4eb025b39659310e0",
+  "size": 23063890,
   "date": "2026-10-25",
-  "notes": "Karta Plan dnia: trzeci styl - Lampy Nixie (kazdy znak jako swiecaca pomaranczowa lampa)."
+  "notes": "Zegar slowny: nowo zapalane litery przewijaja sie po alfabecie zanim ustawia sie na wlasciwej."
 }
