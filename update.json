@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.33",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.33_amd64.deb",
-  "sha256": "6982996a49a4f8d4409514104c0dd206a3457810857d5c115fc4c672a89b191e",
-  "size": 23063066,
+  "version": "1:1.0.34",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.34_amd64.deb",
+  "sha256": "18d98c4086aa532142bee2ebe3453352052b331688882f70eec4781bfee106b5",
+  "size": 23063432,
   "date": "2026-10-25",
-  "notes": "Nowy wyglad zegara: flux (retro sci-fi, trzy swiecace ramiona zbiegajace sie w rdzeniu, czerwony wyswietlacz)."
+  "notes": "Karta Plan dnia: trzeci styl - Lampy Nixie (kazdy znak jako swiecaca pomaranczowa lampa)."
 }

@@ -1,5 +1,5 @@
 Package: kiosk-setup
-Version: 1:1.0.33
+Version: 1:1.0.34
 Section: admin
 Priority: optional
 Architecture: amd64

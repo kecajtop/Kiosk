@@ -4074,7 +4074,7 @@ def safe_name(name, exts):
 
 # ---------------------------------------------------------------- kalendarz
 
-AGENDA_STYLES = (("normal", "Zwykła karta"), ("splitflap", "Tablica (split-flap)"))
+AGENDA_STYLES = (("normal", "Zwykła karta"), ("splitflap", "Tablica (split-flap)"), ("nixie", "Lampy Nixie"))
 
 
 def read_calendar():
@@ -7239,7 +7239,7 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <div class="hint">Tajny adres w formacie iCal: Google Calendar → Ustawienia kalendarza → Scalanie kalendarza. Nie udostępniaj go nikomu — każdy z tym linkiem widzi Twoje wydarzenia.</div></div>
 <div class="grid2"><div class="field"><label for="cldays">Ile dni do przodu</label><input type="number" id="cldays" min="1" max="14" value="3"></div>
 <div class="field"><label for="clpos">Karta na ekranie</label><select id="clpos"><option value="bl">Lewy dolny róg</option><option value="br">Prawy dolny róg</option><option value="tl">Lewy górny róg</option><option value="tr">Prawy górny róg</option><option value="off">Bez karty</option></select></div></div>
-<div class="field"><label for="clstyle">Styl karty</label><select id="clstyle"><option value="normal">Zwykła karta</option><option value="splitflap">Tablica (split-flap, jak na dworcu)</option></select></div>
+<div class="field"><label for="clstyle">Styl karty</label><select id="clstyle"><option value="normal">Zwykła karta</option><option value="splitflap">Tablica (split-flap, jak na dworcu)</option><option value="nixie">Lampy Nixie</option></select></div>
 <label class="check"><input type="checkbox" id="cltick" checked> Także na pasku informacyjnym</label>
 <div class="row"><button type="submit" class="primary">Zapisz kalendarz</button></div></form>
 <pre id="clnow" class="hint"></pre>

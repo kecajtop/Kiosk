@@ -1010,6 +1010,8 @@ na pełną pobiera je ponownie.
 
 ## Historia wersji
 
+- **1.0.34** (25.10.2026) — karta „Plan dnia” ma trzeci styl: **Lampy Nixie** (każdy znak jako
+  świecąca pomarańczowa lampa). Ustawienia → Kalendarz → Styl karty.
 - **1.0.33** (25.10.2026) — nowy wygląd zegara **flux** (retro sci-fi: trzy świecące ramiona zbiegające
   się w rdzeniu, czerwony wyświetlacz czasu). Ustawienia → Ekran → Wygląd zegara.
 - **1.0.32** (25.10.2026) — karta „Plan dnia” (kalendarz) ma opcjonalny styl **tablica (split-flap)**,

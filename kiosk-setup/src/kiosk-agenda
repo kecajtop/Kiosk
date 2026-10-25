@@ -6,7 +6,8 @@
 Wydarzenia zapisuje kiosk-api do /run/kiosk-agenda.json (co 5 min). Kartę
 rysuje ImageMagick (czcionka DejaVu), Tk ją tylko wyświetla. Bez wydarzeń
 karta się chowa. Styl karty (panel → Kalendarz → Styl karty): normal (zwykła
-karta tekstowa) albo splitflap (tablica dworcowa z osobnymi klapkami na znak).
+karta tekstowa), splitflap (tablica dworcowa z osobnymi klapkami na znak)
+albo nixie (znaki jako świecące pomarańczowe lampy Nixie).
 """
 import argparse
 import json
@@ -90,6 +91,55 @@ def render_splitflap(events, pt, out):
     subprocess.run(["convert", "-respect-parentheses"] + cmd[1:], check=True, timeout=25)
 
 
+NIXIE_AGENDA_GLOW = "#FF8A3D"
+NIXIE_AGENDA_BRIGHT = "#FFE9CF"
+
+
+def render_nixie(events, pt, out):
+    """Plan dnia w stylu lamp Nixie: każdy znak w osobnej szklanej tubie ze świecącą
+    pomarańczową poświatą (uproszczona wersja techniki z zegara nixie — bez siateczki
+    anody, dla czytelności przy małych znakach)."""
+    tube_w, tube_h = int(pt * 0.8), int(pt * 1.25)
+    gap = max(2, pt // 14)
+    r = int(tube_w * 0.22)
+
+    rows_text = ["PLAN DNIA"]
+    for e in events:
+        when = (e.get("when", "") + ((" " + e["time"]) if e.get("time") else "")).upper()
+        summ = e.get("summary", "")[:22].upper()
+        rows_text.append((when + "  " + summ)[:28].replace("%", "%%"))
+    maxlen = max(len(row) for row in rows_text)
+    pad = max(8, pt // 2)
+    W = int(maxlen * (tube_w + gap) - gap + pad * 2)
+    Ht = int(len(rows_text) * (tube_h + gap) - gap + pad * 2)
+
+    base_mvg = ["stroke none"]
+    glow_mvg = []
+    bright_mvg = []
+    for ri, row in enumerate(rows_text):
+        for ci in range(maxlen):
+            ch = row[ci] if ci < len(row) else " "
+            x0 = pad + ci * (tube_w + gap)
+            y0 = pad + ri * (tube_h + gap)
+            x1, y1 = x0 + tube_w, y0 + tube_h
+            cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+            base_mvg += ["fill '#15181b'", "stroke '#434c56'", "stroke-width 1",
+                         "roundrectangle %.1f,%.1f %.1f,%.1f %.1f,%.1f" % (x0, y0, x1, y1, r, r), "stroke none"]
+            if ch != " ":
+                glow_mvg += ["font '%s'" % FONT_BOLD, "font-size %.1f" % (tube_h * 0.62), "fill '%s'" % NIXIE_AGENDA_GLOW,
+                             "gravity center", "text %.1f,%.1f '%s'" % (cx - W / 2.0, cy - Ht / 2.0, ch)]
+                bright_mvg += ["font '%s'" % FONT_BOLD, "font-size %.1f" % (tube_h * 0.52), "fill '%s'" % NIXIE_AGENDA_BRIGHT,
+                               "gravity center", "text %.1f,%.1f '%s'" % (cx - W / 2.0, cy - Ht / 2.0, ch)]
+
+    cmd = ["convert", "-size", "%dx%d" % (W, Ht), "xc:" + BG,
+           "-draw", "\n".join(base_mvg),
+           "(", "-size", "%dx%d" % (W, Ht), "xc:none", "-draw", "\n".join(glow_mvg), "-blur", "0x6", ")",
+           "-compose", "plus", "-composite",
+           "-draw", "\n".join(bright_mvg),
+           "-bordercolor", LINE, "-border", "2", "PNG24:" + out]
+    subprocess.run(["convert", "-respect-parentheses"] + cmd[1:], check=True, timeout=25)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--corner", default="bl", choices=["tl", "tr", "bl", "br"])
@@ -121,6 +171,8 @@ def main():
                 try:
                     if style == "splitflap":
                         render_splitflap(ev, pt, tmp)
+                    elif style == "nixie":
+                        render_nixie(ev, pt, tmp)
                     else:
                         render(ev, pt, tmp)
                     img = tk.PhotoImage(file=tmp)
