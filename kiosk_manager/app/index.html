@@ -97,6 +97,10 @@ td{padding:8px 4px;border-bottom:1px solid var(--line)}
 <label style="margin-top:14px">Ekran i system</label><div class="row"><button type="button" data-all="screen-on">Włącz ekrany</button><button type="button" data-all="screen-off">Wyłącz ekrany</button><button type="button" data-all="restart">Odśwież</button></div></div>
 <div class="grp"><label>Zasilanie (przekaźnik / WOL)</label><div class="row"><button type="button" id="allon">Włącz wszystkie</button><button type="button" class="danger" id="alloff">Wyłącz wszystkie</button></div></div>
 <div class="grp"><label>Aktualizacja kiosk-setup</label><div class="row"><button type="button" class="primary" data-all="update-github">Aktualizuj z GitHuba</button><label class="btn"><input type="file" id="deb" accept=".deb" hidden> Wgraj .deb…</label></div><div class="hint" id="latestinfo"></div></div>
+<div class="grp" id="calgrp" hidden><label>Zdjęcia „to było w tym dniu” (z biblioteki Media HA)</label>
+<div class="hint" id="calstat">—</div>
+<div class="row" style="margin-top:8px"><button type="button" id="calreindex">Odśwież indeks</button></div>
+</div>
 </div></details>
 
 <div class="kiosks" id="kiosks"></div>
@@ -171,18 +175,22 @@ function card(k){
     const off=el('button',{type:'button', className:'danger', textContent:'Wyłącz'});
     off.onclick=()=>{ if(confirm('Wyłączyć kiosk '+(st.name||k.host)+'?'+(hasPower(k)&&k.power.relay?' Po zamknięciu systemu przekaźnik odetnie prąd.':' Włączysz go przyciskiem albo przez WOL / przekaźnik.'))) busy(off,()=>pwr(k,'off')); };
     open.classList.add('wide'); if(upb) upb.classList.add('wide');
-    c.append(el('div',{className:'acts'}, open, upb, scr, sel), el('details',{className:'more'}, el('summary',{textContent:'Więcej'}), el('div',{className:'acts'}, powerBtn(k), off, el('div',{className:'wide'}, del))));
+    c.append(el('div',{className:'acts'}, open, upb, scr, sel), el('details',{className:'more'}, el('summary',{textContent:'Więcej'}), el('div',{className:'acts'}, powerBtn(k), calBtn(k), off, el('div',{className:'wide'}, del))));
   } else {
     const del=el('button',{type:'button', className:'danger', textContent:'Usuń z listy'});
     del.onclick=()=>{ if(confirm('Usunąć '+k.host+' z listy?')) api('api/kiosks/'+k.id,{method:'DELETE'}).then(load); };
     const ed=el('button',{type:'button', textContent:'Zmień token'}); ed.onclick=()=>openAdd(k.host);
     let on=null; if(hasPower(k)){ on=el('button',{type:'button', className:'primary wide', textContent:'Włącz'}); on.onclick=()=>busy(on,()=>pwr(k,'on')); }
-    c.append(el('div',{className:'acts'}, on, ed, powerBtn(k), del));
+    c.append(el('div',{className:'acts'}, on, ed, powerBtn(k), calBtn(k), del));
   }
   return c;
 }
 const hasPower=k=>!!(k.power&&(k.power.relay||k.power.wol));
 function powerBtn(k){ const b=el('button',{type:'button', textContent:hasPower(k)?'Zasilanie…':'Ustaw zasilanie…'}); b.onclick=()=>openPower(k); return b; }
+function calBtn(k){ const b=el('button',{type:'button', textContent:k.calendar_photos?'Kalendarium: włączone':'Kalendarium: wyłączone'});
+  b.title='Co dzień: zdjęcia zrobione tego dnia i miesiąca w którymkolwiek roku (z biblioteki Media HA) w galerii kiosku.';
+  b.onclick=()=>busy(b, async()=>{ try{ const r=await post('api/kiosks/'+k.id+'/calendar',{on:!k.calendar_photos}); toast(r.output,'good'); load(); } catch(e){ toast(e.message,'bad'); } });
+  return b; }
 async function pwr(k, what){ try{ const r=await post('api/kiosks/'+k.id+'/'+what,{}); toast(r.output,'good'); setTimeout(load, what==='on'?60000:30000); } catch(e){ toast('Kiosk '+k.host+': '+e.message,'bad'); } }
 let PK=null;
 async function openPower(k){ PK=k; const pw=k.power||{}; const hw=((STATE[k.id]||{}).status||{}).network_hw||{};
@@ -223,7 +231,14 @@ function newer(a,b){ const x=vparts(a), y=vparts(b); for(let i=0;i<Math.max(x.le
 async function loadLatest(){ try{ LATEST=await api('api/latest');
   $('latestinfo').textContent='Najnowsze wydanie: '+(LATEST.full||'?')+(LATEST.light?' (light: '+LATEST.light+')':'');
   const b=$('addonupd'); if(LATEST.addon && newer(LATEST.addon, LATEST.addon_installed)){ b.hidden=false; b.textContent='Nowa wersja dodatku Kioski: '+LATEST.addon+' (masz '+LATEST.addon_installed+'). Zaktualizuj: Ustawienia → Aktualizacje albo Ustawienia → Dodatki → Kioski → Aktualizuj.'; } else b.hidden=true; }catch(e){} }
-async function load(){ try{ await loadLatest(); KIOSKS=(await api('api/kiosks')).kiosks; await Promise.all(KIOSKS.map(refresh)); render(); } catch(e){ toast(e.message,'bad'); } }
+async function loadMedia(){ try{ const m=await api('api/media/status'); $('calgrp').hidden=!m.available;
+  $('calstat').textContent = !m.available ? 'Biblioteka Media Home Assistant nie jest podpięta.'
+    : m.building ? 'Przeszukuję bibliotekę Media…'
+    : 'Dziś (dowolny rok): '+m.today+' zdj. · w bibliotece z datą: '+m.total_with_date
+      +(m.indexed_at ? ' · indeks z '+new Date(m.indexed_at*1000).toLocaleString('pl') : '');
+  } catch(e){} }
+$('calreindex').onclick=e=>busy(e.target, async()=>{ try{ await post('api/media/reindex',{}); toast('Indeksowanie w tle uruchomione — kilka minut dla dużej biblioteki','good'); setTimeout(loadMedia, 3000); } catch(e){ toast(e.message,'bad'); } });
+async function load(){ try{ await loadLatest(); await loadMedia(); KIOSKS=(await api('api/kiosks')).kiosks; await Promise.all(KIOSKS.map(refresh)); render(); } catch(e){ toast(e.message,'bad'); } }
 async function kpost(k, path, body, okMsg){ try{ const r=await post('k/'+k.id+path, body); toast(okMsg||r.output||'Gotowe','good'); setTimeout(()=>refresh(k).then(render), 1500); } catch(e){ toast('Kiosk '+k.host+': '+e.message,'bad'); } }
 async function all(path, body, label, btn){
   const on=KIOSKS.filter(k=>(STATE[k.id]||{}).status); if(!on.length) return toast('Żaden kiosk nie odpowiada','bad');

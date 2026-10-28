@@ -25,6 +25,29 @@ a gdy przestanie odpowiadać — przekaźnik odcina prąd. Tip: w BIOS ustaw „
 sam przekaźnik włącza kiosk. Przekaźnik sterowany też przez termostat (np. Sonoff THR320D) — wyłącz termostat
 (`climate` → off), inaczej może sam odciąć kiosk.
 
+## Zdjęcia „to było w tym dniu”
+
+Dodatek może codziennie wysyłać do wybranych kiosków zdjęcia zrobione tego samego dnia i miesiąca
+w którymkolwiek roku — jak elektroniczna ramka ze wspomnieniami — korzystając z biblioteki **Media**
+Home Assistant (Ustawienia → System → Storage → Media, albo folder podpięty pod `/media` w HA).
+
+1. Umieść zdjęcia (JPEG z datą EXIF — tak zapisują telefony i aparaty) w bibliotece Media, w dowolnych
+   podfolderach.
+2. Przy kiosku, pod **Więcej**, włącz **Kalendarium**.
+3. Co dzień (sprawdzane co 10 minut) dodatek podmienia w galerii tego kiosku zestaw dzisiejszych zdjęć —
+   widać je w trybie **Zdjęcia** (panel kiosku → Ustawienia → Zdjęcia, albo automatycznie, gdy nikogo
+   nie ma). Zdjęcia wgrane ręcznie w panelu kiosku zostają nietknięte.
+4. Sekcja **Wszystkie kioski naraz** pokazuje, ile zdjęć ma datę i ile pasuje na dziś, oraz przycisk
+   **Odśwież indeks** (po dodaniu nowych zdjęć do biblioteki Media nie trzeba czekać na automatyczne
+   przeskanowanie co 6 h).
+
+Współrzędne GPS zapisane w zdjęciu zostają nietknięte — jeśli kiosk ma zainstalowaną odpowiednią wersję
+kiosk-setup, pokaże przy takim zdjęciu małą mapkę w rogu.
+
+Pierwszy raz po aktualizacji dodatku: jeśli biblioteka Media nie była wcześniej podpięta, włącz ją
+w ustawieniach dodatku (Dodatki → Kioski → Konfiguracja → dostęp do danych → Media) i uruchom dodatek
+ponownie.
+
 ## Aktualizacja samego dodatku
 
 Nowe wersje dodatku Home Assistant pokazuje w Ustawienia → Aktualizacje (po odświeżeniu sklepu dodatków).

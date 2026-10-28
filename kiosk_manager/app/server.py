@@ -10,9 +10,11 @@ import http.client
 import ipaddress
 import json
 import os
+import random
 import re
 import secrets
 import socket
+import struct
 import sys
 import threading
 import time
@@ -33,7 +35,7 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}$")
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$")
 ENTITY_RE = re.compile(r"^(switch|light|input_boolean|button|script)\.[a-z0-9_]{1,200}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.3.2"          # = version w config.yaml
+ADDON_VERSION = "1.4.0"          # = version w config.yaml
 RAW = "https://raw.githubusercontent.com/kecajtop/Kiosk/main/"
 _LATEST = {"t": 0, "data": None}
 
@@ -417,6 +419,194 @@ def remove_kiosk(kid):
         save(n)
 
 
+# ---------------------------------------------------------------- zdjęcia „to było w tym dniu” (z Media HA)
+#
+# Biblioteka Media Home Assistant (/media, podpięta w config.yaml jako media:ro) jest przeszukiwana
+# w tle pod kątem zdjęć JPEG z datą EXIF. Co dzień dla kiosków z włączonym „Zdjęcia z kalendarium”
+# podmieniamy w ich galerii (/var/lib/kiosk-photos, przez istniejące /api/photos/upload) zestaw
+# zdjęć zrobionych tego samego dnia i miesiąca w którymkolwiek roku — plik po pliku, z prefiksem
+# "cal_", żeby nie dotykać zdjęć wgranych ręcznie. Współrzędne GPS (jeśli zdjęcie je ma) zostają
+# w nienaruszonych bajtach pliku — to kiosk-setup odczytuje je przy wyświetlaniu (mapka w rogu).
+
+MEDIA_DIR = "/media"
+MEDIA_IMG_EXT = {".jpg", ".jpeg"}   # data EXIF praktycznie tylko w JPEG — PNG/HEIC poza indeksem
+CAL_PREFIX = "cal_"
+_MEDIA = {"t": 0.0, "files": [], "building": False}
+_CAL_STATE = {"date": ""}
+
+
+def exif_date(path):
+    """(miesiąc, dzień) z DateTimeOriginal/DateTimeDigitized/DateTime EXIF danego JPEG, albo None.
+    Minimalny parser segmentu APP1 (bez zależności — tylko struct), czyta wyłącznie nagłówek."""
+    try:
+        with open(path, "rb") as f:
+            if f.read(2) != b"\xff\xd8":
+                return None
+            app1 = None
+            while True:
+                marker = f.read(2)
+                if len(marker) < 2 or marker[0:1] != b"\xff":
+                    break
+                tag = marker[1:2]
+                if tag in (b"\xd8", b"\x01") or (b"\xd0" <= tag <= b"\xd7"):
+                    continue
+                lenb = f.read(2)
+                if len(lenb) < 2:
+                    break
+                seglen = struct.unpack(">H", lenb)[0]
+                data = f.read(seglen - 2)
+                if tag == b"\xe1" and data[:6] == b"Exif\x00\x00":
+                    app1 = data[6:]
+                    break
+                if tag == b"\xda":   # Start of Scan — dalej już dane obrazu, bez nagłówków
+                    break
+            if not app1 or len(app1) < 8:
+                return None
+            be = app1[0:2] == b"MM"
+
+            def u16(o):
+                return struct.unpack_from(">H" if be else "<H", app1, o)[0]
+
+            def u32(o):
+                return struct.unpack_from(">I" if be else "<I", app1, o)[0]
+
+            def read_ifd(off):
+                n = u16(off)
+                entries = {}
+                p = off + 2
+                for _ in range(n):
+                    entries[u16(p)] = (u16(p + 2), u32(p + 4), p + 8)
+                    p += 12
+                return entries
+
+            def ascii_value(entry):
+                typ, cnt, voff = entry
+                if typ != 2:
+                    return None
+                raw = app1[voff:voff + cnt] if cnt <= 4 else app1[u32(voff):u32(voff) + cnt]
+                return raw.split(b"\x00", 1)[0].decode("ascii", "replace")
+
+            def parse_dt(s):
+                m = re.match(r"^(\d{4}):(\d{2}):(\d{2})", s or "")
+                return (int(m.group(2)), int(m.group(3))) if m else None
+
+            ifd0 = read_ifd(u32(4))
+            if 0x8769 in ifd0:   # wskaźnik na pod-IFD Exif
+                sub = read_ifd(u32(ifd0[0x8769][2]))
+                for t in (0x9003, 0x9004):
+                    if t in sub:
+                        dt = parse_dt(ascii_value(sub[t]))
+                        if dt:
+                            return dt
+            if 0x0132 in ifd0:
+                dt = parse_dt(ascii_value(ifd0[0x0132]))
+                if dt:
+                    return dt
+    except Exception:
+        pass
+    return None
+
+
+def media_index_build():
+    files = []
+    try:
+        for root, dirs, names in os.walk(MEDIA_DIR):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for name in names:
+                if os.path.splitext(name)[1].lower() not in MEDIA_IMG_EXT:
+                    continue
+                path = os.path.join(root, name)
+                dt = exif_date(path)
+                if dt:
+                    files.append({"path": path, "mm": dt[0], "dd": dt[1]})
+    except Exception as e:
+        log("indeksowanie /media: %s" % e)
+    _MEDIA["files"] = files
+    _MEDIA["t"] = time.time()
+    _MEDIA["building"] = False
+    log("indeks zdjęć /media: %d z datą EXIF" % len(files))
+
+
+def media_index(force=False):
+    stale = time.time() - _MEDIA["t"] > 21600   # 6 h
+    if (force or stale) and not _MEDIA["building"] and os.path.isdir(MEDIA_DIR):
+        _MEDIA["building"] = True
+        threading.Thread(target=media_index_build, daemon=True).start()
+    return _MEDIA["files"]
+
+
+def on_this_day(limit=24):
+    today = time.localtime()
+    matches = [f for f in media_index() if (f["mm"], f["dd"]) == (today.tm_mon, today.tm_mday)]
+    return random.sample(matches, limit) if len(matches) > limit else matches
+
+
+def media_status():
+    today = time.localtime()
+    today_n = sum(1 for f in _MEDIA["files"] if (f["mm"], f["dd"]) == (today.tm_mon, today.tm_mday))
+    return {"available": os.path.isdir(MEDIA_DIR), "total_with_date": len(_MEDIA["files"]),
+            "today": today_n, "indexed_at": _MEDIA["t"], "building": _MEDIA["building"]}
+
+
+def set_calendar(kid, on):
+    with LOCK:
+        ks = load()
+        for k in ks:
+            if k["id"] == kid:
+                k["calendar_photos"] = bool(on)
+                save(ks)
+                return {"output": "Zdjęcia z kalendarium: %s — %s" % ("włączone" if on else "wyłączone", k["host"])}
+    raise KeyError(kid)
+
+
+def sync_calendar_photos(k, limit=24):
+    """Podmień zestaw zdjęć „to było w tym dniu” w galerii kiosku (prefiks cal_), bez dotykania
+    zdjęć wgranych ręcznie przez użytkownika."""
+    try:
+        cur = kiosk_json(k, "GET", "/api/photos", timeout=10).get("photos") or []
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    for name in cur:
+        if name.startswith(CAL_PREFIX):
+            try:
+                kiosk_json(k, "DELETE", "/api/photos/" + name, timeout=10)
+            except Exception as e:
+                log("usuwanie %s z %s: %s" % (name, k["host"], e))
+    photos = on_this_day(limit)
+    sent = 0
+    for i, f in enumerate(photos):
+        ext = os.path.splitext(f["path"])[1].lower() or ".jpg"
+        try:
+            with open(f["path"], "rb") as fh:
+                data = fh.read()
+            c, r = kiosk_request(k, "POST", "/api/photos/upload?name=%s%02d%s" % (CAL_PREFIX, i, ext),
+                                 data, {"Content-Type": "image/jpeg"}, timeout=20)
+            r.read()
+            c.close()
+            if r.status < 400:
+                sent += 1
+        except Exception as e:
+            log("wysyłanie zdjęcia do %s: %s" % (k["host"], e))
+    log("kalendarium -> %s: wysłano %d/%d zdjęć" % (k["host"], sent, len(photos)))
+    return {"ok": True, "sent": sent, "available": len(photos)}
+
+
+def calendar_daily():
+    """Co 10 min sprawdza, czy zmienił się dzień — jeśli tak, synchronizuje kioski z włączoną opcją."""
+    while True:
+        time.sleep(600)
+        today = time.strftime("%Y-%m-%d")
+        if today == _CAL_STATE["date"]:
+            continue
+        _CAL_STATE["date"] = today
+        for k in load():
+            if k.get("calendar_photos"):
+                try:
+                    sync_calendar_photos(k)
+                except Exception as e:
+                    log("kalendarium %s: %s" % (k["host"], e))
+
+
 BACK_BAR = (b'<style>#km-allback{position:fixed;right:12px;bottom:12px;z-index:9;background:#F2A900;'
             b'color:#14110A;font:600 14px system-ui,sans-serif;padding:10px 14px;border-radius:999px;'
             b'text-decoration:none;box-shadow:0 2px 10px #0008}'
@@ -515,15 +705,32 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, latest_versions())
             if self.command == "GET" and path == "/api/kiosks":
                 return self.send(200, {"kiosks": [{"id": k["id"], "host": k["host"], "port": k.get("port", 8088),
-                                                   "power": k.get("power") or {}} for k in load()]})
+                                                   "power": k.get("power") or {},
+                                                   "calendar_photos": bool(k.get("calendar_photos"))} for k in load()]})
             if self.command == "GET" and path == "/api/ha/entities":
                 return self.send(200, {"entities": ha_power_entities()})
-            mp = re.match(r"^/api/kiosks/([a-z0-9]{1,20})/(power|on|off)$", path)
+            if self.command == "GET" and path == "/api/media/status":
+                return self.send(200, media_status())
+            if self.command == "POST" and path == "/api/media/reindex":
+                media_index(force=True)
+                return self.send(200, {"ok": True, "output": "Indeksowanie /media w tle uruchomione"})
+            mp = re.match(r"^/api/kiosks/([a-z0-9]{1,20})/(power|on|off|calendar)$", path)
             if self.command == "POST" and mp:
                 body = self.body_json()
                 if mp.group(2) == "power":
                     return self.send(200, dict(set_power(mp.group(1), body), ok=True))
+                if mp.group(2) == "calendar":
+                    return self.send(200, dict(set_calendar(mp.group(1), bool(body.get("on"))), ok=True))
                 return self.send(200, dict((power_on if mp.group(2) == "on" else power_off)(mp.group(1)), ok=True))
+            mc = re.match(r"^/api/kiosks/([a-z0-9]{1,20})/calendar/sync$", path)
+            if self.command == "POST" and mc:
+                k = find(mc.group(1))
+                if not k:
+                    raise KeyError(mc.group(1))
+                r = sync_calendar_photos(k)
+                if not r.get("ok"):
+                    raise RuntimeError(r.get("error") or "synchronizacja nie powiodła się")
+                return self.send(200, {"ok": True, "output": "Wysłano %d zdjęć (%s)" % (r["sent"], k["host"])})
             if self.command == "POST" and path == "/api/kiosks":
                 return self.send(200, dict(add_kiosk(self.body_json()), ok=True))
             m2 = re.match(r"^/api/kiosks/([a-z0-9]{1,20})$", path)
@@ -630,7 +837,9 @@ def main():
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     srv.daemon_threads = True
     log("Kioski: panel na porcie %d, kiosków: %d" % (PORT, len(load())))
+    media_index()   # pierwszy indeks zdjęć /media w tle (jeśli biblioteka Media jest podpięta)
     threading.Thread(target=auto_scan, daemon=True).start()
+    threading.Thread(target=calendar_daily, daemon=True).start()
     srv.serve_forever()
 
 

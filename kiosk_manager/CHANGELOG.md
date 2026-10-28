@@ -1,3 +1,12 @@
+## 1.4.0
+- **Zdjęcia „to było w tym dniu”:** dodatek przeszukuje bibliotekę Media Home Assistant (`/media`)
+  pod kątem zdjęć JPEG z datą EXIF i co dzień wysyła do kiosków z włączoną opcją (przycisk
+  „Kalendarium” pod „Więcej”) zdjęcia zrobione tego samego dnia i miesiąca w którymkolwiek roku —
+  do galerii kiosku (jak ręczne wgrywanie w panelu kiosku), bez dotykania zdjęć wgranych ręcznie.
+  Sekcja „Wszystkie kioski naraz” pokazuje stan indeksu i przycisk „Odśwież indeks”.
+- Wymaga dodania biblioteki Media w ustawieniach dodatku (mapowanie `media:ro`) — po aktualizacji
+  dodatek może poprosić o ponowne uruchomienie, żeby to zastosować.
+
 ## 1.3.2
 - Naprawa: pływający przycisk „Wszystkie kioski” (nad podglądem panelu kiosku) zasłaniał zakładkę
   „Ustawienia” na telefonie — podniesiony nad dolny pasek zakładek na wąskich ekranach.
