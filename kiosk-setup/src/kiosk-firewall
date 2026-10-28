@@ -1,8 +1,8 @@
 #!/bin/bash
 # Firewall kiosku (blokada ruchu wychodzącego do internetu).
 #   sudo kiosk-firewall status   - czy blokada działa
-#   sudo kiosk-firewall on       - do internetu tylko adres kiosku i serwery Ubuntu
-#                                  (sieć lokalna bez ograniczeń)
+#   sudo kiosk-firewall on       - do internetu tylko adres kiosku i serwery Ubuntu, pogoda
+#                                  (Open-Meteo) i kafelki mapy OpenStreetMap (sieć lokalna bez ograniczeń)
 #   sudo kiosk-firewall off      - zdejmij blokadę (internet bez ograniczeń)
 #   sudo kiosk-firewall refresh  - odśwież listę dozwolonych adresów (co godzinę z crona)
 #   sudo kiosk-firewall allow-github - dopuść serwery GitHuba (aktualizacja z gita; do odświeżenia listy)
@@ -11,7 +11,7 @@
 [ "$EUID" -eq 0 ] || { echo "Uruchom jako root: sudo kiosk-firewall ${1:-status}" >&2; exit 1; }
 CONF=/etc/kiosk-setup/kiosk.conf
 FWCONF=/etc/kiosk-setup/firewall.conf
-UBUNTU_DOMAINS="archive.ubuntu.com security.ubuntu.com changelogs.ubuntu.com ppa.launchpad.net esm.ubuntu.com api.snapcraft.io keyserver.ubuntu.com ntp.ubuntu.com motd.ubuntu.com api.open-meteo.com"
+UBUNTU_DOMAINS="archive.ubuntu.com security.ubuntu.com changelogs.ubuntu.com ppa.launchpad.net esm.ubuntu.com api.snapcraft.io keyserver.ubuntu.com ntp.ubuntu.com motd.ubuntu.com api.open-meteo.com tile.openstreetmap.org a.tile.openstreetmap.org b.tile.openstreetmap.org c.tile.openstreetmap.org"
 GITHUB_DOMAINS="github.com api.github.com raw.githubusercontent.com objects.githubusercontent.com release-assets.githubusercontent.com codeload.github.com"
 PORTS="22 5900 8088 8443 6600 8554"
 PRIVATE="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"

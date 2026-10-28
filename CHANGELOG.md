@@ -1,5 +1,11 @@
 # Zmiany
 
+## 1.0.38 (2026-10-28)
+- Pokaz zdjęć: zdjęcia ze współrzędnymi GPS w EXIF dostają małą mapkę OpenStreetMap w rogu,
+  pokazującą miejsce zrobienia zdjęcia (kafelki pobrane raz, trzymane w pamięci na dysku —
+  bez internetu albo z zablokowanym firewallem po prostu nie widać mapki, samo zdjęcie i tak
+  się wyświetla). Firewall kiosku (gdy włączony) wpuszcza serwery kafelków sam.
+
 ## 1.0.37 (2026-10-25)
 - Zmiana widoku jest teraz dużo szybsza, gdy układ ekranu zostaje taki sam (ten sam tryb, podział
   mix, zegar) i zmienia się tylko adres strony (web/mix) i/lub treść kamer (rtsp/mix, bez zmiany

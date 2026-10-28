@@ -182,6 +182,12 @@ cat > /usr/local/bin/kiosk-timer <<'EOF_TIMER'
 EOF_TIMER
 chmod 0755 /usr/local/bin/kiosk-timer
 
+# Pokaz zdjęć (tryb photos) — własny renderer, nie feh, żeby zdjęcia z GPS mogły pokazać mapkę.
+cat > /usr/local/bin/kiosk-photos <<'EOF_PHOTOS'
+# (treść: src/kiosk-photos — wkleja build.sh)
+EOF_PHOTOS
+chmod 0755 /usr/local/bin/kiosk-photos
+
 # Ikony połączeń i postęp aktualizacji na ekranie kiosku.
 cat > /usr/local/bin/kiosk-status <<'EOF_STATUS'
 # (treść: src/kiosk-status — wkleja build.sh)
@@ -648,6 +654,9 @@ systemctl enable --now kiosk-update.timer >/dev/null 2>&1 || true
 
 echo "==> Zdjęcia, nagrania z kamer, asystent głosowy, HTTPS, jasność (DDC/CI)..."
 install -d -m 0755 /var/lib/kiosk-photos /var/lib/kiosk-clips
+# Mapka GPS w pokazie zdjęć: pamięć kafelków OpenStreetMap, zapisywana przez
+# kiosk-photos działający jako $KIOSK_USER (nie root) — katalog musi być jego.
+install -d -m 0755 -o "$KIOSK_USER" -g "$KIOSK_USER" /var/cache/kiosk-maptiles
 cat > /usr/local/sbin/kiosk-satellite.new <<'EOF_SATELLITE'
 # (treść: src/kiosk-satellite — wkleja build.sh)
 EOF_SATELLITE

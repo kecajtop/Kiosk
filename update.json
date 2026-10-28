@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.37",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.37_amd64.deb",
-  "sha256": "89524b8b05296ce8c0e09a2c1f00bfefd6f66ead8b65b3a55efc010249f17db1",
-  "size": 23068460,
-  "date": "2026-10-25",
-  "notes": "Zmiana widoku bez przeladowania ekranu, gdy uklad zostaje taki sam (CDP dla Chromium, IPC dla mpv)."
+  "version": "1:1.0.38",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.38_amd64.deb",
+  "sha256": "4b53192b03f66494c08e2dbb07911faef1a48fd9ef738889a0e737aef3e0edbf",
+  "size": 23071094,
+  "date": "2026-10-28",
+  "notes": "Pokaz zdjec: mapka OpenStreetMap w rogu dla zdjec ze wspolrzednymi GPS w EXIF."
 }

@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+"""Pokaz zdjęć na ekranie kiosku (tryb photos — panel → Automatyka → Zdjęcia).
+
+  kiosk-photos --geometry 1920x1080+0+0 [--seconds 12]
+
+Losowa kolejność zdjęć z /var/lib/kiosk-photos, każde dopasowane do ekranu (przycięte,
+wypełnia cały obszar — jak dawne feh --zoom fill). Katalog sprawdzany co 60 s, więc nowe
+zdjęcia (ręczne wgranie w panelu albo synchronizacja "to było w tym dniu" z dodatku HA
+„Kioski”) pojawiają się bez restartu.
+
+Mapka w rogu: jeśli zdjęcie ma współrzędne GPS w EXIF, w rogu pojawia się mały kafelek
+mapy OpenStreetMap z miejscem zrobienia zdjęcia (kafelki pobrane raz, trzymane w
+/var/cache/kiosk-maptiles — przy braku internetu albo zablokowanym firewallu po prostu
+nie widać mapki, samo zdjęcie i tak się wyświetla). Wymaga wpuszczenia tile.openstreetmap.org
+przez firewall kiosku (kiosk-firewall robi to sam, gdy firewall jest włączony).
+
+Obrazki rysuje ImageMagick, Tk je tylko wyświetla (ten sam podział jak w kiosk-clock).
+"""
+import argparse
+import glob
+import math
+import os
+import random
+import struct
+import subprocess
+import tempfile
+import time
+import urllib.error
+import urllib.request
+
+PHOTO_DIR = "/var/lib/kiosk-photos"
+TILE_CACHE = "/var/cache/kiosk-maptiles"
+TILE_SERVERS = ("a", "b", "c")
+USER_AGENT = "kiosk-setup/kiosk-photos (+https://github.com/kecajtop/Kiosk)"
+IMG_EXT = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
+MAP_SIZE = 150
+MAP_ZOOM = 13
+MAP_MARGIN = 28
+CARD_BG, LINE, AMBER = "#151B21", "#3A4652", "#F2A900"
+BG = "#000000"
+RESCAN_MS = 60_000
+
+
+# ---------------------------------------------------------------- EXIF GPS (bez zależności)
+
+def _exif_app1(path):
+    with open(path, "rb") as f:
+        if f.read(2) != b"\xff\xd8":
+            return None
+        while True:
+            marker = f.read(2)
+            if len(marker) < 2 or marker[0:1] != b"\xff":
+                return None
+            tag = marker[1:2]
+            if tag in (b"\xd8", b"\x01") or (b"\xd0" <= tag <= b"\xd7"):
+                continue
+            lenb = f.read(2)
+            if len(lenb) < 2:
+                return None
+            seglen = struct.unpack(">H", lenb)[0]
+            data = f.read(seglen - 2)
+            if tag == b"\xe1" and data[:6] == b"Exif\x00\x00":
+                return data[6:]
+            if tag == b"\xda":
+                return None
+
+
+def exif_gps(path):
+    """(lat, lon) z EXIF GPS danego JPEG, albo None. Minimalny parser IFD (tylko struct)."""
+    try:
+        app1 = _exif_app1(path)
+        if not app1 or len(app1) < 8:
+            return None
+        be = app1[0:2] == b"MM"
+
+        def u16(o):
+            return struct.unpack_from(">H" if be else "<H", app1, o)[0]
+
+        def u32(o):
+            return struct.unpack_from(">I" if be else "<I", app1, o)[0]
+
+        def read_ifd(off):
+            n = u16(off)
+            entries = {}
+            p = off + 2
+            for _ in range(n):
+                entries[u16(p)] = (u16(p + 2), u32(p + 4), p + 8)
+                p += 12
+            return entries
+
+        def ascii_value(entry):
+            typ, cnt, voff = entry
+            raw = app1[voff:voff + cnt] if cnt <= 4 else app1[u32(voff):u32(voff) + cnt]
+            return raw.split(b"\x00", 1)[0].decode("ascii", "replace")
+
+        def rational(off):
+            num, den = u32(off), u32(off + 4)
+            return num / den if den else 0.0
+
+        def dms(entry):
+            typ, cnt, voff = entry
+            base = u32(voff)   # 3 rationals = 24 B, nigdy nie mieści się w 4-bajtowym polu wartości
+            return rational(base) + rational(base + 8) / 60 + rational(base + 16) / 3600
+
+        ifd0 = read_ifd(u32(4))
+        if 0x8825 not in ifd0:
+            return None
+        gps = read_ifd(u32(ifd0[0x8825][2]))
+        if not all(t in gps for t in (0x0001, 0x0002, 0x0003, 0x0004)):
+            return None
+        lat = dms(gps[0x0002])
+        if ascii_value(gps[0x0001]).upper().startswith("S"):
+            lat = -lat
+        lon = dms(gps[0x0004])
+        if ascii_value(gps[0x0003]).upper().startswith("W"):
+            lon = -lon
+        if -90 <= lat <= 90 and -180 <= lon <= 180:
+            return (lat, lon)
+    except Exception:
+        pass
+    return None
+
+
+# ---------------------------------------------------------------- kafelki OpenStreetMap (z pamięcią)
+
+def _frac_tile(lat, lon, zoom):
+    n = 2 ** zoom
+    lat_rad = math.radians(lat)
+    fx = (lon + 180.0) / 360.0 * n
+    fy = (1.0 - math.log(math.tan(lat_rad) + 1 / math.cos(lat_rad)) / math.pi) / 2.0 * n
+    return fx, fy
+
+
+def fetch_tile(x, y, z):
+    """Jeden kafelek 256×256 — z pamięci na dysku albo pobrany (polityka OSM: własny User-Agent)."""
+    if not (0 <= x < 2 ** z and 0 <= y < 2 ** z):
+        return None
+    try:
+        os.makedirs(TILE_CACHE, exist_ok=True)
+        path = os.path.join(TILE_CACHE, "%d_%d_%d.png" % (z, x, y))
+    except OSError:
+        # Katalog pamięci kafelków nieosiągalny (np. brak uprawnień) — bez mapki, zdjęcie i tak się wyświetli.
+        return None
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        return path
+    req = urllib.request.Request(
+        "https://%s.tile.openstreetmap.org/%d/%d/%d.png" % (random.choice(TILE_SERVERS), z, x, y),
+        headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=6) as r:
+            data = r.read()
+    except (urllib.error.URLError, OSError, TimeoutError):
+        return None
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+    except OSError:
+        return None
+    return path
+
+
+def build_map_badge(lat, lon, size=MAP_SIZE, zoom=MAP_ZOOM):
+    """Mały kafelek mapy (zaokrąglony, z obwódką i znacznikiem) wycentrowany na (lat, lon), albo
+    None (brak internetu / brak kafelków w pamięci — zdjęcie i tak się wyświetli, bez mapki)."""
+    fx, fy = _frac_tile(lat, lon, zoom)
+    xt, yt = int(fx), int(fy)
+    center = fetch_tile(xt, yt, zoom)
+    if not center:
+        return None
+    fd, canvas = tempfile.mkstemp(suffix=".png", prefix="kiosk-mapcanvas-")
+    os.close(fd)
+    args = ["convert", "-size", "768x768", "xc:#15181c"]
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            p = fetch_tile(xt + dx, yt + dy, zoom)
+            if p:
+                args += [p, "-geometry", "+%d+%d" % ((dx + 1) * 256, (dy + 1) * 256), "-composite"]
+    args.append(canvas)
+    try:
+        subprocess.run(args, check=True, capture_output=True, timeout=15)
+        cx = 256 + (fx - xt) * 256
+        cy = 256 + (fy - yt) * 256
+        r = size * 0.18
+        fd2, badge = tempfile.mkstemp(suffix=".png", prefix="kiosk-mapbadge-")
+        os.close(fd2)
+        mvg_mask = "roundrectangle 0,0 %d,%d %.1f,%.1f" % (size - 1, size - 1, r, r)
+        subprocess.run(
+            ["convert", canvas, "-crop", "%dx%d+%d+%d" % (size, size, int(cx - size / 2), int(cy - size / 2)),
+             "+repage",
+             "(", "-size", "%dx%d" % (size, size), "xc:none", "-fill", "white", "-draw", mvg_mask, ")",
+             "-alpha", "set", "-compose", "DstIn", "-composite",
+             "-fill", "none", "-stroke", LINE, "-strokewidth", "2", "-draw", mvg_mask,
+             "-fill", AMBER, "-stroke", "white", "-strokewidth", "1.5",
+             "-draw", "circle %d,%d %d,%d" % (size // 2, size // 2, size // 2, size // 2 - 5),
+             badge],
+            check=True, capture_output=True, timeout=15)
+        return badge
+    except Exception:
+        return None
+    finally:
+        try:
+            os.unlink(canvas)
+        except OSError:
+            pass
+
+
+# ---------------------------------------------------------------- przygotowanie kadru
+
+def build_frame(src, w, h, out):
+    """Zdjęcie przycięte/wypełniające WxH (jak feh --zoom fill), z mapką GPS w rogu, jeśli jest."""
+    subprocess.run(["convert", src, "-auto-orient", "-resize", "%dx%d^" % (w, h),
+                     "-gravity", "center", "-extent", "%dx%d" % (w, h), out],
+                    check=True, capture_output=True, timeout=30)
+    gps = exif_gps(src)
+    if not gps:
+        return
+    badge = build_map_badge(*gps)
+    if not badge:
+        return
+    try:
+        x = MAP_MARGIN
+        y = h - MAP_SIZE - MAP_MARGIN
+        subprocess.run(["convert", out, badge, "-geometry", "+%d+%d" % (x, y), "-composite", out],
+                        check=True, capture_output=True, timeout=15)
+    finally:
+        try:
+            os.unlink(badge)
+        except OSError:
+            pass
+
+
+def list_photos():
+    try:
+        return sorted(p for p in glob.glob(os.path.join(PHOTO_DIR, "*"))
+                      if os.path.splitext(p)[1].lower() in IMG_EXT)
+    except OSError:
+        return []
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--geometry", required=True, help="WxH+X+Y")
+    ap.add_argument("--seconds", type=int, default=12)
+    a = ap.parse_args()
+    wh, x, y = a.geometry.split("+", 1)[0], *map(int, a.geometry.split("+")[1:3])
+    w, h = map(int, wh.split("x"))
+
+    import tkinter as tk
+
+    root = tk.Tk()
+    root.configure(cursor="none", bg=BG)
+    root.overrideredirect(True)
+    root.geometry("%dx%d+%d+%d" % (w, h, x, y))
+    label = tk.Label(root, bg=BG, borderwidth=0, highlightthickness=0)
+    label.pack(fill="both", expand=True)
+
+    state = {"order": [], "i": 0, "img": None}
+
+    def rescan():
+        files = list_photos()
+        random.shuffle(files)
+        state["order"] = files
+        state["i"] = 0
+        root.after(RESCAN_MS, rescan)
+
+    def next_photo():
+        root.lift()
+        if not state["order"]:
+            rescan()
+        if not state["order"]:
+            root.after(a.seconds * 1000, next_photo)
+            return
+        if state["i"] >= len(state["order"]):
+            random.shuffle(state["order"])
+            state["i"] = 0
+        src = state["order"][state["i"]]
+        state["i"] += 1
+        fd, out = tempfile.mkstemp(suffix=".png", prefix="kiosk-photoframe-")
+        os.close(fd)
+        try:
+            build_frame(src, w, h, out)
+            img = tk.PhotoImage(file=out)
+            label.configure(image=img)
+            state["img"] = img   # referencja — inaczej GC usunie obrazek z ekranu
+        except Exception as e:
+            print("kiosk-photos: %s: %s" % (src, e))
+        finally:
+            try:
+                os.unlink(out)
+            except OSError:
+                pass
+        root.after(max(2, a.seconds) * 1000, next_photo)
+
+    rescan()
+    next_photo()
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

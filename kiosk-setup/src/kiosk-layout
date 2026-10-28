@@ -209,10 +209,10 @@ clock)
     clock --geometry "${W}x${H}+${AX}+${AY}"
     ;;
 photos)
-    # Wygaszacz: zdjęcia z /var/lib/kiosk-photos (panel → Automatyka → Zdjęcia).
+    # Wygaszacz: zdjęcia z /var/lib/kiosk-photos (panel → Automatyka → Zdjęcia). Własny pokaz
+    # (kiosk-photos), nie feh — żeby zdjęcia z GPS w EXIF mogły pokazać mapkę w rogu.
     while true; do
-        feh --borderless --hide-pointer --geometry "${W}x${H}+${AX}+${AY}" --zoom fill --image-bg black \
-            --randomize --slideshow-delay "${KIOSK_PHOTO_SECONDS:-12}" --reload 120 /var/lib/kiosk-photos
+        python3 /usr/local/bin/kiosk-photos --geometry "${W}x${H}+${AX}+${AY}" --seconds "${KIOSK_PHOTO_SECONDS:-12}"
         echo "Pokaz zdjęć zamknięty, ponawiam za 5 s"
         sleep 5
     done

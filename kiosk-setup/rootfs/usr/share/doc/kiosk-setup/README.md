@@ -503,7 +503,10 @@ połączeniu HTTPS (wymóg przeglądarek); przez HTTP służy wybór pliku/dykta
   (`night/set` ON/OFF, `AUTO` = wg godzin).
 - **Zdjęcia** (Automatyka): wgrywasz zdjęcia w panelu; pokaz na żądanie albo
   zamiast wyłączania ekranu, gdy nikogo nie ma (Obecność → „Pokaż zdjęcia”).
-  MQTT `photos/set` ON/OFF. Zdjęcia: `/var/lib/kiosk-photos`.
+  MQTT `photos/set` ON/OFF. Zdjęcia: `/var/lib/kiosk-photos`. Zdjęcie ze
+  współrzędnymi GPS w EXIF dostaje w pokazie małą mapkę OpenStreetMap w rogu
+  z miejscem zrobienia (kafelki w pamięci na dysku; bez internetu/firewalla
+  po prostu nie ma mapki).
 
 ### Kalendarz
 Dwa niezależne źródła wydarzeń, można je łączyć:
