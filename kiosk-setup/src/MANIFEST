@@ -23,3 +23,4 @@ EOF_SATELLITE kiosk-satellite
 EOF_FACES kiosk-faces
 EOF_FACESW kiosk-faces-worker
 EOF_RO kiosk-ro
+EOF_COCKPIT kiosk-cockpit

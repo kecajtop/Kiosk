@@ -1,5 +1,16 @@
 # Zmiany
 
+## 1.0.41 (2026-10-30)
+- Panel → System → **Cockpit**: opcjonalna instalacja ogólnego panelu administracyjnego Debiana/
+  Ubuntu (CPU/RAM/dysk/sieć, usługi, konta, terminal w przeglądarce), osobnego od panelu kiosku.
+  Nie instalowany domyślnie — przycisk „Zainstaluj” (port 9090, chroniony tymi samymi regułami co
+  SSH/VNC/panel).
+- Podgląd „Na żywo” / Sterowanie: przycisk **⛶ Pełny ekran**.
+- Instalator (.deb): opcjonalne pytania o **konto administratora panelu WWW** (nazwa + hasło) —
+  pozwala zalogować się do panelu od razu po instalacji, bez losowego klucza API. Puste hasło =
+  bez zmian (bez tworzenia konta albo bez zmiany istniejącego). Konto i hasło można też dodać/
+  zmienić później w panelu (Ustawienia → Konta) lub przez `sudo dpkg-reconfigure kiosk-setup`.
+
 ## 1.0.40 (2026-10-30)
 - Podgląd „Na żywo” (Kamery): przełącznik **„Wolne łącze (VPN, zdalnie)”** — mniejsza
   rozdzielczość i mniej klatek/s strumienia MJPEG, dla łączy (np. VPN), na których pełna jakość

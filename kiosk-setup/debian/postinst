@@ -50,6 +50,11 @@ MQTT_PREFIX="${RET:-kecaj/kiosk}"
 db_get kiosk-setup/admin_ips
 ADMIN_IPS="$RET"
 
+db_get kiosk-setup/admin_user
+ADMIN_USER="${RET:-admin}"
+db_get kiosk-setup/admin_password
+ADMIN_PASSWORD="$RET"
+
 if [ "$1" != "configure" ]; then
     exit 0
 fi
@@ -134,6 +139,48 @@ fi
 # Plik zawiera hasła kamer: czytelny tylko dla roota i użytkownika kiosku.
 chown "root:$KIOSK_USER" /etc/kiosk-setup/kiosk.conf
 chmod 0640 /etc/kiosk-setup/kiosk.conf
+
+# Konto administratora panelu WWW (opcjonalnie, zamiast/obok klucza API) —
+# ten sam hash co /api/users w kiosk-api, żeby logowanie zadziałało od razu.
+if [ -n "$ADMIN_PASSWORD" ] && command -v python3 >/dev/null 2>&1; then
+    ADMIN_USER="$ADMIN_USER" ADMIN_PASSWORD="$ADMIN_PASSWORD" python3 - <<'EOF_ADMINPW'
+import hashlib, json, os, re, sys
+
+NAME_RE = re.compile(r"^[a-z0-9_.-]{2,32}$")
+USERS_FILE = "/etc/kiosk-setup/users.json"
+
+name = os.environ.get("ADMIN_USER", "").strip().lower()
+pw = os.environ.get("ADMIN_PASSWORD", "")
+
+if not NAME_RE.match(name):
+    print("UWAGA: nazwa konta administratora '%s' nieprawidłowa (2-32: a-z 0-9 . _ -) — pominięto." % name, file=sys.stderr)
+    sys.exit(0)
+if len(pw) < 6:
+    print("UWAGA: hasło konta administratora za krótkie (min. 6 znaków) — pominięto.", file=sys.stderr)
+    sys.exit(0)
+
+try:
+    users = json.load(open(USERS_FILE))
+    if not isinstance(users, dict):
+        users = {}
+except Exception:
+    users = {}
+
+salt = os.urandom(16).hex()
+h = hashlib.pbkdf2_hmac("sha256", pw.encode(), bytes.fromhex(salt), 200000).hex()
+users[name] = {"salt": salt, "hash": h, "role": "admin"}
+
+tmp = USERS_FILE + ".tmp"
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f:
+    json.dump(users, f, ensure_ascii=False, indent=1)
+os.chmod(tmp, 0o600)
+os.replace(tmp, USERS_FILE)
+print("Konto administratora panelu WWW: %s" % name)
+EOF_ADMINPW
+fi
+# Hasło nie powinno zostać w bazie debconf w postaci czystego tekstu.
+db_set kiosk-setup/admin_password "" 2>/dev/null || true
 fi
 
 cat > /usr/local/bin/kiosk-session <<'EOF_SESSION'
@@ -680,6 +727,13 @@ cat > /usr/local/sbin/kiosk-ro.new <<'EOF_RO'
 EOF_RO
 chmod 0755 /usr/local/sbin/kiosk-ro.new
 mv -f /usr/local/sbin/kiosk-ro.new /usr/local/sbin/kiosk-ro
+# Cockpit (ogólny panel administracyjny Debiana/Ubuntu) — opcjonalny, instalowany na żądanie:
+# panel WWW → System → Cockpit albo sudo kiosk-cockpit install
+cat > /usr/local/sbin/kiosk-cockpit.new <<'EOF_COCKPIT'
+# (treść: src/kiosk-cockpit — wkleja build.sh)
+EOF_COCKPIT
+chmod 0755 /usr/local/sbin/kiosk-cockpit.new
+mv -f /usr/local/sbin/kiosk-cockpit.new /usr/local/sbin/kiosk-cockpit
 # Panel przez HTTPS (port 8443): certyfikat kiosku, ważny 10 lat. Własny certyfikat:
 # podmień /etc/kiosk-setup/tls/cert.pem i key.pem, potem: sudo systemctl restart kiosk-api
 install -d -m 0700 /etc/kiosk-setup/tls

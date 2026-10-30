@@ -5160,6 +5160,24 @@ class Faces:
 FACES = None
 
 
+# ---------------------------------------------------------------- Cockpit (ogólny panel administracyjny)
+
+COCKPIT_CMD = "/usr/local/sbin/kiosk-cockpit"
+COCKPIT_LOG = "/var/log/kiosk-cockpit-install.log"
+COCKPIT_PORT = 9090
+
+
+def cockpit_installed():
+    return qrun(["dpkg-query", "-W", "-f=${Status}", "cockpit-ws"]).strip().endswith("installed") or \
+           qrun(["dpkg-query", "-W", "-f=${Status}", "cockpit"]).strip().endswith("installed")
+
+
+def cockpit_status():
+    installed = cockpit_installed()
+    active = qrun(["systemctl", "is-active", "cockpit.socket"]).strip() if installed else ""
+    return {"installed": installed, "active": active == "active", "port": COCKPIT_PORT}
+
+
 def import_cameras(host):
     """Lista strumieni z go2rtc (port 1984) albo Frigate (5000) -> adresy rtsp://host:8554/nazwa."""
     host = str(host or "").strip()
@@ -5564,6 +5582,7 @@ DEBUG_SOURCES = {
     "lightdm": "Logowanie do pulpitu (LightDM)",
     "system": "System: ostrzeżenia i błędy od startu",
     "faces": "Rozpoznawanie twarzy (instalacja)",
+    "cockpit": "Cockpit (instalacja)",
 }
 
 
@@ -5591,6 +5610,8 @@ def debug_log(src, n=300):
         text = journal(["-b", "-p", "warning"], n)
     elif src == "faces":
         text = tail_file(FACES_LOG, n) if os.path.exists(FACES_LOG) else "(rozpoznawanie twarzy nie było instalowane)"
+    elif src == "cockpit":
+        text = tail_file(COCKPIT_LOG, n) if os.path.exists(COCKPIT_LOG) else "(Cockpit nie był instalowany)"
     else:
         raise ValueError("źródło: " + ", ".join(DEBUG_SOURCES))
     return scrub(text)
@@ -6279,6 +6300,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.send(404, {"error": "brak podglądu — jeszcze nie wykryto twarzy"})
                 else:
                     self.send_file(f, "image/jpeg")
+            elif path == "/api/cockpit":
+                self.send(200, cockpit_status())
             elif path.startswith("/api/faces/img/"):
                 parts = unquote(path[15:]).split("/")
                 f = os.path.join(FACES_DIR, person_name(parts[0]), os.path.basename(parts[-1])) if len(parts) == 2 else ""
@@ -6463,6 +6486,16 @@ class Handler(BaseHTTPRequestHandler):
                 raise RuntimeError(r.stderr.strip())
             return {"install": "Instaluję rozpoznawanie twarzy (kilka minut: ok. 100 MB z internetu, ok. 300 MB na dysku) — dziennik: Debug → Rozpoznawanie twarzy",
                     "remove": "Usuwam rozpoznawanie twarzy (zdjęcia osób zostają)"}[a]
+        if path == "/api/cockpit/install":
+            a = body.get("action")
+            if a not in ("install", "remove"):
+                raise ValueError("action: install, remove")
+            r = subprocess.run(["systemd-run", "--unit", "kiosk-cockpit-%s-%d" % (a, int(time.time())), "--collect",
+                                COCKPIT_CMD, a], capture_output=True, text=True, timeout=20)
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr.strip())
+            return {"install": "Instaluję Cockpit (apt, z serwerów Ubuntu — kilka chwil) — dziennik: Debug → Cockpit",
+                    "remove": "Usuwam Cockpit"}[a]
         if path == "/api/faces/capture":
             n = to_int(body.get("camera", 1), 1, 99, "camera")
             name = person_name(body.get("name"))
@@ -7730,6 +7763,7 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <a href="#/aktualizacje" role="tab" data-pane="aktualizacje">Aktualizacje i kopia</a>
 <a href="#/dysk" role="tab" data-pane="dysk">Dysk tylko do odczytu</a>
 <a href="#/ochrona" role="tab" data-pane="ochrona">Powiadomienia i ochrona</a>
+<a href="#/cockpit" role="tab" data-pane="cockpit">Cockpit</a>
 <a href="#/debug" role="tab" data-pane="debug">Diagnostyka</a>
 </div>
 <section class="card pane" role="tabpanel" id="nazwa" aria-labelledby="h-nazwa" hidden><h2 id="h-nazwa">Nazwa kiosku</h2>
@@ -7788,6 +7822,14 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <div class="row"><button type="submit" class="primary">Zapisz</button><button type="button" id="nftest">Wyślij test</button></div></form>
 <pre id="sysnow" class="hint"></pre>
 </section>
+<section class="card pane" role="tabpanel" id="cockpit" aria-labelledby="h-cockpit" hidden><h2 id="h-cockpit">Cockpit</h2>
+<p class="lead">Ogólny panel administracyjny Debiana/Ubuntu (osobny od panelu kiosku): obciążenie CPU/RAM/dysku,
+usługi systemowe, konta, sieć, terminal w przeglądarce. Instalowany z serwerów Ubuntu, ok. 1,6 MB.</p>
+<div class="row"><span id="cpst" class="hint" style="align-self:center;flex:1;min-width:220px"></span>
+<button type="button" id="cpinst">Zainstaluj</button><a id="cpopen" href="#" target="_blank" rel="noopener" hidden>Otwórz Cockpit →</a>
+<button type="button" id="cprm" class="danger" hidden>Odinstaluj</button></div>
+<p class="hint">Logowanie: konto systemowe kiosku (jak przez SSH). Port 9090 — dostępny z tych samych adresów co SSH/VNC/panel (System → Konta i dostęp → ograniczenie adresów).</p>
+</section>
 <section class="card pane" role="tabpanel" id="debug" aria-labelledby="h-debug" hidden><h2 id="h-debug">Diagnostyka</h2>
 <h3 class="first">Podgląd ekranu</h3>
 <div class="row"><button type="button" id="shotb">Zrób zrzut ekranu</button><a id="shotdl" hidden download="kiosk-ekran.jpg" style="color:var(--blue);align-self:center">Pobierz</a></div>
@@ -7821,7 +7863,7 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 </div></div>
 </main>
 <div id="toast" role="status" aria-live="polite" hidden></div>
-<div id="vncov" hidden role="dialog" aria-label="Ekran kiosku na żywo"><div class="vncbar"><button type="button" id="vncclose">✕ Zamknij</button><label class="check"><input type="checkbox" id="vncctl"> Sterowanie</label><label class="check"><input type="checkbox" id="vnclowbw"> Wolne łącze (VPN, zdalnie)</label><span id="vncst"></span></div><div id="vncscreen"><img id="vncimg" alt="Ekran kiosku na żywo"></div></div>
+<div id="vncov" hidden role="dialog" aria-label="Ekran kiosku na żywo"><div class="vncbar"><button type="button" id="vncclose">✕ Zamknij</button><label class="check"><input type="checkbox" id="vncctl"> Sterowanie</label><label class="check"><input type="checkbox" id="vnclowbw"> Wolne łącze (VPN, zdalnie)</label><button type="button" id="vncfs" aria-label="Pełny ekran" title="Pełny ekran">⛶</button><span id="vncst"></span></div><div id="vncscreen"><img id="vncimg" alt="Ekran kiosku na żywo"></div></div>
 <nav id="tabbar" aria-label="Główne zakładki">
 <a href="#/start" data-tab="start"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v18H7zM12 7.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM10 16h4"/></svg><span>Pilot</span></a>
 <a href="#/kamery" data-tab="kamery"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h12v10H3zM15 10l6-3v10l-6-3"/></svg><span>Kamery</span></a>
@@ -8326,7 +8368,16 @@ function vncOpen(){ try{ history.pushState({vnc:1},'',location.hash); }catch(e){
   $('vncst').textContent='Łączę…'; vncStop(); $('vncscreen').append(liveImg()); }
 $('vnclowbw').onchange=()=>{ try{ localStorage.setItem('kiosk_live_lowbw', $('vnclowbw').checked?'1':'0'); }catch(e){}
   if($('vncov').hidden || $('vncctl').checked) return; liveStop(); $('vncscreen').append(liveImg()); };
+function fsEl(){ return document.fullscreenElement||document.webkitFullscreenElement||document.msFullscreenElement; }
+function fsUpdate(){ $('vncfs').textContent=fsEl()?'⛶ Zwykły ekran':'⛶'; $('vncfs').title=fsEl()?'Wyjdź z pełnego ekranu':'Pełny ekran'; }
+$('vncfs').onclick=async()=>{ const el=$('vncov');
+  try{
+    if(fsEl()){ await (document.exitFullscreen||document.webkitExitFullscreen||document.msExitFullscreen).call(document); }
+    else{ await (el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen).call(el); }
+  }catch(e){ toast('Pełny ekran niedostępny tutaj (np. osadzone w HA bez zgody na pełny ekran w ramce)','err'); } };
+['fullscreenchange','webkitfullscreenchange','MSFullscreenChange'].forEach(ev=>document.addEventListener(ev, fsUpdate));
 function vncClose(fromPop){ const open=!$('vncov').hidden; liveStop(); vncStop(); $('vncov').hidden=true;
+  if(fsEl()){ try{ (document.exitFullscreen||document.webkitExitFullscreen||document.msExitFullscreen).call(document); }catch(e){} }
   if(open && !fromPop && history.state && history.state.vnc){ try{ history.back(); }catch(e){} } }
 window.addEventListener('popstate', ()=>{ if(!$('vncov').hidden) vncClose(true); });
 document.addEventListener('visibilitychange', ()=>{ if($('vncov').hidden || $('vncctl').checked) return; if(document.hidden) liveStop(); else if(!$('vncimg')) $('vncscreen').append(liveImg()); });
@@ -8566,7 +8617,7 @@ function showTab(id, focus){
   if(adm && id==='tryb'){ loadIcons().catch(()=>{}); loadClockStyles().catch(()=>{}); }
   if(adm && (g==='auto' || g==='komunikaty' || id==='widoki')) loadAuto().catch(e=>toast(e.message,'err'));
   if(g==='dzwiek') loadRadio().catch(()=>{});
-  if(adm && g==='system'){ loadUpdate().catch(e=>toast(e.message,'err')); loadUsers().catch(()=>{}); loadName().catch(()=>{}); loadRo().catch(()=>{}); }
+  if(adm && g==='system'){ loadUpdate().catch(e=>toast(e.message,'err')); loadUsers().catch(()=>{}); loadName().catch(()=>{}); loadRo().catch(()=>{}); loadCockpit().catch(()=>{}); }
   if(adm && id==='kioski') loadPeers().catch(()=>{});
   if(adm && id==='siec') loadWifi().catch(e=>toast(e.message,'err'));
   if(adm && id==='twarze') loadFaces().catch(e=>toast(e.message,'err'));
@@ -8636,6 +8687,13 @@ $('roon').onclick=()=>{ toast('Włączam… (za pierwszym razem instaluje się p
 $('rooff').onclick=()=>act(()=>post('api/ro',{action:'off'})).then(()=>loadRo().catch(()=>{}));
 $('rosave').onclick=()=>act(()=>post('api/ro',{action:'save'})).then(()=>loadRo().catch(()=>{}));
 $('roclips').onchange=()=>act(()=>post('api/ro',{keep_clips:$('roclips').checked}));
+
+async function loadCockpit(){ const r=await api('api/cockpit');
+  $('cpinst').textContent=r.installed?'Zainstaluj ponownie':'Zainstaluj'; $('cprm').hidden=!r.installed; $('cpopen').hidden=!r.installed;
+  if(r.installed) $('cpopen').href='https://'+location.hostname+':'+r.port+'/';
+  $('cpst').textContent=r.installed?('Zainstalowany'+(r.active?' · działa':' · nie działa — spróbuj ponownie za chwilę albo zrestartuj kiosk')):'Nie zainstalowany — „Zainstaluj” pobierze Cockpit z serwerów Ubuntu (ok. 1,6 MB, kilka chwil).'; }
+$('cpinst').onclick=()=>{ if(confirm('Zainstalować Cockpit (ogólny panel administracyjny, port 9090)?')) act(()=>post('api/cockpit/install',{action:'install'})).then(()=>setTimeout(()=>loadCockpit().catch(()=>{}),8000)); };
+$('cprm').onclick=()=>{ if(confirm('Odinstalować Cockpit?')) act(()=>post('api/cockpit/install',{action:'remove'})).then(()=>setTimeout(()=>loadCockpit().catch(()=>{}),3000)); };
 
 // Czytelność: każda część pod nagłówkiem h3 w osobnej ramce, długie objaśnienia zwinięte.
 (function(){

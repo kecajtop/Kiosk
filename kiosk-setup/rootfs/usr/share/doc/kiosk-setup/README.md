@@ -584,7 +584,10 @@ obciążenie, wolna pamięć, wolne miejsce, pobór mocy procesora (Intel).
   przeglądarka raz ostrzeże). Przez HTTPS działa nagrywanie w przeglądarce.
   Własny certyfikat: `/etc/kiosk-setup/tls/cert.pem` i `key.pem`.
 - **Konta:** administrator albo domownik (widoki, dymek, dźwięk i radio, ekran).
-  Token panelu zawsze działa jako administrator.
+  Token panelu zawsze działa jako administrator. Konto administratora można
+  utworzyć już przy instalacji `.deb` (pytania o nazwę i hasło — zamiast/obok
+  losowego klucza API); puste hasło pomija ten krok. Zmiana później: tutaj
+  albo `sudo dpkg-reconfigure kiosk-setup`.
 - **Kioski w sieci:** „Szukaj w sieci”, dodanie (adres + token tamtego kiosku),
   komenda na wszystkie naraz, kopiowanie ustawień na inny kiosk.
 
@@ -804,7 +807,10 @@ zastosuje.
 „Sterowanie” przełącza na VNC (noVNC) i przekazuje dotyk, mysz i klawiaturę. Na wolnym łączu (VPN,
 zdalnie przez dodatek Kioski) zaznacz **„Wolne łącze”** — strumień spada do mniejszej rozdzielczości
 i mniej klatek/s (480 px, 3 kl./s zamiast nawet 1200 px, 10 kl./s), co zwykle naprawia czarny ekran,
-który pojawia się, gdy pełna jakość nie mieści się w przepustowości łącza.
+który pojawia się, gdy pełna jakość nie mieści się w przepustowości łącza. Przycisk **⛶** włącza
+pełny ekran przeglądarki (więcej miejsca na podgląd/sterowanie na telefonie) — gdy panel jest
+osadzony w ramce bez zgody na pełny ekran (niektóre aplikacje), przycisk pokaże komunikat zamiast
+się włączyć.
 **W Home Assistant:** integracja MJPEG IP Camera z adresem `http://<kiosk>:8088/api/screen/live?w=960&fps=5`
 i zdjęciem `http://<kiosk>:8088/api/screenshot` (użytkownik/hasło: konto domownika albo token) — gotowe adresy
 są w panelu: Połączenia → MQTT i Home Assistant. Połączenie idzie przez
@@ -888,6 +894,17 @@ Aby sprawdzić aktualne reguły:
 sudo iptables -L OUTPUT -n -v
 sudo ipset list kiosk_allowed
 ```
+
+## Cockpit (ogólny panel administracyjny)
+
+Panel → System → **Cockpit**: opcjonalna instalacja ogólnego panelu administracyjnego Debiana/
+Ubuntu (`cockpit`), osobnego od panelu kiosku — CPU/RAM/dysk/sieć na żywo, usługi systemowe,
+konta, terminal w przeglądarce. Nie jest instalowany domyślnie; `sudo kiosk-cockpit install`
+(albo przycisk „Zainstaluj”) pobiera go z serwerów Ubuntu (ok. 1,6 MB — zwykłe apt, więc działa
+nawet przy włączonym firewallu kiosku) i włącza na porcie **9090** (`https://<kiosk>:9090`,
+logowanie kontem systemowym jak przez SSH). Port 9090 jest ograniczony tymi samymi zasadami co
+SSH/VNC/panel (`ADMIN_IPS` w `/etc/kiosk-setup/firewall.conf`). Odinstalowanie: `sudo kiosk-cockpit
+remove` albo przycisk „Odinstaluj”.
 
 ## Ograniczanie zapisów na dysk/kartę SD (IoT)
 

@@ -34,6 +34,23 @@ prefill() {
             db_set kiosk-setup/confirm_firewall false || true
         fi
     fi
+    if [ -r /etc/kiosk-setup/users.json ] && command -v python3 >/dev/null 2>&1; then
+        A=$(python3 - <<'EOF_PY'
+import json
+try:
+    u = json.load(open("/etc/kiosk-setup/users.json"))
+except Exception:
+    u = {}
+for k, v in u.items():
+    if isinstance(v, dict) and v.get("role") == "admin":
+        print(k)
+        break
+EOF_PY
+)
+        # Hasła nie podstawiamy (mamy tylko hash) — puste pole przy reconfigure
+        # oznacza "nie zmieniaj", patrz postinst.
+        [ -n "$A" ] && db_set kiosk-setup/admin_user "$A" || true
+    fi
     if [ -r /etc/kiosk-setup/mqtt.json ] && command -v python3 >/dev/null 2>&1; then
         python3 - <<'EOF_PY' | while IFS='=' read -r k v; do db_set "kiosk-setup/$k" "$v" || true; done
 import json
@@ -61,7 +78,8 @@ if [ "${1:-}" = configure ] && [ -n "${2:-}" ] && [ -r /etc/kiosk-setup/kiosk.co
     db_get kiosk-setup/run_wizard || true
     [ "$RET" = true ] || exit 0
     for q in username session mode url rtsp_urls usb_device web_percent logo_path confirm_firewall \
-             shutdown_minutes screen_off_minutes mqtt_host mqtt_port mqtt_user mqtt_password mqtt_prefix admin_ips; do
+             shutdown_minutes screen_off_minutes mqtt_host mqtt_port mqtt_user mqtt_password mqtt_prefix admin_ips \
+             admin_user admin_password; do
         db_fset "kiosk-setup/$q" seen false || true
     done
     prefill
@@ -130,6 +148,10 @@ if [ -n "$RET" ]; then
 fi
 
 db_input medium kiosk-setup/admin_ips || true
+db_go
+
+db_input medium kiosk-setup/admin_user || true
+db_input medium kiosk-setup/admin_password || true
 db_go
 
 exit 0

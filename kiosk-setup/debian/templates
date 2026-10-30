@@ -146,3 +146,21 @@ Default: kecaj/kiosk
 Description: Prefiks tematów MQTT:
  Np. kecaj/kiosk — komendy: kecaj/kiosk/mode/set, kecaj/kiosk/bubble/set itd.
  Przy kilku kioskach nadaj każdemu inny prefiks (np. kecaj/salon).
+
+Template: kiosk-setup/admin_user
+Type: string
+Default: admin
+Description: Nazwa konta administratora panelu WWW (opcjonalnie):
+ 2-32 znaki: małe litery, cyfry, . _ -. Konto logowania do panelu WWW
+ kiosku (port 8088/8443), niezależne od losowego klucza API używanego
+ przez dodatek Home Assistant. Zostaw hasło (następne pytanie) puste,
+ aby nie tworzyć żadnego konta — panelem da się zarządzać wyłącznie
+ przez klucz API/HA.
+
+Template: kiosk-setup/admin_password
+Type: password
+Description: Hasło konta administratora panelu WWW (opcjonalnie):
+ Co najmniej 6 znaków. Puste pole = nie twórz konta (albo, jeśli konto
+ o tej nazwie już istnieje, nie zmieniaj jego hasła). Konto i hasło
+ można też dodać/zmienić później w panelu WWW (Ustawienia → Konta)
+ bez ponownej instalacji.

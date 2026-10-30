@@ -1,9 +1,9 @@
 {
-  "package": "kiosk-setup",
-  "version": "1:1.0.40",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.40_amd64.deb",
-  "sha256": "b0642526a8bde6aaefaa72a451b59a0b597e22a68d8c6cc1f13763599dc49fa9",
-  "size": 23071704,
-  "date": "2026-10-30",
-  "notes": "Podglad na zywo: przelacznik Wolne lacze (nizsza jakosc MJPEG dla VPN/zdalnie), dluzszy limit zapisu strumienia."
+    "package": "kiosk-setup",
+    "version": "1:1.0.41",
+    "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.41_amd64.deb",
+    "sha256": "5569a0bbabf9448443d9bba25b7e283564682ce34aafb9b3a144423ab526c9f2",
+    "size": 23073344,
+    "date": "2026-10-30",
+    "notes": "Cockpit (opcjonalna instalacja, panel -> System): ogolny panel administracyjny Debiana/Ubuntu. Pelny ekran podgladu/sterowania. Opcjonalne konto administratora panelu WWW tworzone juz przy instalacji .deb (zamiast/obok klucza API)."
 }
