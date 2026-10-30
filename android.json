@@ -1,9 +1,9 @@
 {
   "package": "pl.kecaj.kiosk",
-  "versionCode": 6,
-  "versionName": "1.5",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-android-1.5.apk",
-  "sha256": "a02045da03a3657070ccc5cea874dd06345f60d27cf4e2d00471d9007ce9c9f3",
+  "versionCode": 7,
+  "versionName": "1.6",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-android-1.6.apk",
+  "sha256": "bc8f868b3f18b0145a7061a0ce87a396d437f5b7be514c0227d19b5ef8cb9028",
   "size": 49955,
-  "notes": "Odtwarzacz kiosku w Androidzie: powiadomienie i ekran blokady z okładką i przyciskami ⏮ ⏯ ⏭, głośność kiosku z przycisków telefonu także w tle."
+  "notes": "Pelny ekran (podglad/sterowanie) i zoom (pinch) ekranu kiosku dzialaja w aplikacji — WebView dostal obsluge HTML5 fullscreen (onShowCustomView) i wlaczony wbudowany pinch-zoom."
 }

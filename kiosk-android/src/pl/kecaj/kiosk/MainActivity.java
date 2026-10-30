@@ -30,6 +30,7 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -77,6 +78,9 @@ public class MainActivity extends Activity {
     final ExecutorService io = Executors.newCachedThreadPool();
     SharedPreferences prefs;
     WebView web;
+    FrameLayout webRoot;        // web + ewentualny widok pełnoekranowy (HTML5 fullscreen z panelu)
+    View fsCustomView;
+    WebChromeClient.CustomViewCallback fsCallback;
     JSONObject kiosk;           // {url, name, user, token}
     String base;                // http(s)://host:port/
     boolean volKeys = true;
@@ -225,9 +229,23 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (fsCustomView != null) { fsCallback.onCustomViewHidden(); return; }   // najpierw wyjdź z pełnego ekranu
         if (web != null && web.getParent() != null && web.canGoBack()) web.goBack();
         else if (web == null && current() != null) openKiosk(current());
         else super.onBackPressed();
+    }
+
+    // ------------------------------------------------------------------ pełny ekran (HTML5 fullscreen z panelu)
+
+    void hideSystemUi() {
+        int f = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+        getWindow().getDecorView().setSystemUiVisibility(f);
+    }
+
+    void showSystemUi() {
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
     }
 
     @Override
@@ -329,6 +347,11 @@ public class MainActivity extends Activity {
             s.setDomStorageEnabled(true);
             s.setMediaPlaybackRequiresUserGesture(false);
             s.setUserAgentString(s.getUserAgentString() + " KioskApp/1.5");
+            // Zoom (pinch) ekranu kiosku/podglądu: domyślnie WebView ma to wyłączone,
+            // trzeba włączyć wprost; kontrolki na ekranie zbędne (gest wystarcza).
+            s.setSupportZoom(true);
+            s.setBuiltInZoomControls(true);
+            s.setDisplayZoomControls(false);
             web.addJavascriptInterface(new Bridge(), "KioskApp");
             web.setWebChromeClient(new WebChromeClient() {
                 @Override
@@ -343,6 +366,29 @@ public class MainActivity extends Activity {
                         return false;
                     }
                     return true;
+                }
+
+                // Pełny ekran z panelu (przycisk ⛶ podglądu/sterowania, Element.requestFullscreen()):
+                // bez tego WebView nie ma gdzie wyświetlić widoku pełnoekranowego i JS dostaje błąd.
+                @Override
+                public void onShowCustomView(View view, WebChromeClient.CustomViewCallback callback) {
+                    if (fsCustomView != null) { callback.onCustomViewHidden(); return; }
+                    fsCustomView = view;
+                    fsCallback = callback;
+                    web.setVisibility(View.GONE);
+                    webRoot.addView(fsCustomView, new FrameLayout.LayoutParams(
+                            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                    hideSystemUi();
+                }
+
+                @Override
+                public void onHideCustomView() {
+                    if (fsCustomView == null) return;
+                    webRoot.removeView(fsCustomView);
+                    fsCustomView = null;
+                    fsCallback = null;
+                    web.setVisibility(View.VISIBLE);
+                    showSystemUi();
                 }
             });
             web.setWebViewClient(new WebViewClient() {
@@ -391,7 +437,13 @@ public class MainActivity extends Activity {
                 try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); } catch (Exception ignored) { }
             } });
         }
-        if (web.getParent() == null) setContentView(web);
+        if (webRoot == null) {
+            webRoot = new FrameLayout(this);
+            webRoot.setBackgroundColor(BG);
+            webRoot.addView(web, new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        }
+        if (webRoot.getParent() == null) setContentView(webRoot);
         startPlayer();
         web.loadUrl(base + "#/" + prefs.getString("start", "start"));   // widok startowy (domyślnie Pilot: radio i głośność)
     }

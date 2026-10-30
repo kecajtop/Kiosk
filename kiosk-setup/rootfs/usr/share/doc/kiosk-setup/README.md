@@ -973,7 +973,7 @@ z pliku `.deb`) i wyszukiwanie kiosków w sieci.
 - **Przyciski głośności telefonu:** Dźwięk → Głośność i głos → „Przyciski głośności tego
   urządzenia sterują kioskiem”. Chrome na Androidzie zwykle nie przekazuje ich stronom —
   wtedy użyj aplikacji.
-- **Aplikacja Kiosk** (`releases/kiosk-android-1.5.apk`, Android 5.0+): panel na pełnym ekranie,
+- **Aplikacja Kiosk** (`releases/kiosk-android-1.6.apk`, Android 5.0+): panel na pełnym ekranie,
   przyciski głośności telefonu zawsze sterują kioskiem, wyszukiwanie kiosków w sieci, zapamiętany
   token lub konto domownika, HTTPS kiosku (zaufanie po porównaniu odcisku SHA-256), „wstecz”
   cofa zakładki, Ustawienia → „Aplikacja Kiosk” otwiera ustawienia aplikacji. Po otwarciu pokazuje

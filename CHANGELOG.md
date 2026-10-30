@@ -10,6 +10,10 @@
   pozwala zalogować się do panelu od razu po instalacji, bez losowego klucza API. Puste hasło =
   bez zmian (bez tworzenia konta albo bez zmiany istniejącego). Konto i hasło można też dodać/
   zmienić później w panelu (Ustawienia → Konta) lub przez `sudo dpkg-reconfigure kiosk-setup`.
+- **Aplikacja Kiosk na Androida 1.6** (`releases/kiosk-android-1.6.apk`): naprawiono pełny ekran
+  (⛶) podglądu/sterowania i zoom (pinch) ekranu kiosku — nie działały we wbudowanym WebView
+  aplikacji (brak obsługi HTML5 fullscreen i wyłączony domyślnie pinch-zoom). Aktualizacja
+  w aplikacji sama to wykryje.
 
 ## 1.0.40 (2026-10-30)
 - Podgląd „Na żywo” (Kamery): przełącznik **„Wolne łącze (VPN, zdalnie)”** — mniejsza

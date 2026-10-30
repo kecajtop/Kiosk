@@ -19,7 +19,7 @@ Panel kiosku kecaj (kiosk-setup) jako aplikacja na telefon:
 - po otwarciu **Pilot**: „Teraz gra”, głośność, kafelki ulubionych stacji, ekran; na dole zakładki Pilot, Kamery,
   Ustawienia; widok po otwarciu do wyboru w ustawieniach aplikacji.
 
-Android 5.0 lub nowszy. Instalacja: skopiuj `releases/kiosk-android-1.5.apk` na telefon i otwórz
+Android 5.0 lub nowszy. Instalacja: skopiuj `releases/kiosk-android-1.6.apk` na telefon i otwórz
 (zgoda na „instalowanie nieznanych aplikacji” dla przeglądarki lub menedżera plików).
 
 ## Budowanie
