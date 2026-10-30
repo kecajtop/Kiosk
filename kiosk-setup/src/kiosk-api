@@ -3940,6 +3940,188 @@ def start_update(*args):
     return "Aktualizacja w toku — postęp widać na ekranie kiosku i tutaj."
 
 
+# ---------------------------------------------------------------- statystyki (RRD): CPU, RAM, dysk, temperatura, sieć
+
+STATS_DIR = "/var/lib/kiosk-stats"
+RRD_FILE = STATS_DIR + "/stats.rrd"
+RRD_STEP = 60
+RRD_HEARTBEAT = 150
+RRD_RANGES = {"24h": "-25h", "7d": "-8d", "30d": "-32d", "365d": "-400d"}
+RRD_METRICS = {
+    "cpu": ("CPU", "%", (("cpu", "CPU", "#F2A900"),)),
+    "ram": ("Pamięć RAM", "%", (("ram", "RAM", "#F2A900"),)),
+    "disk": ("Dysk /", "%", (("disk", "Dysk", "#F2A900"),)),
+    "temp": ("Temperatura", "°C", (("temp", "Temp.", "#F2A900"),)),
+    "net": ("Sieć", "KB/s", (("netrx", "Pobieranie", "#F2A900"), ("nettx", "Wysyłanie", "#5B8DEF"))),
+}
+
+
+def thermal_max():
+    temps = []
+    for z in sorted(os.listdir("/sys/class/thermal")) if os.path.isdir("/sys/class/thermal") else []:
+        try:
+            temps.append(int(open("/sys/class/thermal/%s/temp" % z).read()) / 1000)
+        except Exception:
+            pass
+    return max(temps) if temps else None
+
+
+def _cpu_times():
+    with open("/proc/stat") as f:
+        parts = f.readline().split()
+    vals = list(map(int, parts[1:]))
+    idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
+    return sum(vals), idle
+
+
+def _net_bytes():
+    rx = tx = 0
+    try:
+        with open("/proc/net/dev") as f:
+            for line in f.readlines()[2:]:
+                iface, _, rest = line.partition(":")
+                if iface.strip() == "lo":
+                    continue
+                cols = rest.split()
+                rx += int(cols[0])
+                tx += int(cols[8])
+    except Exception:
+        pass
+    return rx, tx
+
+
+class Stats:
+    """Historia obciążenia kiosku (CPU/RAM/dysk/temperatura/sieć) w prawdziwej bazie RRD
+    (rrdtool) — próbka co minutę, zapisana z malejącą rozdzielczością (24 h co minutę,
+    7 dni co 5 min, 30 dni co godzinę, 13 miesięcy co dzień). Wykresy rysuje `rrdtool graph`."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.last = {}
+        self._prev_cpu = None
+        self._prev_net = None
+        self._ensure_rrd()
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def _ensure_rrd(self):
+        try:
+            os.makedirs(STATS_DIR, exist_ok=True)
+            if os.path.exists(RRD_FILE):
+                return
+            subprocess.run(
+                ["rrdtool", "create", RRD_FILE, "--step", str(RRD_STEP),
+                 "--start", str(int(time.time()) - 2 * RRD_STEP),
+                 "DS:cpu:GAUGE:%d:0:100" % RRD_HEARTBEAT,
+                 "DS:ram:GAUGE:%d:0:100" % RRD_HEARTBEAT,
+                 "DS:disk:GAUGE:%d:0:100" % RRD_HEARTBEAT,
+                 "DS:temp:GAUGE:%d:-20:150" % RRD_HEARTBEAT,
+                 "DS:netrx:GAUGE:%d:0:U" % RRD_HEARTBEAT,
+                 "DS:nettx:GAUGE:%d:0:U" % RRD_HEARTBEAT,
+                 "RRA:AVERAGE:0.5:1:1440", "RRA:AVERAGE:0.5:5:2016",
+                 "RRA:AVERAGE:0.5:60:720", "RRA:AVERAGE:0.5:1440:395",
+                 "RRA:MAX:0.5:1:1440", "RRA:MAX:0.5:60:720"],
+                check=True, capture_output=True, timeout=15)
+        except Exception as e:
+            log("statystyki (RRD): nie udało się utworzyć bazy: %s" % e)
+
+    def sample(self):
+        now = time.time()
+        total, idle = _cpu_times()
+        cpu = None
+        if self._prev_cpu:
+            dtotal, didle = total - self._prev_cpu[0], idle - self._prev_cpu[1]
+            if dtotal > 0:
+                cpu = max(0.0, min(100.0, 100.0 * (1 - didle / dtotal)))
+        self._prev_cpu = (total, idle)
+
+        ram = None
+        try:
+            mem = {l.split(":")[0]: int(l.split()[1]) for l in open("/proc/meminfo")
+                   if l.split(":")[0] in ("MemTotal", "MemAvailable")}
+            ram = 100.0 * (mem["MemTotal"] - mem["MemAvailable"]) / mem["MemTotal"]
+        except Exception:
+            pass
+
+        disk = None
+        try:
+            st = os.statvfs("/")
+            disk = 100.0 * (1 - st.f_bavail / st.f_blocks)
+        except Exception:
+            pass
+
+        temp = thermal_max()
+
+        rx, tx = _net_bytes()
+        net_rx = net_tx = None
+        if self._prev_net:
+            prx, ptx, pts = self._prev_net
+            dt = now - pts
+            if dt > 0:
+                net_rx = max(0.0, (rx - prx) / dt / 1024)
+                net_tx = max(0.0, (tx - ptx) / dt / 1024)
+        self._prev_net = (rx, tx, now)
+
+        def fmt(v):
+            return "U" if v is None else "%.2f" % v
+
+        try:
+            subprocess.run(["rrdtool", "update", RRD_FILE,
+                            "%d:%s:%s:%s:%s:%s:%s" % (int(now), fmt(cpu), fmt(ram), fmt(disk), fmt(temp), fmt(net_rx), fmt(net_tx))],
+                           check=True, capture_output=True, timeout=10)
+        except Exception as e:
+            log("statystyki (RRD): zapis nie powiódł się: %s" % e)
+
+        with self.lock:
+            self.last = {"ts": int(now), "cpu": cpu, "ram": ram, "disk": disk, "temp": temp,
+                         "net_rx": net_rx, "net_tx": net_tx}
+
+    def _loop(self):
+        while True:
+            try:
+                self.sample()
+            except Exception as e:
+                log("statystyki (RRD): %s" % e)
+            time.sleep(RRD_STEP)
+
+    def now(self):
+        with self.lock:
+            return dict(self.last)
+
+    @staticmethod
+    def graph(metric, rng, w=640, h=150):
+        if metric not in RRD_METRICS:
+            raise ValueError("nieznana statystyka")
+        if rng not in RRD_RANGES:
+            raise ValueError("nieznany zakres")
+        try:
+            w, h = int(w), int(h)
+        except (TypeError, ValueError):
+            w, h = 640, 150
+        w = max(300, min(1200, w))
+        h = max(100, min(400, h))
+        title, unit, series = RRD_METRICS[metric]
+        args = ["rrdtool", "graph", "-", "--start", RRD_RANGES[rng], "-w", str(w), "-h", str(h),
+                "--title", title, "--vertical-label", unit, "--imgformat", "PNG",
+                "--color", "BACK#151B21", "--color", "CANVAS#151B21", "--color", "GRID#2A333C",
+                "--color", "MGRID#3A4652", "--color", "FONT#C9D1D9", "--color", "AXIS#3A4652",
+                "--color", "ARROW#3A4652", "--color", "FRAME#3A4652", "--watermark", " "]
+        for ds, label, color in series:
+            if not os.path.exists(RRD_FILE):
+                raise FileNotFoundError("brak bazy statystyk")
+            args += ["DEF:%s=%s:%s:AVERAGE" % (ds, RRD_FILE, ds)]
+        for ds, label, color in series:
+            args += ["AREA:%s%s33" % (ds, color), "LINE2:%s%s:%s" % (ds, color, label.replace(":", ""))]
+        if metric == "temp":
+            args += ["HRULE:85#FF4444:próg\\ ostrzegawczy\\ (85°C)"]
+        r = subprocess.run(args, capture_output=True, timeout=20)
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr.decode(errors="replace")[:300])
+        return r.stdout
+
+
+STATS = None
+
+
 # ---------------------------------------------------------------- nadpisania ekranu, noc, jasność, zdjęcia
 
 PHOTO_DIR = "/var/lib/kiosk-photos"
@@ -5726,6 +5908,23 @@ class Handler(BaseHTTPRequestHandler):
                                    "error": WEATHER.error if WEATHER else ""})
         if path == "/api/timer":
             return self.send(200, MINUTNIK.status())
+        if path == "/api/stats/now":
+            return self.send(200, STATS.now() if STATS else {})
+        if path == "/api/stats/graph.png":
+            from urllib.parse import parse_qs
+            q = parse_qs(self.path.partition("?")[2])
+            try:
+                png = Stats.graph(q.get("metric", ["cpu"])[0], q.get("range", ["24h"])[0],
+                                  q.get("w", [640])[0], q.get("h", [150])[0])
+            except (ValueError, FileNotFoundError, RuntimeError) as e:
+                return self.send(400, {"error": str(e)})
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(png)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(png)
+            return
         if path.startswith("/api/") and self.get_extra(path):
             return
         if path == "/api/screenshot":
@@ -7593,6 +7792,14 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 <h3 class="first">Podgląd ekranu</h3>
 <div class="row"><button type="button" id="shotb">Zrób zrzut ekranu</button><a id="shotdl" hidden download="kiosk-ekran.jpg" style="color:var(--blue);align-self:center">Pobierz</a></div>
 <img id="shot" alt="Zrzut ekranu kiosku" hidden style="max-width:100%;border:1px solid var(--line);border-radius:10px;margin:8px 0">
+<h3>Statystyki</h3>
+<div class="row"><select id="stmetric"><option value="cpu">CPU</option><option value="ram">Pamięć RAM</option>
+<option value="disk">Dysk /</option><option value="temp">Temperatura</option><option value="net">Sieć</option></select>
+<select id="strange"><option value="24h" selected>24 godziny</option><option value="7d">7 dni</option>
+<option value="30d">30 dni</option><option value="365d">Rok</option></select>
+<button type="button" id="stref">Odśwież</button></div>
+<pre id="stnow" class="hint"></pre>
+<img id="stimg" alt="Wykres statystyk" style="max-width:100%;border:1px solid var(--line);border-radius:10px;margin:8px 0">
 <h3>Diagnostyka</h3>
 <div class="row"><button type="button" id="dgrun">Sprawdź</button><a id="dgrep" href="api/debug/report" download style="color:var(--blue);align-self:center">Pobierz pełny raport (.txt)</a></div>
 <div class="scroll"><table><tbody id="dgtab"><tr><td class="hint">Kliknij „Sprawdź”.</td></tr></tbody></table></div>
@@ -8049,6 +8256,7 @@ async function dbLoad(){ try{ const r=await api('api/debug/log?src='+encodeURICo
   if(!$('dbsrc').options.length){ $('dbsrc').replaceChildren(...Object.entries(r.sources).map(([k,v])=>opt(k,v))); }
   DBTEXT=r.text; dbRender(); } catch(e){ DBTEXT='Błąd: '+e.message; dbRender(); } }
 function dbLive(){ clearInterval(DBT); DBT=null; if($('dblive').checked && !$('debug').hidden) DBT=setInterval(dbLoad, 2000); }
+$('stref').onclick=()=>loadStats().catch(()=>{}); $('stmetric').onchange=()=>loadStats().catch(()=>{}); $('strange').onchange=()=>loadStats().catch(()=>{});
 $('dbload').onclick=dbLoad; $('dbsrc').onchange=()=>{ DBTEXT=''; dbLoad().then(()=>{ $('dbout').scrollTop=$('dbout').scrollHeight; }); };
 $('dblines').onchange=dbLoad; $('dblive').onchange=dbLive; $('dbfilter').oninput=dbRender;
 $('dgrun').onclick=async()=>{ const b=$('dgrun'); b.disabled=true; $('dgtab').replaceChildren(); const tr0=document.createElement('tr'); const td0=document.createElement('td'); td0.className='hint'; td0.textContent='Sprawdzam…'; tr0.append(td0); $('dgtab').append(tr0);
@@ -8120,7 +8328,19 @@ $('kmlive').onclick=vncOpen; $('vncclose').onclick=()=>vncClose();
 $('vncctl').onchange=()=>{ if($('vncctl').checked) vncStart(); else { vncStop(); $('vncst').textContent='Łączę…'; $('vncscreen').append(liveImg()); } };
 document.addEventListener('keydown', e=>{ if(e.key==='Escape' && !$('vncov').hidden && !$('vncctl').checked) vncClose(); });
 // ---- rozpoznawanie twarzy
-let FCTIMER=0, FCSIG='', TMTIMER=0;
+let FCTIMER=0, FCSIG='', TMTIMER=0, STIMER=0;
+async function loadStats(){
+  try{
+    const now = await api('api/stats/now');
+    const f=(v,u)=>v==null?'—':(Math.round(v*10)/10)+u;
+    $('stnow').textContent = now.ts ? ('CPU '+f(now.cpu,'%')+' · RAM '+f(now.ram,'%')+' · Dysk '+f(now.disk,'%')
+      +' · Temp. '+f(now.temp,'°C')+' · ↓'+f(now.net_rx,' KB/s')+' ↑'+f(now.net_tx,' KB/s')) : 'Brak danych (kiosk dopiero startuje).';
+  }catch(e){ $('stnow').textContent=''; }
+  const im=$('stimg');
+  im.onerror=()=>{ im.hidden=true; }; im.onload=()=>{ im.hidden=false; };
+  const m=$('stmetric').value, r=$('strange').value;
+  im.src = 'api/stats/graph.png?metric='+m+'&range='+r+'&_='+Date.now();
+}
 function fmtMS(s){ s=Math.max(0,Math.round(s)); const m=Math.floor(s/60); return m+':'+String(s%60).padStart(2,'0'); }
 async function loadTimer(){ const r=await api('api/timer');
   $('tmnow').textContent=r.active?('⏱ '+(r.label||'Minutnik')+' — zostało '+fmtMS(r.seconds_left)):'Minutnik nieaktywny.'; return r; }
@@ -8354,6 +8574,8 @@ function showTab(id, focus){
   clearInterval(FCTIMER); FCTIMER=id==='twarze'?setInterval(()=>{ if(!document.hidden) loadFaces(true).catch(()=>{}); },3000):0;
   clearInterval(TMTIMER); if(id==='minutnik'){ loadTimer().catch(()=>{}); TMTIMER=setInterval(()=>{ if(!document.hidden) loadTimer().catch(()=>{}); },1000); } else TMTIMER=0;
   if(id==='debug' && !DBTEXT) dbLoad();
+  clearInterval(STIMER); STIMER=id==='debug'?setInterval(()=>{ if(!document.hidden) loadStats(); },60000):0;
+  if(id==='debug') loadStats();
   dbLive();
   if(changed && window.scrollY>200) window.scrollTo(0,0);
   try{ history.replaceState(null,'','#/'+id); }catch(e){}
@@ -8528,13 +8750,14 @@ def cli():
 
 
 def main():
-    global BRIDGE, WEATHER, ANNOUNCER, AUTO, MOTION, FACES, UPDWATCH, PKG_VERSION, RO, SCREEN_RTSP
+    global BRIDGE, WEATHER, ANNOUNCER, AUTO, MOTION, FACES, UPDWATCH, PKG_VERSION, RO, SCREEN_RTSP, STATS
     if len(sys.argv) > 1:
         sys.exit(cli())
     if not os.path.exists(TOKEN_FILE):
         sys.exit("Brak " + TOKEN_FILE)
     WEATHER = Weather()
     ANNOUNCER = Announcer()
+    STATS = Stats()
     AUTO = Automation()
     MOTION = Motion()
     SCREEN_RTSP = ScreenRtsp()

@@ -1,5 +1,10 @@
 # Zmiany
 
+## 1.0.39 (2026-10-30)
+- Panel → Debug → Statystyki: prawdziwa historia obciążenia kiosku w bazie RRD (rrdtool) —
+  CPU, pamięć RAM, dysk, temperatura i sieć, próbkowane co minutę. Wykresy 24 godziny/7 dni/
+  30 dni/rok, z malejącą rozdzielczością jak w klasycznym MRTG/Cacti.
+
 ## 1.0.38 (2026-10-28)
 - Pokaz zdjęć: zdjęcia ze współrzędnymi GPS w EXIF dostają małą mapkę OpenStreetMap w rogu,
   pokazującą miejsce zrobienia zdjęcia (kafelki pobrane raz, trzymane w pamięci na dysku —

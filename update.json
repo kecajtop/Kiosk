@@ -1,9 +1,9 @@
 {
   "package": "kiosk-setup",
-  "version": "1:1.0.38",
-  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.38_amd64.deb",
-  "sha256": "4b53192b03f66494c08e2dbb07911faef1a48fd9ef738889a0e737aef3e0edbf",
-  "size": 23071094,
-  "date": "2026-10-28",
-  "notes": "Pokaz zdjec: mapka OpenStreetMap w rogu dla zdjec ze wspolrzednymi GPS w EXIF."
+  "version": "1:1.0.39",
+  "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.39_amd64.deb",
+  "sha256": "9088fc188dbb910355a714abd19672bdae57239d422756edfac64dec6c4a9f1f",
+  "size": 23071370,
+  "date": "2026-10-30",
+  "notes": "Statystyki kiosku w prawdziwej bazie RRD (CPU/RAM/dysk/temperatura/siec), wykresy 24h/7 dni/30 dni/rok w panelu -> Debug."
 }

@@ -592,6 +592,11 @@ obciążenie, wolna pamięć, wolne miejsce, pobór mocy procesora (Intel).
 
 Panel WWW → zakładka **Debug**:
 
+- **Statystyki** — prawdziwa historia obciążenia kiosku w bazie RRD (rrdtool):
+  CPU, pamięć RAM, dysk, temperatura i sieć, próbkowane co minutę. Wykresy
+  24 godziny / 7 dni / 30 dni / rok, z malejącą rozdzielczością jak w klasycznym
+  MRTG/Cacti — krótki zakres pokazuje każdą minutę, długi uśrednia. Dane w
+  `/var/lib/kiosk-stats/stats.rrd`.
 - **Diagnostyka** — jednym kliknięciem: usługi (panel, MPD, DLNA, VNC, LightDM),
   ekran (serwer X, sesja kiosku, odtwarzacze kamer, przeglądarka, monitor),
   sieć (IP, brama, internet, strona kiosku), każda kamera (czy port RTSP
