@@ -6103,7 +6103,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Connection", "close")
             self.end_headers()
             self.close_connection = True
-            self.connection.settimeout(30)
+            self.connection.settimeout(90)   # łącze zdalne/VPN bywa wolniejsze — 30 s bywało za krótkie
             self.wfile.write(first)
             end = time.time() + 900          # najwyżej 15 min — panel łączy się ponownie
             while time.time() < end:
@@ -7821,7 +7821,7 @@ img.shot{display:block;width:100%;border-radius:var(--r);border:1px solid var(--
 </div></div>
 </main>
 <div id="toast" role="status" aria-live="polite" hidden></div>
-<div id="vncov" hidden role="dialog" aria-label="Ekran kiosku na żywo"><div class="vncbar"><button type="button" id="vncclose">✕ Zamknij</button><label class="check"><input type="checkbox" id="vncctl"> Sterowanie</label><span id="vncst"></span></div><div id="vncscreen"><img id="vncimg" alt="Ekran kiosku na żywo"></div></div>
+<div id="vncov" hidden role="dialog" aria-label="Ekran kiosku na żywo"><div class="vncbar"><button type="button" id="vncclose">✕ Zamknij</button><label class="check"><input type="checkbox" id="vncctl"> Sterowanie</label><label class="check"><input type="checkbox" id="vnclowbw"> Wolne łącze (VPN, zdalnie)</label><span id="vncst"></span></div><div id="vncscreen"><img id="vncimg" alt="Ekran kiosku na żywo"></div></div>
 <nav id="tabbar" aria-label="Główne zakładki">
 <a href="#/start" data-tab="start"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v18H7zM12 7.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM10 16h4"/></svg><span>Pilot</span></a>
 <a href="#/kamery" data-tab="kamery"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h12v10H3zM15 10l6-3v10l-6-3"/></svg><span>Kamery</span></a>
@@ -8299,10 +8299,13 @@ $('kmshotb').onclick=kmShot;
 // ---- ekran kiosku na żywo: podgląd = strumień MJPEG (płynny, lekki); „Sterowanie” = noVNC przez WebSocket
 let VNC=null, RFB=null;
 const baseUrl=()=>location.href.replace(/[#?].*$/,'');
+const lowBwPref=()=>{ try{ return localStorage.getItem('kiosk_live_lowbw')==='1'; }catch(e){ return false; } };
 function liveImg(){ const img=document.createElement('img'); img.id='vncimg'; img.alt='Ekran kiosku na żywo';
-  const w=Math.min(1600, Math.round(Math.max(screen.width,screen.height)*(window.devicePixelRatio||1)/1.5));
-  img.onload=()=>{ $('vncst').textContent='Na żywo'; }; img.onerror=()=>{ $('vncst').textContent='Brak obrazu — ekran kiosku wyłączony albo kiosk nie odpowiada'; };
-  img.src=new URL('api/screen/live?w='+w+'&fps=10&t='+Date.now(), baseUrl()).href; return img; }
+  let w, fps;
+  if($('vnclowbw').checked){ w=480; fps=3; }
+  else{ w=Math.min(1200, Math.round(Math.max(screen.width,screen.height)*(window.devicePixelRatio||1)/1.5)); fps=10; }
+  img.onload=()=>{ $('vncst').textContent='Na żywo'; }; img.onerror=()=>{ $('vncst').textContent='Brak obrazu — ekran kiosku wyłączony, kiosk nie odpowiada, albo za wolne łącze (spróbuj „Wolne łącze”)'; };
+  img.src=new URL('api/screen/live?w='+w+'&fps='+fps+'&t='+Date.now(), baseUrl()).href; return img; }
 function liveStop(){ const i=$('vncimg'); if(i){ i.removeAttribute('src'); i.remove(); } }
 async function vncStart(){ liveStop(); $('vncst').textContent='Łączę sterowanie…';
   try{
@@ -8319,7 +8322,10 @@ async function vncStart(){ liveStop(); $('vncst').textContent='Łączę sterowan
   }catch(e){ $('vncst').textContent='Błąd: '+e.message; } }
 function vncStop(){ try{ if(VNC) VNC.disconnect(); }catch(e){} VNC=null; $('vncscreen').replaceChildren(); }
 function vncOpen(){ try{ history.pushState({vnc:1},'',location.hash); }catch(e){} $('vncov').hidden=false; $('vncctl').checked=false;
+  $('vnclowbw').checked=lowBwPref();
   $('vncst').textContent='Łączę…'; vncStop(); $('vncscreen').append(liveImg()); }
+$('vnclowbw').onchange=()=>{ try{ localStorage.setItem('kiosk_live_lowbw', $('vnclowbw').checked?'1':'0'); }catch(e){}
+  if($('vncov').hidden || $('vncctl').checked) return; liveStop(); $('vncscreen').append(liveImg()); };
 function vncClose(fromPop){ const open=!$('vncov').hidden; liveStop(); vncStop(); $('vncov').hidden=true;
   if(open && !fromPop && history.state && history.state.vnc){ try{ history.back(); }catch(e){} } }
 window.addEventListener('popstate', ()=>{ if(!$('vncov').hidden) vncClose(true); });

@@ -1,5 +1,11 @@
 # Zmiany
 
+## 1.0.40 (2026-10-30)
+- Podgląd „Na żywo” (Kamery): przełącznik **„Wolne łącze (VPN, zdalnie)”** — mniejsza
+  rozdzielczość i mniej klatek/s strumienia MJPEG, dla łączy (np. VPN), na których pełna jakość
+  (do 1200 px, 10 kl./s) powodowała czarny ekran. Dłuższy limit zapisu strumienia (90 s zamiast
+  30 s) dla wolniejszych/opóźnionych łączy.
+
 ## 1.0.39 (2026-10-30)
 - Panel → Debug → Statystyki: prawdziwa historia obciążenia kiosku w bazie RRD (rrdtool) —
   CPU, pamięć RAM, dysk, temperatura i sieć, próbkowane co minutę. Wykresy 24 godziny/7 dni/

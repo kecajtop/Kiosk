@@ -801,7 +801,10 @@ zastosuje.
 
 **W panelu:** Kamery → „▶ Na żywo” — ekran kiosku na żywo w przeglądarce lub aplikacji: strumień wideo
 (MJPEG z ffmpeg, ok. 10 klatek/s, `GET /api/screen/live?w=960&fps=10`), bez instalowania programu VNC.
-„Sterowanie” przełącza na VNC (noVNC) i przekazuje dotyk, mysz i klawiaturę.
+„Sterowanie” przełącza na VNC (noVNC) i przekazuje dotyk, mysz i klawiaturę. Na wolnym łączu (VPN,
+zdalnie przez dodatek Kioski) zaznacz **„Wolne łącze”** — strumień spada do mniejszej rozdzielczości
+i mniej klatek/s (480 px, 3 kl./s zamiast nawet 1200 px, 10 kl./s), co zwykle naprawia czarny ekran,
+który pojawia się, gdy pełna jakość nie mieści się w przepustowości łącza.
 **W Home Assistant:** integracja MJPEG IP Camera z adresem `http://<kiosk>:8088/api/screen/live?w=960&fps=5`
 i zdjęciem `http://<kiosk>:8088/api/screenshot` (użytkownik/hasło: konto domownika albo token) — gotowe adresy
 są w panelu: Połączenia → MQTT i Home Assistant. Połączenie idzie przez
