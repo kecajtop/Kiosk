@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FolderOpen, Save, RefreshCw, X, FileCode } from 'lucide-react';
 import { useEditorStore } from '../store/editorStore';
-import { configToPagesYaml, parseFullESPHomeFile, reconstructFullESPHomeYaml } from '../utils/yamlConverter';
+import { configToPagesYaml, parseFullESPHomeFile, reconstructFullESPHomeYaml, validateReconstruction } from '../utils/yamlConverter';
 
 // Talks to the add-on's own backend (server/index.js), which reads/writes YAML
 // files under the Home Assistant ESPHome config folder mapped into the container.
@@ -14,7 +14,8 @@ interface EsphomeFile {
 export const EsphomeFileBrowser: React.FC = () => {
   const {
     config, loadConfig, rawEsphomeYaml, setRawEsphomeYaml,
-    setLastImportIssues, openEsphomePath, setOpenEsphomePath
+    setLastImportIssues, openEsphomePath, setOpenEsphomePath,
+    openEsphomeOriginalContent, setOpenEsphomeOriginalContent
   } = useEditorStore();
 
   const [open, setOpen] = useState(false);
@@ -53,6 +54,7 @@ export const EsphomeFileBrowser: React.FC = () => {
       setRawEsphomeYaml(result.isFullFile ? data.content : null);
       setLastImportIssues(result.issues);
       setOpenEsphomePath(file.path);
+      setOpenEsphomeOriginalContent(data.content);
       setOpen(false);
     } catch (e) {
       alert('Error opening ' + file.path + ':\n\n' + (e instanceof Error ? e.message : String(e)));
@@ -63,9 +65,34 @@ export const EsphomeFileBrowser: React.FC = () => {
     if (!openEsphomePath) return;
     setSaving(true);
     try {
+      // Re-read the file first: something else (the ESPHome add-on's own
+      // editor, a text editor over SSH, …) may have changed it since it was
+      // opened here. Never blind-overwrite someone else's edit.
+      const current = await fetch(`/api/esphome/file/${openEsphomePath}`);
+      const currentData = await current.json();
+      if (!current.ok) throw new Error(currentData.error || 'Could not re-read file before saving');
+      if (currentData.content !== openEsphomeOriginalContent) {
+        alert(
+          `"${openEsphomePath}" was changed on disk since you opened it here (maybe by the ESPHome add-on ` +
+          'or another session). Saving now would overwrite that change, so the save was cancelled.\n\n' +
+          'Re-open the file from "ESPHome Files" to see the latest version, then re-apply your edits.'
+        );
+        return;
+      }
+
       const content = rawEsphomeYaml
         ? reconstructFullESPHomeYaml(rawEsphomeYaml, config)
         : configToPagesYaml(config);
+
+      const validation = validateReconstruction(currentData.content, content);
+      if (!validation.ok) {
+        alert(
+          `Refusing to save "${openEsphomePath}": ${validation.error}\n\n` +
+          'The file on disk was not touched.'
+        );
+        return;
+      }
+
       const res = await fetch(`/api/esphome/file/${openEsphomePath}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'text/plain' },
@@ -74,6 +101,7 @@ export const EsphomeFileBrowser: React.FC = () => {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Save failed');
       if (rawEsphomeYaml) setRawEsphomeYaml(content);
+      setOpenEsphomeOriginalContent(content);
     } catch (e) {
       alert('Error saving ' + openEsphomePath + ':\n\n' + (e instanceof Error ? e.message : String(e)));
     } finally {

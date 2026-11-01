@@ -34,6 +34,25 @@ każdą próbę wyjścia poza ten folder.
 Import/eksport przez przeglądarkę (przyciski **Import YAML** / **Export YAML**) działa jak dotychczas i nie
 wymaga dostępu do dysku — to osobna, niezależna ścieżka od **ESPHome Files**.
 
+### Współpraca z dodatkiem ESPHome
+
+To są te same pliki, które widzi i edytuje oficjalny dodatek **ESPHome** — Supervisor nie izoluje dodatków
+od siebie, każdy z zamapowanym dostępem do konfiguracji HA widzi ten sam folder `/config/esphome` na dysku.
+Można więc edytować pulpit LVGL tu, a resztę urządzenia (sensory, automatyzacje) w dodatku ESPHome — to
+jeden i ten sam plik.
+
+Jedyne, czego Supervisor nie robi, to blokowanie równoczesnej edycji. Dlatego przed każdym zapisem Edytor
+LVGL sam odczytuje plik z dysku i porównuje go z wersją, którą miał otwartą:
+
+- jeśli plik zmienił się w międzyczasie (ktoś edytował go w dodatku ESPHome albo przez SSH), zapis jest
+  **przerywany** z komunikatem — otwórz plik na nowo z listy, żeby zobaczyć najnowszą wersję, i nanieś swoje
+  zmiany jeszcze raz;
+- wynikowy YAML jest dodatkowo sprawdzany (poprawna składnia, żadna sekcja z oryginału nie zniknęła, długość
+  nie skurczyła się podejrzanie) **zanim** trafi do zapisu — błędny wynik nigdy nie dotyka pliku na dysku;
+- backend zapisuje atomowo (plik tymczasowy + zamiana) i przed każdym zapisem trzyma kopię poprzedniej
+  wersji w `.lvgl_editor_backups/<plik>/` (do 5 ostatnich) — jeśli coś pójdzie nie tak, poprzednia wersja
+  jest tam do odzyskania.
+
 ## Użycie w kiosku
 
 Dodatek korzysta z Ingress, więc jest serwowany przez zalogowaną sesję Home Assistant — nie trzeba

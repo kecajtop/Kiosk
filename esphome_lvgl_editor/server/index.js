@@ -11,6 +11,8 @@ const path = require('path');
 const PORT = process.env.PORT || 8099;
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const BACKUPS_DIRNAME = '.lvgl_editor_backups';
+const MAX_BACKUPS_PER_FILE = 5;
 
 function readAddonOptions() {
   try {
@@ -39,12 +41,51 @@ function sendJson(res, status, data) {
 }
 
 // Resolves a relative path against ESPHOME_DIR and rejects anything that
-// would escape it (e.g. `../../etc/passwd`).
+// would escape it (e.g. `../../etc/passwd`) or that targets a hidden path
+// (including our own backups folder, see backupFile() below).
 function safeResolve(relPath) {
   if (!relPath || relPath.includes('\0')) return null;
+  if (relPath.split('/').some((seg) => seg === '' || seg === '.' || seg === '..' || seg.startsWith('.'))) {
+    return null;
+  }
   const full = path.resolve(ESPHOME_DIR, relPath);
   if (full !== ESPHOME_DIR && !full.startsWith(ESPHOME_DIR + path.sep)) return null;
   return full;
+}
+
+// Keeps up to MAX_BACKUPS_PER_FILE timestamped copies of a file's previous
+// content before every overwrite, so a bad save (editor bug, bad YAML, a
+// mistaken click) is always recoverable from disk, not just from the
+// in-browser undo history.
+function backupFile(full, relPath) {
+  try {
+    const original = fs.readFileSync(full);
+    const backupDir = path.join(ESPHOME_DIR, BACKUPS_DIRNAME, relPath);
+    fs.mkdirSync(backupDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    fs.writeFileSync(path.join(backupDir, `${stamp}.bak`), original);
+    pruneBackups(backupDir);
+  } catch (e) {
+    // Never block a save just because the backup failed, but make it loud.
+    console.warn(`Backup failed for ${relPath}:`, e.message);
+  }
+}
+
+function pruneBackups(backupDir) {
+  try {
+    const entries = fs.readdirSync(backupDir).sort();
+    for (let i = 0; i < entries.length - MAX_BACKUPS_PER_FILE; i++) {
+      fs.unlinkSync(path.join(backupDir, entries[i]));
+    }
+  } catch { /* ignore */ }
+}
+
+// Write-then-rename so a crash or power loss mid-write can never leave the
+// target file half-written; the rename is atomic on the same filesystem.
+function atomicWrite(full, data) {
+  const tmp = `${full}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, data, 'utf8');
+  fs.renameSync(tmp, full);
 }
 
 function listYamlFiles(dir, base, depth) {
@@ -103,23 +144,33 @@ function handleReadFile(res, relPath) {
 function handleWriteFile(req, res, relPath) {
   const full = safeResolve(relPath);
   if (!full || !/\.ya?ml$/i.test(full)) return sendJson(res, 400, { error: 'Invalid path' });
+  // Only ever overwrites a file the browser already listed/read — never creates a new one
+  // from an arbitrary path, which keeps this endpoint from being usable to plant files.
   if (!fs.existsSync(full)) return sendJson(res, 404, { error: 'File not found: ' + relPath });
 
   let body = '';
-  let tooLarge = false;
+  let responded = false;
   req.on('data', (chunk) => {
+    if (responded) return;
     body += chunk;
     if (body.length > MAX_UPLOAD_BYTES) {
-      tooLarge = true;
+      responded = true;
+      sendJson(res, 413, { error: 'File too large' });
       req.destroy();
     }
   });
   req.on('end', () => {
-    if (tooLarge) return;
-    fs.writeFile(full, body, 'utf8', (err) => {
-      if (err) return sendJson(res, 500, { error: 'Write failed: ' + err.message });
-      sendJson(res, 200, { ok: true });
-    });
+    if (responded) return;
+    if (body.trim().length === 0) {
+      return sendJson(res, 400, { error: 'Refusing to write empty content — the file on disk was not touched.' });
+    }
+    try {
+      backupFile(full, relPath);
+      atomicWrite(full, body);
+    } catch (e) {
+      return sendJson(res, 500, { error: 'Write failed: ' + e.message });
+    }
+    sendJson(res, 200, { ok: true });
   });
 }
 

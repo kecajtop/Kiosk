@@ -8,7 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "roundtrip:check": "tsc scripts/roundtrip-check.ts --module commonjs --target es2020 --esModuleInterop --skipLibCheck --outDir .tmp-roundtrip && node .tmp-roundtrip/scripts/roundtrip-check.js"
+    "roundtrip:check": "tsc scripts/roundtrip-check.ts --module commonjs --target es2020 --esModuleInterop --skipLibCheck --outDir .tmp-roundtrip && node .tmp-roundtrip/scripts/roundtrip-check.js",
+    "fixtures:check": "tsc scripts/test-fixtures.ts --module commonjs --target es2020 --esModuleInterop --skipLibCheck --outDir .tmp-fixtures && node .tmp-fixtures/scripts/test-fixtures.js",
+    "backend:check": "node scripts/test-backend.js"
   },
   "dependencies": {
     "react": "^18.2.0",

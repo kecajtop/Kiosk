@@ -12,7 +12,7 @@ interface ToolbarProps {
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, onShowStylesPanel }) => {
-  const { config, loadConfig, displaySize, previewScale, setDisplaySize, setPreviewScale, undo, redo, canUndo, canRedo, snapToGrid, setSnapToGrid, previewMode, setPreviewMode, showPageTree, setShowPageTree, rawEsphomeYaml, setRawEsphomeYaml, lastImportIssues, setLastImportIssues, setOpenEsphomePath } = useEditorStore();
+  const { config, loadConfig, displaySize, previewScale, setDisplaySize, setPreviewScale, undo, redo, canUndo, canRedo, snapToGrid, setSnapToGrid, previewMode, setPreviewMode, showPageTree, setShowPageTree, rawEsphomeYaml, setRawEsphomeYaml, lastImportIssues, setLastImportIssues, setOpenEsphomePath, setOpenEsphomeOriginalContent } = useEditorStore();
   const [displayPreset, setDisplayPreset] = useState<keyof typeof DISPLAY_PRESETS>('ESP32-2432S028');
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showIssuesModal, setShowIssuesModal] = useState(false);
@@ -68,6 +68,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, on
             if (projectData.config) {
               loadConfig(projectData.config);
               setOpenEsphomePath(null);
+              setOpenEsphomeOriginalContent(null);
               if (projectData.displaySize) {
                 setDisplaySize(projectData.displaySize);
                 setDisplayPreset('Custom');
@@ -89,6 +90,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, on
     setRawEsphomeYaml(result.isFullFile ? yamlCode : null);
     setLastImportIssues(result.issues);
     setOpenEsphomePath(null);
+    setOpenEsphomeOriginalContent(null);
     if (result.issues.length > 0) setShowIssuesModal(true);
   };
 

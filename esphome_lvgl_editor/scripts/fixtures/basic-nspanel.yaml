@@ -1,0 +1,81 @@
+# Basic single-page dashboard on an NSPanel-style touch display.
+# This comment, and everything below except the lvgl: block, must survive
+# a round trip through the editor untouched.
+esphome:
+  name: basic-nspanel
+  friendly_name: Basic NSPanel
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+
+spi:
+  clk_pin: GPIO12
+  mosi_pin: GPIO13
+
+display:
+  - platform: ili9xxx
+    id: nspanel_display
+    dimensions:
+      width: 320
+      height: 240
+
+touchscreen:
+  platform: gt911
+  id: nspanel_touch
+
+# Everything from here down is the part the visual editor actually owns.
+lvgl:
+  bg_color: 0x000000
+  pages:
+    - id: main_page
+      widgets:
+        - label:
+            id: title_label
+            text: "Living Room"
+            x: 10
+            y: 10
+            text_color: 0xFFFFFF
+        - button:
+            id: light_toggle
+            x: 10
+            y: 60
+            width: 120
+            height: 50
+            bg_color: 0x2196F3
+            on_click:
+              - light.toggle: living_room_light
+        - switch:
+            id: fan_switch
+            x: 150
+            y: 60
+            checked: false
+        - slider:
+            id: brightness_slider
+            x: 10
+            y: 130
+            width: 280
+            min_value: 0
+            max_value: 100
+            value: 50
+
+# Sensors used elsewhere in the dashboard; unrelated to lvgl:, must be preserved.
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s

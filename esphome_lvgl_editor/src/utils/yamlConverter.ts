@@ -301,6 +301,19 @@ const widgetToYaml = (widget: Widget): any => {
       result[(widget as any).type] = baseProps;
   }
 
+  // Generic event-trigger passthrough: re-emit any `on_*` key (on_click,
+  // on_value, on_press, on_long_press, on_release, …) that parseWidget copied
+  // verbatim, even for triggers the switch above has no dedicated line for.
+  // Without this, a widget's automations are silently dropped on export.
+  const out = result[widget.type];
+  if (out) {
+    for (const key of Object.keys(widget)) {
+      if (key.startsWith('on_') && out[key] === undefined) {
+        out[key] = (widget as any)[key];
+      }
+    }
+  }
+
   return result;
 };
 
@@ -448,15 +461,24 @@ const resolveDimension = (
   
   return undefined;
 };
-const getStyleChain = (styleNames: string | undefined, styles: StyleDefinition[]): StyleDefinition[] => {
+// ESPHome's `styles:` property on an lvgl widget accepts either a single
+// style id as a string ("my_style"), a space-separated string of several
+// ("a b"), or a YAML list ([a, b]) — normalize all three to a plain array.
+const normalizeStyleNames = (styleNames: string | string[] | undefined): string[] => {
   if (!styleNames) return [];
-  return styleNames
-    .split(' ')
+  if (Array.isArray(styleNames)) {
+    return styleNames.filter((name): name is string => typeof name === 'string' && name.length > 0);
+  }
+  return styleNames.split(/\s+/).filter(Boolean);
+};
+
+const getStyleChain = (styleNames: string | string[] | undefined, styles: StyleDefinition[]): StyleDefinition[] => {
+  return normalizeStyleNames(styleNames)
     .map(name => styles.find(style => style.id === name))
     .filter((style): style is StyleDefinition => Boolean(style));
 };
 
-const getMergedStyleValue = (styleNames: string | undefined, styles: StyleDefinition[], key: string): any => {
+const getMergedStyleValue = (styleNames: string | string[] | undefined, styles: StyleDefinition[], key: string): any => {
   const chain = getStyleChain(styleNames, styles);
   for (let index = chain.length - 1; index >= 0; index -= 1) {
     const value = (chain[index] as any)[key];
@@ -467,7 +489,7 @@ const getMergedStyleValue = (styleNames: string | undefined, styles: StyleDefini
 
 const getPaddingValue = (
   widgetData: any,
-  styleNames: string | undefined,
+  styleNames: string | string[] | undefined,
   styles: StyleDefinition[],
   side: 'top' | 'right' | 'bottom' | 'left'
 ): number => {
@@ -509,11 +531,15 @@ const approximateTextMetrics = (
 // Helper function to apply style properties to a widget for canvas RENDERING only.
 // Tracks which properties it injected in widget._styleApplied[] so widgetToYaml can exclude them
 // from export (avoiding duplicate output with the `styles:` reference).
-const applyStyleToWidget = (widget: any, styleName: string | undefined, styles: StyleDefinition[]): void => {
-  if (!styleName || styles.length === 0) return;
-  
-  const style = styles.find(s => s.id === styleName);
-  if (!style) return;
+const applyStyleToWidget = (widget: any, styleNames: string | string[] | undefined, styles: StyleDefinition[]): void => {
+  if (!styleNames || styles.length === 0) return;
+
+  // Same precedence as getMergedStyleValue(): when a widget references several
+  // styles, a later name in the list overrides an earlier one. Walk the chain
+  // highest-priority-first so the "only set if still undefined" guard below
+  // lets the first (i.e. highest-priority) definition win.
+  const chain = getStyleChain(styleNames, styles).reverse();
+  if (chain.length === 0) return;
 
   if (!widget._styleApplied) widget._styleApplied = [];
 
@@ -524,31 +550,33 @@ const applyStyleToWidget = (widget: any, styleName: string | undefined, styles: 
     }
   };
 
-  maybeApply('bg_color',      style.bg_color);
-  maybeApply('bg_grad_color', style.bg_grad_color);
-  maybeApply('bg_grad_dir',   style.bg_grad_dir);
-  maybeApply('bg_opa',        style.bg_opa);
-  maybeApply('border_color',  style.border_color);
-  maybeApply('border_width',  style.border_width);
-  maybeApply('border_opa',    style.border_opa);
-  maybeApply('radius',        style.radius);
-  maybeApply('width',         style.width);
-  maybeApply('height',        style.height);
-  maybeApply('min_width',     (style as any).min_width);
-  maybeApply('min_height',    (style as any).min_height);
-  maybeApply('pad_all',       style.pad_all);
-  maybeApply('pad_top',       (style as any).pad_top);
-  maybeApply('pad_right',     (style as any).pad_right);
-  maybeApply('pad_bottom',    (style as any).pad_bottom);
-  maybeApply('pad_left',      (style as any).pad_left);
-  maybeApply('pad_row',       style.pad_row);
-  maybeApply('pad_column',    style.pad_column);
-  maybeApply('text_color',    style.text_color);
-  maybeApply('text_font',     style.text_font);
-  maybeApply('text_align',    style.text_align);
-  maybeApply('text_letter_space', (style as any).text_letter_space);
-  maybeApply('text_line_space',   (style as any).text_line_space);
-  maybeApply('align',         style.align);
+  for (const style of chain) {
+    maybeApply('bg_color',      style.bg_color);
+    maybeApply('bg_grad_color', style.bg_grad_color);
+    maybeApply('bg_grad_dir',   style.bg_grad_dir);
+    maybeApply('bg_opa',        style.bg_opa);
+    maybeApply('border_color',  style.border_color);
+    maybeApply('border_width',  style.border_width);
+    maybeApply('border_opa',    style.border_opa);
+    maybeApply('radius',        style.radius);
+    maybeApply('width',         style.width);
+    maybeApply('height',        style.height);
+    maybeApply('min_width',     (style as any).min_width);
+    maybeApply('min_height',    (style as any).min_height);
+    maybeApply('pad_all',       style.pad_all);
+    maybeApply('pad_top',       (style as any).pad_top);
+    maybeApply('pad_right',     (style as any).pad_right);
+    maybeApply('pad_bottom',    (style as any).pad_bottom);
+    maybeApply('pad_left',      (style as any).pad_left);
+    maybeApply('pad_row',       style.pad_row);
+    maybeApply('pad_column',    style.pad_column);
+    maybeApply('text_color',    style.text_color);
+    maybeApply('text_font',     style.text_font);
+    maybeApply('text_align',    style.text_align);
+    maybeApply('text_letter_space', (style as any).text_letter_space);
+    maybeApply('text_line_space',   (style as any).text_line_space);
+    maybeApply('align',         style.align);
+  }
 };
 
 // Helper function to parse a widget from YAML
@@ -688,6 +716,16 @@ const parseWidget = (w: any, index: number, styles: StyleDefinition[] = [], font
           if (widgetData.grid_rows) baseWidget.grid_rows = widgetData.grid_rows;
           if (widgetData.grid_cols) baseWidget.grid_cols = widgetData.grid_cols;
 
+          // Generic event-trigger passthrough: copy any `on_*` key (on_click,
+          // on_value, on_press, on_long_press, on_release, …) verbatim, so a
+          // widget's automations survive a visual-editor round trip even for
+          // trigger names the editor has no dedicated UI for.
+          for (const key of Object.keys(widgetData)) {
+            if (key.startsWith('on_') && baseWidget[key] === undefined) {
+              baseWidget[key] = widgetData[key];
+            }
+          }
+
           // Apply style properties to widget if a style is referenced
           applyStyleToWidget(baseWidget, widgetData.styles, styles);
 
@@ -732,6 +770,7 @@ const parseWidget = (w: any, index: number, styles: StyleDefinition[] = [], font
             case 'switch':
             case 'checkbox':
               if (widgetData.checked !== undefined) baseWidget.checked = widgetData.checked;
+              if (widgetData.text !== undefined) baseWidget.text = widgetData.text;
               break;
             case 'dropdown':
             case 'roller':
@@ -899,7 +938,7 @@ export const isFullESPHomeYaml = (raw: string): boolean => {
  * Extract the `lvgl:` block from a raw ESPHome YAML string.
  * Returns the block with leading indentation stripped, plus the indent level.
  */
-const extractLvglSection = (raw: string): { lvglYaml: string; indent: number; startLine: number; endLine: number } => {
+export const extractLvglSection = (raw: string): { lvglYaml: string; indent: number; startLine: number; endLine: number } => {
   const lines = raw.split('\n');
   let lvglStart = -1;
   let lvglIndent = 0;
@@ -1144,4 +1183,55 @@ export const reconstructFullESPHomeYaml = (rawEsphomeYaml: string, lvglConfig: L
   const after  = lines.slice(endLine).join('\n');
 
   return (before ? before + '\n' : '') + reindented.trimEnd() + (after ? '\n' + after : '');
+};
+
+export interface ReconstructionValidation {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Sanity-check the output of reconstructFullESPHomeYaml() against the file it
+ * came from, BEFORE it is ever written to disk. Guards against the editor
+ * silently corrupting or truncating a real device config: invalid YAML, a
+ * suspiciously large shrink, or a top-level section (wifi:, esp32:, …) that
+ * went missing.
+ */
+export const validateReconstruction = (original: string, reconstructed: string): ReconstructionValidation => {
+  if (!reconstructed.trim()) {
+    return { ok: false, error: 'Result is empty.' };
+  }
+
+  try {
+    yaml.load(reconstructed, { schema: ESP_HOME_SCHEMA });
+  } catch (e) {
+    return { ok: false, error: 'Result is not valid YAML: ' + (e instanceof Error ? e.message : String(e)) };
+  }
+
+  if (original.length > 200 && reconstructed.length < original.length * 0.5) {
+    return {
+      ok: false,
+      error: `Result is suspiciously short (${reconstructed.length} vs original ${original.length} characters).`
+    };
+  }
+
+  // Every top-level (column-0) key present in the original, other than lvgl:,
+  // must still be present after reconstruction.
+  const topLevelKeyRe = /^([A-Za-z_][\w-]*)\s*:/gm;
+  const originalKeys = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = topLevelKeyRe.exec(original)) !== null) {
+    originalKeys.add(match[1]);
+  }
+  originalKeys.delete('lvgl');
+
+  const missing: string[] = [];
+  for (const key of originalKeys) {
+    if (!new RegExp(`^${key}\\s*:`, 'm').test(reconstructed)) missing.push(key);
+  }
+  if (missing.length > 0) {
+    return { ok: false, error: `Top-level section(s) missing after reconstruction: ${missing.join(', ')}` };
+  }
+
+  return { ok: true };
 };

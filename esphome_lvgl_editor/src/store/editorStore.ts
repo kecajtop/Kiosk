@@ -26,6 +26,8 @@ interface EditorState {
   lastImportIssues: CompatibilityIssue[];
   /** Relative path (under the add-on's ESPHome folder) of the file currently open for editing, if any */
   openEsphomePath: string | null;
+  /** Exact bytes last read from disk for openEsphomePath; used to detect edits made outside the editor before saving */
+  openEsphomeOriginalContent: string | null;
   history: HistoryState[];
   historyIndex: number;
   
@@ -66,6 +68,7 @@ interface EditorState {
   setRawEsphomeYaml: (raw: string | null) => void;
   setLastImportIssues: (issues: CompatibilityIssue[]) => void;
   setOpenEsphomePath: (path: string | null) => void;
+  setOpenEsphomeOriginalContent: (content: string | null) => void;
 }
 
 const MAX_HISTORY = 50;
@@ -116,6 +119,7 @@ export const useEditorStore = create<EditorState>()(
   rawEsphomeYaml: null,
   lastImportIssues: [],
   openEsphomePath: null,
+  openEsphomeOriginalContent: null,
   history: [],
   historyIndex: -1,
 
@@ -528,6 +532,7 @@ export const useEditorStore = create<EditorState>()(
   setRawEsphomeYaml: (raw: string | null) => set({ rawEsphomeYaml: raw }),
   setLastImportIssues: (issues: CompatibilityIssue[]) => set({ lastImportIssues: issues }),
   setOpenEsphomePath: (path: string | null) => set({ openEsphomePath: path }),
+  setOpenEsphomeOriginalContent: (content: string | null) => set({ openEsphomeOriginalContent: content }),
     }),
     {
       name: 'esphome-lvgl-editor-state',
@@ -539,6 +544,7 @@ export const useEditorStore = create<EditorState>()(
         previewScale: state.previewScale,
         rawEsphomeYaml: state.rawEsphomeYaml,
         openEsphomePath: state.openEsphomePath,
+        openEsphomeOriginalContent: state.openEsphomeOriginalContent,
         snapToGrid: state.snapToGrid,
         snapSize: state.snapSize,
         showPageTree: state.showPageTree,

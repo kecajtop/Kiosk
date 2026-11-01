@@ -1,0 +1,69 @@
+substitutions:
+  name: meter-keypad-panel
+
+packages:
+  common: !include common/base.yaml
+
+esphome:
+  name: ${name}
+
+esp32:
+  board: esp32dev
+
+i2c:
+  sda: GPIO21
+  scl: GPIO22
+
+sx1509:
+  - id: keypad_expander
+    address: 0x3E
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      sx1509: keypad_expander
+      number: 0
+    name: "Keypad button 1"
+
+display:
+  - platform: ili9xxx
+
+lvgl:
+  pages:
+    - id: main_page
+      widgets:
+        - meter:
+            id: power_meter
+            x: 10
+            y: 10
+            width: 200
+            height: 200
+            scales:
+              - range_from: 0
+                range_to: 100
+                ticks:
+                  count: 11
+                  width: 2
+                indicators:
+                  - line:
+                      id: power_needle
+                      value: 42
+        - label:
+            id: power_label
+            text: "42 W"
+            x: 220
+            y: 100
+            text_font: font_small
+            on_click:
+              - lambda: |-
+                  ESP_LOGD("ui", "power label clicked");
+
+font:
+  - file: "fonts/Roboto-Regular.ttf"
+    id: font_small
+    size: 14
+
+sensor:
+  - platform: adc
+    pin: GPIO34
+    name: "Power sensor"
