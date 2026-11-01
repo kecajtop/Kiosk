@@ -1,0 +1,136 @@
+pages:
+  - id: page_main
+    widgets:
+      - label:
+          id: main_title
+          x: 0
+          y: 25
+          width: 320
+          height: 30
+          text: "Main Menu"
+          text_color: 0xFFFFFF
+      - label:
+          id: menu_item_1
+          x: 20
+          y: 90
+          width: 280
+          height: 25
+          text: "1 - Alarm System"
+          text_color: 0x00FF00
+      - label:
+          id: menu_item_2
+          x: 20
+          y: 120
+          width: 280
+          height: 25
+          text: "2 - (Future)"
+          text_color: 0x808080
+      - label:
+          id: menu_item_3
+          x: 20
+          y: 150
+          width: 280
+          height: 25
+          text: "3 - (Future)"
+          text_color: 0x808080
+      - label:
+          id: select_hint
+          x: 0
+          y: 210
+          width: 320
+          height: 20
+          text: "# = Select"
+          text_color: 0x646464
+  
+  - id: page_alarm
+    widgets:
+      - label:
+          id: alarm_title
+          x: 0
+          y: 15
+          width: 320
+          height: 25
+          text: "Alarm Actions:"
+          text_color: 0xFFFFFF
+      - label:
+          id: alarm_disarm
+          x: 20
+          y: 45
+          width: 280
+          height: 25
+          text: "1 - Disarm"
+          text_color: 0x00FF00
+      - label:
+          id: alarm_home
+          x: 20
+          y: 70
+          width: 280
+          height: 25
+          text: "2 - Arm Home"
+          text_color: 0xFFFF00
+      - label:
+          id: alarm_away
+          x: 20
+          y: 95
+          width: 280
+          height: 25
+          text: "3 - Arm Away"
+          text_color: 0xFF0000
+      - label:
+          id: alarm_night
+          x: 20
+          y: 120
+          width: 280
+          height: 25
+          text: "4 - Arm Night"
+          text_color: 0xFFA500
+      - button:
+          id: btn_back
+          x: 100
+          y: 180
+          width: 120
+          height: 40
+          bg_color: 0x2196F3
+  
+  - id: page_pin
+    widgets:
+      - label:
+          id: lbl_action_title
+          x: 0
+          y: 30
+          width: 320
+          height: 25
+          text: "Action"
+          text_color: 0xFFFFFF
+      - label:
+          id: lbl_pin_prompt
+          x: 0
+          y: 70
+          width: 320
+          height: 25
+          text: "Enter PIN:"
+          text_color: 0xFFFFFF
+      - label:
+          id: lbl_pin_stars
+          x: 0
+          y: 110
+          width: 320
+          height: 30
+          text: "****"
+          text_color: 0xFFFFFF
+      - label:
+          id: lbl_message
+          x: 0
+          y: 170
+          width: 320
+          height: 25
+          text: ""
+          text_color: 0xFFFF00
+      - label:
+          id: lbl_hint
+          x: 0
+          y: 210
+          width: 320
+          height: 20
+          text: "# = Submit  * = Cancel"
+          text_color: 0x646464
