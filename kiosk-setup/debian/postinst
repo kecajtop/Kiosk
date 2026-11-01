@@ -621,6 +621,10 @@ After=display-manager.service
 Type=simple
 User=$KIOSK_USER
 Environment=DISPLAY=:0
+# Domyślny limit systemd (90 s) na cały start usługi bywa za krótki, gdy X server
+# rusza wolniej niż zwykle — wtedy ExecStartPre dostawał TERM w trakcie czekania
+# na gniazdo X11 i VNC w ogóle nie startowało (do najbliższego Restart=on-failure).
+TimeoutStartSec=300
 ExecStartPre=/bin/sh -c 'while [ ! -e /tmp/.X11-unix/X0 ]; do sleep 1; done'
 ExecStart=/usr/bin/x11vnc -display :0 -auth guess -forever -loop -noxdamage -repeat -rfbport 5900 -shared -passwd kiosk
 Restart=on-failure

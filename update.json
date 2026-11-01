@@ -1,9 +1,9 @@
 {
     "package": "kiosk-setup",
-    "version": "1:1.0.41",
-    "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.41_amd64.deb",
-    "sha256": "5569a0bbabf9448443d9bba25b7e283564682ce34aafb9b3a144423ab526c9f2",
-    "size": 23073344,
-    "date": "2026-10-30",
-    "notes": "Cockpit (opcjonalna instalacja, panel -> System): ogolny panel administracyjny Debiana/Ubuntu. Pelny ekran podgladu/sterowania. Opcjonalne konto administratora panelu WWW tworzone juz przy instalacji .deb (zamiast/obok klucza API)."
+    "version": "1:1.0.42",
+    "url": "https://raw.githubusercontent.com/kecajtop/Kiosk/main/releases/kiosk-setup_1.0.42_amd64.deb",
+    "sha256": "c923eb22ab91d60b04c5cf57edc12227bd821b8baad7d90ed768033ab8e04968",
+    "size": 23073570,
+    "date": "2026-11-01",
+    "notes": "Naprawa: usluga VNC (x11vnc) czasem w ogole nie startowala po wolniejszym rozruchu systemu (systemd ubijal oczekiwanie na gniazdo X11 po domyslnym limicie 90 s). Limit podniesiony do 300 s."
 }

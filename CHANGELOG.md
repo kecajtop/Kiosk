@@ -1,5 +1,12 @@
 # Zmiany
 
+## 1.0.42 (2026-11-01)
+- **Naprawa:** usługa VNC (x11vnc) czasem w ogóle nie startowała po wolniejszym rozruchu systemu —
+  systemd ubijał oczekiwanie na gniazdo X11 po domyślnym limicie 90 s (`start-pre operation timed
+  out`), a VNC wracało dopiero przy kolejnym automatycznym restarcie usługi. Limit startu podniesiony
+  do 300 s. Objawy u użytkownika: „Łączę sterowanie…” w przeglądarce wisi bez końca tuż po starcie
+  kiosku, mimo że inne funkcje panelu działają.
+
 ## 1.0.41 (2026-10-30)
 - Panel → System → **Cockpit**: opcjonalna instalacja ogólnego panelu administracyjnego Debiana/
   Ubuntu (CPU/RAM/dysk/sieć, usługi, konta, terminal w przeglądarce), osobnego od panelu kiosku.
