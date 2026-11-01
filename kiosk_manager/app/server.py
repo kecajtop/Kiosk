@@ -35,7 +35,7 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.\-]{1,253}$")
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}$")
 ENTITY_RE = re.compile(r"^(switch|light|input_boolean|button|script)\.[a-z0-9_]{1,200}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.4.0"          # = version w config.yaml
+ADDON_VERSION = "1.4.1"          # = version w config.yaml
 RAW = "https://raw.githubusercontent.com/kecajtop/Kiosk/main/"
 _LATEST = {"t": 0, "data": None}
 
@@ -691,6 +691,8 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         m = re.match(r"^/k/([a-z0-9]{1,20})(/.*)?$", self.path)
         if m:
+            if self.is_ws_upgrade():
+                return self.proxy_ws(m.group(1), m.group(2))
             return self.proxy(m.group(1), m.group(2))
         try:
             fm = re.match(r"^/font/plex-mono-(400|500|600)\.ttf$", path)
@@ -747,6 +749,74 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             log("błąd %s %s: %r" % (self.command, path, e))
             return self.send(500, {"error": str(e)})
+
+    def is_ws_upgrade(self):
+        return "upgrade" in (self.headers.get("Connection") or "").lower() and \
+               (self.headers.get("Upgrade") or "").lower() == "websocket"
+
+    def proxy_ws(self, kid, rest):
+        """WebSocket (sterowanie VNC przez przeglądarkę, noVNC) — zwykły proxy() poniżej jest
+        request/response (http.client) i nie przenosi Upgrade/Connection ani nie umie dwukierunkowo
+        pompować bajtów po 101 Switching Protocols, więc to osobny, surowy tunel TCP do kiosku."""
+        k = find(kid)
+        if not k:
+            return self.send(404, {"error": "nie ma takiego kiosku"})
+        try:
+            up = socket.create_connection((k["host"], int(k.get("port", 8088))), timeout=10)
+        except OSError as e:
+            return self.send(502, {"error": "kiosk %s nie odpowiada: %s" % (k["host"], e)})
+        self.body_read = True
+        self.close_connection = True
+        try:
+            lines = ["%s %s HTTP/1.1" % (self.command, rest), "Host: %s" % k["host"],
+                      "Authorization: Bearer %s" % k["token"]]
+            for h in ("Upgrade", "Connection", "Sec-WebSocket-Key", "Sec-WebSocket-Version",
+                      "Sec-WebSocket-Protocol", "Sec-WebSocket-Extensions"):
+                v = self.headers.get(h)
+                if v:
+                    lines.append("%s: %s" % (h, v))
+            up.sendall(("\r\n".join(lines) + "\r\n\r\n").encode())
+            up.settimeout(10)
+            buf = b""
+            while b"\r\n\r\n" not in buf:
+                chunk = up.recv(4096)
+                if not chunk:
+                    raise OSError("kiosk zamknął połączenie podczas powitania WebSocket")
+                buf += chunk
+                if len(buf) > 65536:
+                    raise ValueError("zła odpowiedź kiosku (nagłówki za duże)")
+            head, _, tail = buf.partition(b"\r\n\r\n")
+            status_line = head.split(b"\r\n", 1)[0]
+            parts = status_line.split(b" ", 2)
+            ok = len(parts) >= 2 and parts[1] == b"101"
+            self.connection.sendall(head + b"\r\n\r\n" + tail)
+            if not ok:
+                return
+            up.settimeout(None)
+            done = threading.Event()
+
+            def pump(src_recv, dst_send):
+                try:
+                    while not done.is_set():
+                        data = src_recv(65536)
+                        if not data:
+                            break
+                        dst_send(data)
+                except OSError:
+                    pass
+                done.set()
+
+            t = threading.Thread(target=pump, args=(up.recv, self.connection.sendall), daemon=True)
+            t.start()
+            pump(self.rfile.read1, up.sendall)
+            t.join(5)
+        except Exception as e:
+            log("VNC proxy błąd (%s): %r" % (kid, e))
+        finally:
+            try:
+                up.close()
+            except Exception:
+                pass
 
     def proxy(self, kid, rest):
         k = find(kid)

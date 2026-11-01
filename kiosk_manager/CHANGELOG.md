@@ -1,3 +1,10 @@
+## 1.4.1
+- **Naprawa: Sterowanie (VNC) przez panel dodatku nie działało.** Pośrednik dodatku (`/k/<kiosk>/...`)
+  przekazywał zwykłe zapytania HTTP, ale nie umiał dogadać WebSocketu (brak nagłówków Upgrade/
+  Connection i dwukierunkowego przesyłania bajtów po 101 Switching Protocols) — podgląd „Na żywo”
+  (MJPEG, zwykłe żądanie HTTP) działał, ale włączenie „Sterowanie” wisiało bez końca na „Łączę
+  sterowanie…”. Dodany osobny surowy tunel TCP do kiosku dla połączeń WebSocket.
+
 ## 1.4.0
 - **Zdjęcia „to było w tym dniu”:** dodatek przeszukuje bibliotekę Media Home Assistant (`/media`)
   pod kątem zdjęć JPEG z datą EXIF i co dzień wysyła do kiosków z włączoną opcją (przycisk

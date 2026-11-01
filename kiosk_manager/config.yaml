@@ -1,5 +1,5 @@
 name: Kioski
-version: "1.4.0"
+version: "1.4.1"
 slug: kiosk_manager
 description: Panel administracyjny kiosków kiosk-setup — stan, sterowanie i ustawienia wszystkich kiosków w jednym miejscu
 arch:
