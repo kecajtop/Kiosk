@@ -1,0 +1,23 @@
+name: Edytor LVGL
+version: "1.1.0"
+slug: esphome_lvgl_editor
+description: Wizualny edytor przeciągnij-i-upuść do pulpitów LVGL w ESPHome, z podglądem i edycją plików YAML
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:palette-swatch
+panel_title: Edytor LVGL
+map:
+  - homeassistant_config:rw
+options:
+  esphome_path: /homeassistant/esphome
+schema:
+  esphome_path: str
