@@ -3,6 +3,7 @@ import { Save, Upload, Download, Monitor, Code, Eye, FileJson, Clipboard, Undo, 
 import { useEditorStore } from '../store/editorStore';
 import { configToPagesYaml, parseFullESPHomeFile, reconstructFullESPHomeYaml } from '../utils/yamlConverter';
 import { DISPLAY_PRESETS } from '../config/widgetConfigs';
+import { EsphomeFileBrowser } from './EsphomeFileBrowser';
 
 interface ToolbarProps {
   viewMode: 'visual' | 'code' | 'split';
@@ -11,7 +12,7 @@ interface ToolbarProps {
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, onShowStylesPanel }) => {
-  const { config, loadConfig, displaySize, previewScale, setDisplaySize, setPreviewScale, undo, redo, canUndo, canRedo, snapToGrid, setSnapToGrid, previewMode, setPreviewMode, showPageTree, setShowPageTree, rawEsphomeYaml, setRawEsphomeYaml, lastImportIssues, setLastImportIssues } = useEditorStore();
+  const { config, loadConfig, displaySize, previewScale, setDisplaySize, setPreviewScale, undo, redo, canUndo, canRedo, snapToGrid, setSnapToGrid, previewMode, setPreviewMode, showPageTree, setShowPageTree, rawEsphomeYaml, setRawEsphomeYaml, lastImportIssues, setLastImportIssues, setOpenEsphomePath } = useEditorStore();
   const [displayPreset, setDisplayPreset] = useState<keyof typeof DISPLAY_PRESETS>('ESP32-2432S028');
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showIssuesModal, setShowIssuesModal] = useState(false);
@@ -66,6 +67,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, on
             const projectData = JSON.parse(event.target?.result as string);
             if (projectData.config) {
               loadConfig(projectData.config);
+              setOpenEsphomePath(null);
               if (projectData.displaySize) {
                 setDisplaySize(projectData.displaySize);
                 setDisplayPreset('Custom');
@@ -86,6 +88,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, on
     loadConfig(result.lvglConfig);
     setRawEsphomeYaml(result.isFullFile ? yamlCode : null);
     setLastImportIssues(result.issues);
+    setOpenEsphomePath(null);
     if (result.issues.length > 0) setShowIssuesModal(true);
   };
 
@@ -289,6 +292,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, on
           <Download size={16} />
           {rawEsphomeYaml ? 'Export Full File' : 'Export YAML'}
         </button>
+
+        <EsphomeFileBrowser />
 
         {lastImportIssues.length > 0 && (
           <button
