@@ -1,0 +1,23 @@
+name: Dashboard RTSP
+version: "1.0.0"
+slug: dashboard_rtsp
+description: Streamuje wybrane dashboardy/widoki Home Assistant jako kamery RTSP (do NVR, kiosk-setup, itp.)
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8098
+ingress_stream: true
+panel_icon: mdi:cctv
+panel_title: Dashboard RTSP
+hassio_api: true
+homeassistant_api: true
+ports:
+  8554/tcp: 8554
+ports_description:
+  8554/tcp: Serwer RTSP (MediaMTX) — jedno gniazdo, wiele strumieni pod różnymi ścieżkami (jedną na dashboard)
+options: {}
+schema: {}

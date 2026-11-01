@@ -69,10 +69,13 @@ jego sumę SHA-256.
 sterują głośnością kiosku, wyszukiwanie kiosków w sieci, zapamiętany token, HTTPS kiosku.
 Kod i budowanie (bez Gradle): [`kiosk-android/`](kiosk-android/README.md).
 
-## Dodatek Home Assistant
+## Dodatki Home Assistant
 
 W Home Assistant: **Ustawienia → Dodatki → Sklep z dodatkami → ⋮ → Repozytoria**, a potem dodaj
-`https://github.com/kecajtop/Kiosk` i zainstaluj „Kioski”.
+`https://github.com/kecajtop/Kiosk` i zainstaluj:
+- **Kioski** — panel administracyjny wszystkich kiosków kiosk-setup w jednym miejscu.
+- **Dashboard RTSP** — zamienia dowolny dashboard/widok Home Assistant w kamerę RTSP
+  (do NVR-a, kiosk-setup, dowolnego odtwarzacza RTSP). Zobacz [`kiosk_dashboard_rtsp/README.md`](kiosk_dashboard_rtsp/README.md).
 
 ## Budowanie ze źródeł
 

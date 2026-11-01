@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard RTSP</title>
+<style>
+:root{--bg:#0A0C08;--card:#0F120D;--field:#080A06;--line:#2C3127;--ink:#D9DCCB;--muted:#8E937F;--amber:#F5B400;--amberbg:#231E0C;--amberline:#7A5E12;--bad:#EF5B50;--badbg:#2E1714;--badline:#74302A;--ok:#86CF6A;--mono:ui-monospace,Menlo,Consolas,"DejaVu Sans Mono",monospace}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--mono);padding:16px;max-width:900px;margin:0 auto}
+h1{font-size:18px;margin:8px 0 16px} h2{font-size:14px;color:var(--amber);margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input{background:var(--field);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:7px 9px;font:inherit}
+input[type=number]{width:80px}
+button{background:var(--amberbg);border:1px solid var(--amberline);color:var(--amber);border-radius:6px;padding:7px 12px;font:inherit;cursor:pointer}
+button.danger{background:var(--badbg);border-color:var(--badline);color:var(--bad)}
+button:hover{filter:brightness(1.15)}
+.hint{color:var(--muted);font-size:12.5px}
+.dash{border-top:1px solid var(--line);padding:10px 0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.dash:first-child{border-top:none}
+.tag{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line)}
+.tag.ok{color:var(--ok);border-color:var(--ok)}
+.tag.err{color:var(--bad);border-color:var(--bad)}
+pre{background:var(--field);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:200px;overflow:auto;font-size:12px;white-space:pre-wrap}
+label{color:var(--muted);font-size:12.5px;display:block;margin-bottom:3px}
+.field{display:flex;flex-direction:column;gap:3px}
+</style></head>
+<body>
+<h1>📹 Dashboard RTSP — kamery z widoków Home Assistant</h1>
+
+<div class="card">
+<h2>Ustawienia</h2>
+<div class="row">
+  <div class="field"><label>Adres Home Assistant</label><input id="haurl" placeholder="http://homeassistant:8123" style="width:260px"></div>
+  <div class="field"><label>Długoterminowy token (long-lived access token)</label><input id="token" type="password" placeholder="(bez zmian)" style="width:260px"></div>
+  <button id="savebtn" style="align-self:flex-end">Zapisz</button>
+</div>
+<p class="hint">Token: profil użytkownika HA (kliknij avatar w lewym dolnym rogu) → Zabezpieczenia →
+„Utwórz token długoterminowy”. Wklej tutaj raz — używany jest do bezobsługowego zalogowania Chromium
+w tle, bez pokazywania ekranu logowania.</p>
+</div>
+
+<div class="card">
+<h2>Nowy dashboard → kamera RTSP</h2>
+<div class="row">
+  <div class="field"><label>Nazwa</label><input id="nname" placeholder="np. Salon" style="width:160px"></div>
+  <div class="field"><label>Ścieżka w HA</label><input id="npath" placeholder="/lovelace-dash/0" style="width:200px"></div>
+  <div class="field"><label>Szerokość</label><input id="nw" type="number" value="1920"></div>
+  <div class="field"><label>Wysokość</label><input id="nh" type="number" value="1080"></div>
+  <div class="field"><label>kl./s</label><input id="nfps" type="number" value="6"></div>
+  <button id="addbtn" style="align-self:flex-end">Dodaj</button>
+</div>
+<p class="hint">Niska klatkaż (4–8 kl./s) wystarcza dla dashboardu i mocno odciąża CPU — to nie jest film.</p>
+</div>
+
+<div class="card">
+<h2>Strumienie</h2>
+<div id="list"><p class="hint">Brak dashboardów — dodaj pierwszy powyżej.</p></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+async function api(path, method, body){
+  const r=await fetch(path,{method:method||'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error||r.statusText);
+  return j;
+}
+let CFG={dashboards:[]}, STATUS={};
+async function load(){
+  CFG=await api('api/config');
+  $('haurl').value=CFG.ha_url;
+  $('haurl').placeholder=CFG.token_set?'(token ustawiony)':'';
+  try{ STATUS=await api('api/status'); }catch(e){ STATUS={}; }
+  render();
+}
+function render(){
+  const l=$('list');
+  if(!CFG.dashboards.length){ l.innerHTML='<p class="hint">Brak dashboardów — dodaj pierwszy powyżej.</p>'; return; }
+  l.innerHTML='';
+  for(const d of CFG.dashboards){
+    const st=STATUS[d.id]||{status:'?'};
+    const ok=st.status==='działa';
+    const row=document.createElement('div'); row.className='dash';
+    row.innerHTML=`<div><b>${d.name}</b> <span class="tag ${ok?'ok':'err'}">${st.status}</span><br>
+      <span class="hint">${d.path} · ${d.width}×${d.height}@${d.fps}fps · rtsp://&lt;adres-HA&gt;:${CFG.mtx_port}/${d.id}</span></div>
+      <div class="row">
+        <button data-act="log" data-id="${d.id}">Log</button>
+        <button data-act="restart" data-id="${d.id}">Restart</button>
+        <button class="danger" data-act="del" data-id="${d.id}">Usuń</button>
+      </div>`;
+    l.appendChild(row);
+    const pre=document.createElement('pre'); pre.id='log-'+d.id; pre.hidden=true; l.appendChild(pre);
+  }
+  l.querySelectorAll('button').forEach(b=>b.onclick=()=>act(b.dataset.act,b.dataset.id));
+}
+async function act(a,id){
+  if(a==='del'){ if(!confirm('Usunąć strumień?')) return; await api('api/dashboards/'+id,'DELETE'); return load(); }
+  if(a==='restart'){ await api('api/dashboards/'+id+'/restart','POST'); return load(); }
+  if(a==='log'){
+    const pre=$('log-'+id); pre.hidden=!pre.hidden;
+    if(!pre.hidden) pre.textContent=await (await fetch('api/log/'+id)).text();
+  }
+}
+$('savebtn').onclick=async()=>{
+  try{ await api('api/settings','POST',{ha_url:$('haurl').value.trim(), token:$('token').value.trim()}); $('token').value=''; await load(); }
+  catch(e){ alert(e.message); }
+};
+$('addbtn').onclick=async()=>{
+  try{
+    await api('api/dashboards','POST',{name:$('nname').value.trim(), path:$('npath').value.trim()||'/',
+      width:+$('nw').value, height:+$('nh').value, fps:+$('nfps').value});
+    $('nname').value=''; $('npath').value='';
+    await load();
+  }catch(e){ alert(e.message); }
+};
+load();
+setInterval(load, 5000);
+</script>
+</body></html>

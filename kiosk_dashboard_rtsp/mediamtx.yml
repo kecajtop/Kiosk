@@ -1,0 +1,13 @@
+# Minimalna konfiguracja MediaMTX dla dodatku Dashboard RTSP: tylko RTSP, bez HLS/WebRTC/SRT
+# (niepotrzebne, mniejsza powierzchnia ataku). Strumienie publikuje lokalnie ffmpeg (127.0.0.1),
+# odczytują je dowolni klienci RTSP w sieci (NVR, kiosk-setup, VLC...).
+rtsp: yes
+rtspAddress: :8554
+hls: no
+webrtc: no
+srt: no
+rtmp: no
+api: no
+metrics: no
+pprof: no
+logLevel: warn
