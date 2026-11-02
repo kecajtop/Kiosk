@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FolderOpen, Save, RefreshCw, X, FileCode } from 'lucide-react';
 import { useEditorStore } from '../store/editorStore';
-import { configToPagesYaml, parseFullESPHomeFile, reconstructFullESPHomeYaml, validateReconstruction } from '../utils/yamlConverter';
+import { parseFullESPHomeFile, selfTestRoundTrip } from '../utils/yamlConverter';
 
 // Talks to the add-on's own backend (server/index.js), which reads/writes YAML
 // files under the Home Assistant ESPHome config folder mapped into the container.
@@ -15,7 +15,7 @@ export const EsphomeFileBrowser: React.FC = () => {
   const {
     config, loadConfig, rawEsphomeYaml, setRawEsphomeYaml,
     setLastImportIssues, openEsphomePath, setOpenEsphomePath,
-    openEsphomeOriginalContent, setOpenEsphomeOriginalContent
+    openEsphomeOriginalContent, setOpenEsphomeOriginalContent, saveVersion
   } = useEditorStore();
 
   const [open, setOpen] = useState(false);
@@ -55,6 +55,7 @@ export const EsphomeFileBrowser: React.FC = () => {
       setLastImportIssues(result.issues);
       setOpenEsphomePath(file.path);
       setOpenEsphomeOriginalContent(data.content);
+      saveVersion(`Opened: ${file.path}`);
       setOpen(false);
     } catch (e) {
       alert('Error opening ' + file.path + ':\n\n' + (e instanceof Error ? e.message : String(e)));
@@ -80,18 +81,21 @@ export const EsphomeFileBrowser: React.FC = () => {
         return;
       }
 
-      const content = rawEsphomeYaml
-        ? reconstructFullESPHomeYaml(rawEsphomeYaml, config)
-        : configToPagesYaml(config);
-
-      const validation = validateReconstruction(currentData.content, content);
-      if (!validation.ok) {
+      // Same check as the toolbar's "Validate" button, run here as a hard
+      // gate: re-serializes the current config, confirms it's valid YAML
+      // that still contains everything the original file had, and confirms
+      // re-loading it would reproduce exactly what's on screen right now.
+      const test = selfTestRoundTrip(config, rawEsphomeYaml);
+      if (!test.ok || !test.generatedYaml) {
         alert(
-          `Refusing to save "${openEsphomePath}": ${validation.error}\n\n` +
-          'The file on disk was not touched.'
+          `Refusing to save "${openEsphomePath}" — the current dashboard would not load back correctly:\n\n` +
+          test.issues.map((i) => `• ${i}`).join('\n') +
+          '\n\nThe file on disk was not touched. Try undoing your last edit (Ctrl+Z) or restoring a ' +
+          'checkpoint from "Versions".'
         );
         return;
       }
+      const content = test.generatedYaml;
 
       const res = await fetch(`/api/esphome/file/${openEsphomePath}`, {
         method: 'PUT',
@@ -102,6 +106,7 @@ export const EsphomeFileBrowser: React.FC = () => {
       if (!res.ok) throw new Error(data.error || 'Save failed');
       if (rawEsphomeYaml) setRawEsphomeYaml(content);
       setOpenEsphomeOriginalContent(content);
+      saveVersion(`Saved: ${openEsphomePath}`);
     } catch (e) {
       alert('Error saving ' + openEsphomePath + ':\n\n' + (e instanceof Error ? e.message : String(e)));
     } finally {

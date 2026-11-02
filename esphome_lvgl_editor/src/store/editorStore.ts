@@ -8,6 +8,15 @@ interface HistoryState {
   selectedWidgetId: string | null;
 }
 
+export interface SavedVersion {
+  id: string;
+  timestamp: number;
+  label: string;
+  config: LVGLConfig;
+}
+
+const MAX_SAVED_VERSIONS = 10;
+
 interface EditorState {
   config: LVGLConfig;
   currentPageId: string;
@@ -28,6 +37,8 @@ interface EditorState {
   openEsphomePath: string | null;
   /** Exact bytes last read from disk for openEsphomePath; used to detect edits made outside the editor before saving */
   openEsphomeOriginalContent: string | null;
+  /** Checkpoints kept across edits/reloads (last MAX_SAVED_VERSIONS), independent of the linear undo stack below */
+  savedVersions: SavedVersion[];
   history: HistoryState[];
   historyIndex: number;
   
@@ -69,6 +80,9 @@ interface EditorState {
   setLastImportIssues: (issues: CompatibilityIssue[]) => void;
   setOpenEsphomePath: (path: string | null) => void;
   setOpenEsphomeOriginalContent: (content: string | null) => void;
+  saveVersion: (label: string) => void;
+  restoreVersion: (id: string) => void;
+  deleteVersion: (id: string) => void;
 }
 
 const MAX_HISTORY = 50;
@@ -120,6 +134,7 @@ export const useEditorStore = create<EditorState>()(
   lastImportIssues: [],
   openEsphomePath: null,
   openEsphomeOriginalContent: null,
+  savedVersions: [],
   history: [],
   historyIndex: -1,
 
@@ -533,6 +548,36 @@ export const useEditorStore = create<EditorState>()(
   setLastImportIssues: (issues: CompatibilityIssue[]) => set({ lastImportIssues: issues }),
   setOpenEsphomePath: (path: string | null) => set({ openEsphomePath: path }),
   setOpenEsphomeOriginalContent: (content: string | null) => set({ openEsphomeOriginalContent: content }),
+
+  saveVersion: (label: string) => {
+    set((state) => {
+      const entry: SavedVersion = {
+        id: `v_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        timestamp: Date.now(),
+        label,
+        config: JSON.parse(JSON.stringify(state.config)),
+      };
+      return { savedVersions: [...state.savedVersions, entry].slice(-MAX_SAVED_VERSIONS) };
+    });
+  },
+
+  restoreVersion: (id: string) => {
+    set((state) => {
+      const entry = state.savedVersions.find((v) => v.id === id);
+      if (!entry) return {};
+      const config = JSON.parse(JSON.stringify(entry.config));
+      return {
+        config,
+        selectedWidgetId: null,
+        selectedWidgetPath: null,
+        ...saveHistory({ ...state, config }),
+      };
+    });
+  },
+
+  deleteVersion: (id: string) => {
+    set((state) => ({ savedVersions: state.savedVersions.filter((v) => v.id !== id) }));
+  },
     }),
     {
       name: 'esphome-lvgl-editor-state',
@@ -545,6 +590,7 @@ export const useEditorStore = create<EditorState>()(
         rawEsphomeYaml: state.rawEsphomeYaml,
         openEsphomePath: state.openEsphomePath,
         openEsphomeOriginalContent: state.openEsphomeOriginalContent,
+        savedVersions: state.savedVersions,
         snapToGrid: state.snapToGrid,
         snapSize: state.snapSize,
         showPageTree: state.showPageTree,

@@ -14,6 +14,9 @@ osobnego portu czy logowania, działa też wygodnie na kiosku (tablet w trybie k
   w przeglądarce.
 - **Pliki ESPHome** — przycisk w górnym pasku, przegląda pliki `.yaml` w folderze `esphome` konfiguracji
   Home Assistant i otwiera wybrany bezpośrednio do edycji i podglądu na żywo (patrz niżej).
+- **Validate** — przycisk sprawdzający na żywo, czy aktualny pulpit da się bezpiecznie wyeksportować
+  i wczytać ponownie (patrz „Gdy coś się rozjedzie" niżej).
+- **Versions** — historia checkpointów całego pulpitu, do których można wrócić w każdej chwili.
 
 ## Edycja i podgląd plików ESPHome
 
@@ -52,6 +55,23 @@ LVGL sam odczytuje plik z dysku i porównuje go z wersją, którą miał otwart�
 - backend zapisuje atomowo (plik tymczasowy + zamiana) i przed każdym zapisem trzyma kopię poprzedniej
   wersji w `.lvgl_editor_backups/<plik>/` (do 5 ostatnich) — jeśli coś pójdzie nie tak, poprzednia wersja
   jest tam do odzyskania.
+
+## Gdy coś się rozjedzie przy edycji
+
+Przy skomplikowanych pulpitach (style, zdarzenia, zagnieżdżone widżety) bywa, że wizualna edycja i
+wygenerowany YAML rozjeżdżają się — widżet wygląda dobrze na płótnie, ale coś nie wyeksportuje się
+poprawnie. Dwa narzędzia do tego:
+
+- **Validate** w pasku narzędzi — sam odświeża się chwilę po każdej zmianie (zielony = **YAML OK**, żółty
+  z liczbą = znaleziono problem). Kliknięcie pokazuje szczegóły: dokładnie która strona/widżet by się nie
+  zgadzał, gdyby teraz zrobić eksport i wczytać go z powrotem. To samo sprawdzenie blokuje **Save** do
+  pliku ESPHome — zapis uszkodzonego YAML na dysk nie jest możliwy, zawsze dostaniesz komunikat z listą
+  problemów najpierw.
+- **Versions** w pasku narzędzi — lista checkpointów całego pulpitu (automatycznie zapisywanych przy
+  otwarciu/zapisie pliku i imporcie, plus przycisk **Save checkpoint** do zapisania w każdej chwili).
+  Przetrwają odświeżenie strony, w przeciwieństwie do historii Undo/Redo (Ctrl+Z/Ctrl+Y). Jeśli edycja
+  zepsuje pulpit w sposób, którego Undo już nie naprawi, **Versions** pozwala wrócić do ostatniego dobrego
+  stanu.
 
 ## Użycie w kiosku
 

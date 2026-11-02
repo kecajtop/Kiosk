@@ -1,5 +1,5 @@
 name: Edytor LVGL
-version: "1.2.0"
+version: "1.3.0"
 slug: esphome_lvgl_editor
 description: Wizualny edytor przeciągnij-i-upuść do pulpitów LVGL w ESPHome, z podglądem i edycją plików YAML
 arch:

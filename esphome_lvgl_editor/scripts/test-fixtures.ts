@@ -23,6 +23,8 @@ import {
   reconstructFullESPHomeYaml,
   validateReconstruction,
   extractLvglSection,
+  selfTestRoundTrip,
+  compareConfigsForDrift,
 } from '../src/utils/yamlConverter';
 import { Widget } from '../src/types/widgets';
 
@@ -175,6 +177,21 @@ for (const file of fixtureFiles) {
     pass(`${file}: validateReconstruction accepts edited round trip`);
   }
 
+  // ---- "Validate" button's check: does the editor's own state still match what it would export? ----
+  const selfTestUnchanged = selfTestRoundTrip(result.lvglConfig, result.isFullFile ? raw : null);
+  if (!selfTestUnchanged.ok) {
+    fail(`${file}: selfTestRoundTrip (unchanged)`, selfTestUnchanged.issues.join(' | '));
+  } else {
+    pass(`${file}: selfTestRoundTrip reports no drift (unchanged)`);
+  }
+
+  const selfTestEdited = selfTestRoundTrip(editedConfig, result.isFullFile ? raw : null);
+  if (!selfTestEdited.ok) {
+    fail(`${file}: selfTestRoundTrip (edited)`, selfTestEdited.issues.join(' | '));
+  } else {
+    pass(`${file}: selfTestRoundTrip reports no drift (edited)`);
+  }
+
   // ---- 5: CRLF line endings must not break extraction/reconstruction ----
   const crlfRaw = raw.replace(/\n/g, '\r\n');
   try {
@@ -208,6 +225,27 @@ for (const file of fixtureFiles) {
   const v3 = validateReconstruction(original, droppedSection);
   if (v3.ok) fail('safety net: dropped section', 'validateReconstruction accepted output missing a top-level section');
   else pass('safety net: rejects output that drops a top-level section');
+}
+
+// ---- Guard against selfTestRoundTrip/compareConfigsForDrift being a no-op that always passes ----
+{
+  const configA = {
+    pages: [{ id: 'main_page', widgets: [{ type: 'label', id: 'l1', text: 'before', x: 0, y: 0 } as Widget] }],
+  };
+  const configB = {
+    pages: [{ id: 'main_page', widgets: [{ type: 'label', id: 'l1', text: 'after', x: 0, y: 0 } as Widget] }],
+  };
+  const noDrift = compareConfigsForDrift(configA, configA);
+  if (noDrift.length !== 0) fail('safety net: compareConfigsForDrift on identical configs', JSON.stringify(noDrift));
+  else pass('safety net: compareConfigsForDrift reports nothing for identical configs');
+
+  const drift = compareConfigsForDrift(configA, configB);
+  if (drift.length === 0) fail('safety net: compareConfigsForDrift on differing configs', 'expected at least one issue, got none');
+  else pass('safety net: compareConfigsForDrift catches a changed widget property');
+
+  const selfTestNoRaw = selfTestRoundTrip(configA, null);
+  if (!selfTestNoRaw.ok) fail('safety net: selfTestRoundTrip (LVGL-only config)', selfTestNoRaw.issues.join(' | '));
+  else pass('safety net: selfTestRoundTrip accepts a plain LVGL-only config with no raw file');
 }
 
 console.log('');

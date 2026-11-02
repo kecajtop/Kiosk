@@ -4,6 +4,8 @@ import { useEditorStore } from '../store/editorStore';
 import { configToPagesYaml, parseFullESPHomeFile, reconstructFullESPHomeYaml } from '../utils/yamlConverter';
 import { DISPLAY_PRESETS } from '../config/widgetConfigs';
 import { EsphomeFileBrowser } from './EsphomeFileBrowser';
+import { ValidationStatus } from './ValidationStatus';
+import { VersionHistory } from './VersionHistory';
 
 interface ToolbarProps {
   viewMode: 'visual' | 'code' | 'split';
@@ -12,7 +14,7 @@ interface ToolbarProps {
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, onShowStylesPanel }) => {
-  const { config, loadConfig, displaySize, previewScale, setDisplaySize, setPreviewScale, undo, redo, canUndo, canRedo, snapToGrid, setSnapToGrid, previewMode, setPreviewMode, showPageTree, setShowPageTree, rawEsphomeYaml, setRawEsphomeYaml, lastImportIssues, setLastImportIssues, setOpenEsphomePath, setOpenEsphomeOriginalContent } = useEditorStore();
+  const { config, loadConfig, displaySize, previewScale, setDisplaySize, setPreviewScale, undo, redo, canUndo, canRedo, snapToGrid, setSnapToGrid, previewMode, setPreviewMode, showPageTree, setShowPageTree, rawEsphomeYaml, setRawEsphomeYaml, lastImportIssues, setLastImportIssues, setOpenEsphomePath, setOpenEsphomeOriginalContent, saveVersion } = useEditorStore();
   const [displayPreset, setDisplayPreset] = useState<keyof typeof DISPLAY_PRESETS>('ESP32-2432S028');
   const [showPasteModal, setShowPasteModal] = useState(false);
   const [showIssuesModal, setShowIssuesModal] = useState(false);
@@ -69,6 +71,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, on
               loadConfig(projectData.config);
               setOpenEsphomePath(null);
               setOpenEsphomeOriginalContent(null);
+              saveVersion('Loaded project file');
               if (projectData.displaySize) {
                 setDisplaySize(projectData.displaySize);
                 setDisplayPreset('Custom');
@@ -91,6 +94,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, on
     setLastImportIssues(result.issues);
     setOpenEsphomePath(null);
     setOpenEsphomeOriginalContent(null);
+    saveVersion(`Imported ${result.isFullFile ? 'full ESPHome file' : 'LVGL YAML'}`);
     if (result.issues.length > 0) setShowIssuesModal(true);
   };
 
@@ -296,6 +300,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, on
         </button>
 
         <EsphomeFileBrowser />
+        <ValidationStatus />
+        <VersionHistory />
 
         {lastImportIssues.length > 0 && (
           <button

@@ -1,3 +1,21 @@
+## 1.3.0
+
+- **Przycisk "Validate"** w pasku narzędzi: sprawdza na żywo, czy aktualny pulpit da się wyeksportować
+  i wczytać ponownie bez strat — regeneruje YAML tak jak Export/Save, odczytuje go z powrotem i porównuje
+  z tym, co jest aktualnie na ekranie, zgłaszając dokładnie który widżet/strona się rozjechała. Odświeża się
+  automatycznie chwilę po każdej zmianie (zielony/żółty wskaźnik), więc nie trzeba czekać do zapisu, żeby
+  zobaczyć, że coś się zepsuło.
+- To samo sprawdzenie jest teraz twardą blokadą przy zapisie do pliku ESPHome (**Save**) — zapis jest
+  odrzucany, jeśli bieżący stan edytora nie wczytałby się z powrotem identycznie, zamiast zapisywać
+  uszkodzony plik.
+- **Historia wersji** (przycisk **Versions** w pasku narzędzi): checkpointy całego pulpitu, zapisywane
+  automatycznie przy otwarciu i zapisie pliku ESPHome oraz imporcie YAML/projektu, plus przycisk do
+  zapisania checkpointu w każdej chwili. Przechowywane do 10 ostatnich, przetrwają odświeżenie strony
+  (localStorage) — niezależnie od historii Undo/Redo (Ctrl+Z), która znika po przeładowaniu.
+- Testy (`npm run fixtures:check`) rozszerzone o sprawdzenie nowego `selfTestRoundTrip`/`compareConfigsForDrift`
+  na wszystkich przykładach, plus test wykrywający realny dryf (żeby sprawdzenie nie było atrapą, która
+  zawsze przechodzi).
+
 ## 1.2.0
 
 - **Ochrona przed niszczeniem plików przy zapisie:**
