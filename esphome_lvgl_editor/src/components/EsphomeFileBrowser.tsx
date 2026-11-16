@@ -28,7 +28,7 @@ export const EsphomeFileBrowser: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/esphome/files');
+      const res = await fetch('api/esphome/files');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not list files');
       setFiles(data.files);
@@ -46,7 +46,7 @@ export const EsphomeFileBrowser: React.FC = () => {
 
   const handleOpenFile = async (file: EsphomeFile) => {
     try {
-      const res = await fetch(`/api/esphome/file/${file.path}`);
+      const res = await fetch(`api/esphome/file/${file.path}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not read file');
       const result = parseFullESPHomeFile(data.content);
@@ -69,7 +69,7 @@ export const EsphomeFileBrowser: React.FC = () => {
       // Re-read the file first: something else (the ESPHome add-on's own
       // editor, a text editor over SSH, …) may have changed it since it was
       // opened here. Never blind-overwrite someone else's edit.
-      const current = await fetch(`/api/esphome/file/${openEsphomePath}`);
+      const current = await fetch(`api/esphome/file/${openEsphomePath}`);
       const currentData = await current.json();
       if (!current.ok) throw new Error(currentData.error || 'Could not re-read file before saving');
       if (currentData.content !== openEsphomeOriginalContent) {
@@ -97,7 +97,7 @@ export const EsphomeFileBrowser: React.FC = () => {
       }
       const content = test.generatedYaml;
 
-      const res = await fetch(`/api/esphome/file/${openEsphomePath}`, {
+      const res = await fetch(`api/esphome/file/${openEsphomePath}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'text/plain' },
         body: content

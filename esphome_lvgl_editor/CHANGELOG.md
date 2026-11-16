@@ -1,3 +1,15 @@
+## 1.4.0
+
+- **Naprawa: pusty ekran po otwarciu dodatku.** Strona ładowała się przez Ingress Home Assistant pod
+  adresem z losowym prefiksem (`/api/hassio_ingress/<token>/`), ale build Vite generował ścieżki do
+  plików JS/CSS jako bezwzględne (`/assets/...`) — przeglądarka próbowała je wtedy wczytać z samego
+  korzenia domeny HA, z pominięciem prefiksu Ingress, co kończyło się 404 i nigdy nie uruchamiającym się
+  interfejsem. Przestawione na ścieżki względne (`base: './'` w `vite.config.ts`).
+- Ten sam problem dotyczył wywołań do własnego backendu dodatku (`fetch('/api/esphome/...')`) — po
+  naprawieniu ekranu te zapytania trafiałyby nie do backendu dodatku, a do API samego Home Assistant.
+  Zmienione na względne (`fetch('api/esphome/...')`), tak jak ścieżki do plików statycznych.
+- Usunięty martwy odnośnik do nieistniejącej ikonki `/vite.svg` (pozostałość po szablonie Vite).
+
 ## 1.3.0
 
 - **Przycisk "Validate"** w pasku narzędzi: sprawdza na żywo, czy aktualny pulpit da się wyeksportować
