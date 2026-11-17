@@ -32,6 +32,30 @@ label{color:var(--muted);font-size:12.5px;display:block;margin-bottom:3px}
 <body>
 <h1>🎞️ Timelapse RTSP — poklatkowe filmy z kamer RTSP</h1>
 
+<div id="diskwarn" class="card" style="display:none;border-color:var(--badline);background:var(--badbg);color:var(--bad)"></div>
+
+<div class="card">
+<h2>Ustawienia — miejsce składowania</h2>
+<div class="row">
+  <div class="field"><label>Katalog</label>
+    <select id="sdirpreset">
+      <option value="/data">/data (domyślny, wewnątrz dodatku)</option>
+      <option value="/media/timelapse_rtsp_storage">/media/timelapse_rtsp_storage</option>
+      <option value="/share/timelapse_rtsp">/share/timelapse_rtsp</option>
+      <option value="custom">inna ścieżka…</option>
+    </select>
+  </div>
+  <div class="field" id="sdircustomwrap" style="display:none"><label>Własna ścieżka</label><input id="sdircustom" style="width:220px" placeholder="/mnt/dysk/timelapse"></div>
+  <button id="sdirsave" style="align-self:flex-end">Zapisz</button>
+  <span id="sdirok" class="hint" style="color:var(--ok);display:none">✓ Zapisano</span>
+</div>
+<p class="hint" id="diskinfo">Miejsce: —</p>
+<p class="hint">Dotyczy klatek i filmów (nie samej konfiguracji dodatku). Zmiana ścieżki działa od
+razu dla nowych klatek/renderów, ale <b>nie przenosi</b> istniejących plików — jeśli potrzebujesz,
+przenieś je ręcznie i usuń stare, żeby nie zajmowały miejsca w dwóch miejscach naraz. Powiadomienie
+(w panelu i w Home Assistant) pojawi się automatycznie, gdy wolnego miejsca zostanie poniżej 5%.</p>
+</div>
+
 <div class="card">
 <h2>Nowy timelapse</h2>
 <div class="row">
@@ -43,13 +67,30 @@ label{color:var(--muted);font-size:12.5px;display:block;margin-bottom:3px}
   <div class="field"><label>kl./s wideo</label><input id="nfps" type="number" value="24" min="1" max="60"></div>
   <div class="field"><label>Klatki (dni)</label><input id="nframedays" type="number" value="3" min="1" max="365"></div>
   <div class="field"><label>Wideo (dni, 0=zawsze)</label><input id="nvideodays" type="number" value="90" min="0" max="3650"></div>
+  <div class="field"><label>Okno przechwytywania</label>
+    <select id="ncapwindow">
+      <option value="always">zawsze</option>
+      <option value="time_range">zakres godzin</option>
+      <option value="night">noc (zachód→wschód)</option>
+      <option value="day">dzień (wschód→zachód)</option>
+    </select>
+  </div>
+  <div class="field" id="nwindowrange" style="display:none">
+    <label>Od – do</label>
+    <div class="row" style="gap:4px;flex-wrap:nowrap">
+      <input id="nwinstart" type="time" value="20:00"><input id="nwinend" type="time" value="06:00">
+    </div>
+  </div>
   <button id="addbtn" style="align-self:flex-end">Dodaj</button>
 </div>
 <p class="hint">Co <b>interwał</b> sekund dodatek krótko łączy się ze strumieniem RTSP i zapisuje jedną
 klatkę JPEG. O godzinie z pola <b>„Render o”</b> wszystkie nowe klatki od ostatniego renderu są
 automatycznie składane w jeden plik mp4 (<b>kl./s wideo</b> = tempo odtwarzania gotowego filmu, nie ma
 związku z interwałem przechwytywania). Renderowanie całego dodatku jest jedno na raz i działa z niskim
-priorytetem CPU — na obciążonym komputerze po prostu potrwa dłużej, nie zabierze CPU innym procesom.</p>
+priorytetem CPU — na obciążonym komputerze po prostu potrwa dłużej, nie zabierze CPU innym procesom.
+<b>Okno przechwytywania</b> ogranicza łapanie klatek do wybranych godzin — „zakres godzin” to dowolny
+przedział (może przechodzić przez północ, np. 20:00–06:00), a „noc”/„dzień” korzystają z rzeczywistego
+wschodu/zachodu słońca policzonego przez Home Assistant dla Twojej lokalizacji.</p>
 </div>
 
 <div class="card">
@@ -118,6 +159,20 @@ function buildRow(t){
     <div class="field"><label>kl./s wideo</label><input class="efps" type="number" min="1" max="60"></div>
     <div class="field"><label>Klatki (dni)</label><input class="eframedays" type="number" min="1" max="365"></div>
     <div class="field"><label>Wideo (dni, 0=zawsze)</label><input class="evideodays" type="number" min="0" max="3650"></div>
+    <div class="field"><label>Okno przechwytywania</label>
+      <select class="ecapwindow">
+        <option value="always">zawsze</option>
+        <option value="time_range">zakres godzin</option>
+        <option value="night">noc (zachód→wschód)</option>
+        <option value="day">dzień (wschód→zachód)</option>
+      </select>
+    </div>
+    <div class="field ewindowrange">
+      <label>Od – do</label>
+      <div class="row" style="gap:4px;flex-wrap:nowrap">
+        <input class="ewinstart" type="time"><input class="ewinend" type="time">
+      </div>
+    </div>
     <button data-act="saveedit" style="align-self:flex-end">Zapisz edycję</button>
     <button data-act="canceledit" style="align-self:flex-end">Anuluj</button>`;
   l.appendChild(edit);
@@ -132,7 +187,10 @@ function buildRow(t){
     etransport: edit.querySelector('.etransport'), einterval: edit.querySelector('.einterval'),
     erendertime: edit.querySelector('.erendertime'), efps: edit.querySelector('.efps'),
     eframedays: edit.querySelector('.eframedays'), evideodays: edit.querySelector('.evideodays'),
+    ecapwindow: edit.querySelector('.ecapwindow'), ewinstart: edit.querySelector('.ewinstart'),
+    ewinend: edit.querySelector('.ewinend'), ewindowrange: edit.querySelector('.ewindowrange'),
   };
+  entry.ecapwindow.onchange=()=>{ entry.ewindowrange.style.display = entry.ecapwindow.value==='time_range' ? '' : 'none'; };
   row.querySelectorAll('button').forEach(b=>b.onclick=()=>act(b.dataset.act, t.id, entry));
   edit.querySelectorAll('button').forEach(b=>b.onclick=()=>act(b.dataset.act, t.id, entry));
   return entry;
@@ -160,13 +218,16 @@ function render(){
     e.tag.className='tag '+(st.rendering?'ok':ok?'ok':paused?'paused':'err');
     e.nm.textContent=t.name;
     e.url.textContent=maskUrl(t.rtsp_url);
-    e.meta.textContent='co '+t.interval_sec+'s · render o '+t.render_time+' · '+t.render_fps+' kl./s wideo · '+
+    const winLabel={always:'zawsze', time_range:t.window_start+'–'+t.window_end, night:'noc', day:'dzień'}[t.capture_window]||'zawsze';
+    e.meta.textContent='co '+t.interval_sec+'s ('+winLabel+') · render o '+t.render_time+' · '+t.render_fps+' kl./s wideo · '+
       st.frame_count+' klatek · ostatnia: '+fmtTs(st.last_capture_ts);
     e.img.src='api/snapshot/'+t.id+'?t='+Date.now();
     e.pauseBtn.textContent=paused||!t.enabled?'Wznów':'Pauza';
     e.ename.value=t.name; e.eurl.value=t.rtsp_url; e.etransport.value=t.transport;
     e.einterval.value=t.interval_sec; e.erendertime.value=t.render_time; e.efps.value=t.render_fps;
     e.eframedays.value=t.frame_days; e.evideodays.value=t.video_days;
+    e.ecapwindow.value=t.capture_window||'always'; e.ewinstart.value=t.window_start||'20:00'; e.ewinend.value=t.window_end||'06:00';
+    e.ewindowrange.style.display = e.ecapwindow.value==='time_range' ? '' : 'none';
   }
   for(const [id, e] of [...rows]) if(!seen.has(id)){
     e.row.remove(); e.edit.remove(); e.pre.remove(); e.vids.remove(); rows.delete(id); editingIds.delete(id);
@@ -216,24 +277,68 @@ async function act(a,id,e){
       await api('api/timelapses/'+id, 'PUT', {
         name: e.ename.value.trim(), rtsp_url: e.eurl.value.trim(), transport: e.etransport.value,
         interval_sec: +e.einterval.value, render_time: e.erendertime.value,
-        render_fps: +e.efps.value, frame_days: +e.eframedays.value, video_days: +e.evideodays.value
+        render_fps: +e.efps.value, frame_days: +e.eframedays.value, video_days: +e.evideodays.value,
+        capture_window: e.ecapwindow.value, window_start: e.ewinstart.value, window_end: e.ewinend.value
       });
       editingIds.delete(id);
       await load();
     }catch(err){ alert(err.message); }
   }
 }
+$('ncapwindow').onchange=()=>{ $('nwindowrange').style.display = $('ncapwindow').value==='time_range' ? '' : 'none'; };
 $('addbtn').onclick=async()=>{
   try{
     await api('api/timelapses','POST',{
       name:$('nname').value.trim(), rtsp_url:$('nurl').value.trim(), transport:$('ntransport').value,
       interval_sec:+$('ninterval').value, render_time:$('nrendertime').value, render_fps:+$('nfps').value,
-      frame_days:+$('nframedays').value, video_days:+$('nvideodays').value
+      frame_days:+$('nframedays').value, video_days:+$('nvideodays').value,
+      capture_window:$('ncapwindow').value, window_start:$('nwinstart').value, window_end:$('nwinend').value
     });
     $('nname').value=''; $('nurl').value='';
     await load();
   }catch(e){ alert(e.message); }
 };
+
+// Ustawienia (miejsce składowania) i miejsce na dysku - osobny, niezależny cykl odświeżania,
+// bo nie dotyka żadnego pola edycji timelapse'u (patrz editingIds powyżej), więc nie musi
+// być wstrzymywany, gdy ktoś akurat edytuje strumień.
+const STORAGE_PRESETS=['/data','/media/timelapse_rtsp_storage','/share/timelapse_rtsp'];
+async function loadSettings(){
+  const s=await api('api/settings');
+  if(STORAGE_PRESETS.includes(s.storage_dir)){
+    $('sdirpreset').value=s.storage_dir; $('sdircustomwrap').style.display='none';
+  }else{
+    $('sdirpreset').value='custom'; $('sdircustomwrap').style.display=''; $('sdircustom').value=s.storage_dir;
+  }
+}
+$('sdirpreset').onchange=()=>{ $('sdircustomwrap').style.display = $('sdirpreset').value==='custom' ? '' : 'none'; };
+$('sdirsave').onclick=async()=>{
+  const dir=$('sdirpreset').value==='custom' ? $('sdircustom').value.trim() : $('sdirpreset').value;
+  try{
+    await api('api/settings','POST',{storage_dir:dir});
+    const ok=$('sdirok'); ok.style.display='inline'; clearTimeout(ok._t); ok._t=setTimeout(()=>ok.style.display='none', 4000);
+    loadDisk();
+  }catch(e){ alert(e.message); }
+};
+function fmtGB(bytes){ return (bytes/1e9).toFixed(1)+' GB'; }
+async function loadDisk(){
+  try{
+    const d=await api('api/diskspace');
+    $('diskinfo').textContent='Miejsce w '+d.path+': wolne '+d.percent_free.toFixed(1)+'% ('+fmtGB(d.free)+' z '+fmtGB(d.total)+')';
+    const w=$('diskwarn');
+    if(d.low){
+      w.style.display='';
+      w.textContent='⚠ Mało miejsca na dysku w '+d.path+': tylko '+d.percent_free.toFixed(1)+'% wolnego. '+
+        'Usuń stare pliki, zmniejsz retencję klatek/wideo powyżej albo zmień miejsce składowania.';
+    }else{
+      w.style.display='none';
+    }
+  }catch(e){}
+}
+loadSettings();
+loadDisk();
+setInterval(loadDisk, 15000);
+
 load();
 // Dopóki jakikolwiek formularz edycji jest otwarty, cykliczne odświeżanie w ogóle się nie
 // wykonuje - ani zapytanie do serwera, ani dotknięcie DOM (patrz komentarz w render()).

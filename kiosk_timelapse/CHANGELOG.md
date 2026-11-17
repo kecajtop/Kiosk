@@ -1,3 +1,27 @@
+## 1.1.0
+- **Naprawa: przechwytywanie klatek kończyło się „Host is unreachable” dla kamer w sieci
+  LAN.** Domyślna, izolowana sieć Dockera dodatków (bridge) nie ma trasy do zwykłych
+  urządzeń w sieci użytkownika (np. kamer IP) — ffmpeg nie mógł nawet nawiązać połączenia,
+  niezależnie od poprawności adresu/danych logowania. Dodatek teraz działa w sieci hosta
+  (`host_network: true`, config.yaml) — ma taki sam dostęp do sieci LAN jak sam Home
+  Assistant. Panel (Ingress) i tak odrzuca połączenia spoza Supervisora/loopbacku, więc to
+  nie otwiera panelu na całą sieć.
+- **Okno przechwytywania** — można teraz ograniczyć łapanie klatek do wybranych godzin:
+  „zakres godzin” (dowolny przedział, może przechodzić przez północ, np. 20:00–06:00) albo
+  „noc”/„dzień” liczone z rzeczywistego wschodu/zachodu słońca dla lokalizacji skonfigurowanej
+  w Home Assistant (encja `sun.sun`, odczytywana przez Supervisora — bez potrzeby podawania
+  współrzędnych). Przycisk „Testuj teraz” zawsze łapie klatkę natychmiast, niezależnie od
+  okna i pauzy — to świadome wyjątki, do szybkiej diagnostyki.
+- **Wybór miejsca składowania klatek i filmów** — domyślnie `/data` (w obrębie dodatku), ale
+  można przełączyć na `/media/timelapse_rtsp_storage`, `/share/timelapse_rtsp` albo własną
+  ścieżkę (zapisana ścieżka jest od razu sprawdzana próbnym zapisem). Sama konfiguracja
+  dodatku zawsze zostaje w `/data`, niezależnie od tego ustawienia — inaczej zmiana na
+  niedostępną ścieżkę zablokowałaby odczyt samej konfiguracji. Zmiana dotyczy nowych
+  klatek/renderów; istniejące pliki trzeba przenieść ręcznie.
+- **Powiadomienie o małej ilości wolnego miejsca** (poniżej 5%) — czerwony baner w panelu
+  oraz prawdziwe powiadomienie Home Assistant (`persistent_notification`), widoczne nawet
+  bez otwartego panelu dodatku; samo się chowa/kasuje, gdy miejsca znowu przybędzie.
+
 ## 1.0.0
 - Pierwsze wydanie: nagrywanie poklatkowych filmów (timelapse) z dowolnych strumieni RTSP.
   Dla każdego skonfigurowanego timelapse'u dodatek łapie jedną klatkę JPEG co ustalony

@@ -29,11 +29,14 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(os.environ.get("TL_PORT", "8097"))
+# DATA to WŁASNY, zawsze dostępny katalog dodatku (Supervisor gwarantuje go bez żadnego
+# `map:` w config.yaml) - tu zawsze mieszka config.json, niezależnie od tego, gdzie
+# użytkownik skonfiguruje przechowywanie klatek/wideo (storage_dir, patrz niżej). Inaczej
+# zmiana storage_dir na niedostępną ścieżkę zablokowałaby odczyt samej konfiguracji.
 DATA = os.environ.get("TL_DATA", "/data")
 CONF = os.path.join(DATA, "config.json")
-FRAMES_DIR = os.path.join(DATA, "frames")
-VIDEOS_DIR = os.path.join(DATA, "videos")
 MEDIA_DIR = "/media/timelapse_rtsp"   # kopia gotowych filmów, jeśli /media jest zamapowane (wygodny podgląd w HA)
+DISK_WARN_PERCENT = 5.0
 RUN_DIR = "/tmp/timelapse-rtsp"
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 INGRESS_ONLY = os.environ.get("TL_ANY_CLIENT") != "1"
@@ -41,9 +44,11 @@ INGRESS_GW = "172.30.32.2"
 ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
-ADDON_VERSION = "1.0.0"          # = version w config.yaml
+CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
+ADDON_VERSION = "1.1.0"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
+SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
 
 
 def log(msg):
@@ -56,6 +61,7 @@ def load():
     except Exception:
         c = {}
     c.setdefault("timelapses", [])
+    c.setdefault("storage_dir", DATA)
     return c
 
 
@@ -65,6 +71,37 @@ def save(c):
     with open(tmp, "w") as f:
         json.dump(c, f, ensure_ascii=False, indent=1)
     os.replace(tmp, CONF)
+
+
+def storage_dir():
+    """Skonfigurowalne miejsce na klatki/wideo - domyślnie to samo co DATA, ale użytkownik
+    może je zmienić w Ustawieniach (np. na /media/... albo /share/..., jeśli dysk dodatku
+    jest mały). config.json zawsze zostaje w DATA (patrz komentarz przy stałej DATA)."""
+    return load().get("storage_dir") or DATA
+
+
+def frames_root():
+    return os.path.join(storage_dir(), "frames")
+
+
+def videos_root():
+    return os.path.join(storage_dir(), "videos")
+
+
+def validate_storage_dir(path):
+    path = str(path or "").strip()
+    if not path.startswith("/"):
+        raise ValueError("ścieżka musi być absolutna (zaczynać się od /)")
+    path = path.rstrip("/") or "/"
+    try:
+        os.makedirs(path, exist_ok=True)
+        probe = os.path.join(path, ".tl_write_test")
+        with open(probe, "w") as f:
+            f.write("ok")
+        os.remove(probe)
+    except OSError as e:
+        raise ValueError("nie można zapisywać w %s: %s" % (path, e))
+    return path
 
 
 def to_int(v, lo, hi, default):
@@ -88,6 +125,71 @@ def to_fps(v, default):
 def to_time(v, default):
     v = str(v or "").strip()
     return v if TIME_RE.match(v) else default
+
+
+def to_window(v, default):
+    v = str(v or "")
+    return v if v in CAPTURE_WINDOWS else default
+
+
+# ------------------------------------------------------------------- stan słońca (wschód/zachód)
+
+# "night"/"day" jako okno przechwytywania potrzebuje wiedzieć, czy słońce jest aktualnie nad
+# czy pod horyzontem. Zamiast liczyć to samemu (potrzebna byłaby szerokość/długość
+# geograficzna od użytkownika, plus kod astronomiczny do utrzymania), odpytujemy encję
+# `sun.sun`, którą Home Assistant i tak zawsze ma (liczoną z lokalizacji ustawionej w
+# Ustawieniach HA) - przez proxy Supervisora, autoryzowane tokenem SUPERVISOR_TOKEN, który
+# Supervisor sam wstrzykuje do kontenera dodatku, gdy w config.yaml jest `homeassistant_api:
+# true` (bez potrzeby żadnego tokenu wklejanego przez użytkownika, w odróżnieniu od dodatku
+# Dashboard RTSP, który loguje się do samego frontendu, nie tylko odpytuje stan).
+SUN = {"above_horizon": None, "updated": 0}
+SUN_LOCK = threading.Lock()
+
+
+def sun_above_horizon():
+    with SUN_LOCK:
+        return SUN["above_horizon"]
+
+
+def sun_loop():
+    if not SUPERVISOR_TOKEN:
+        log("brak SUPERVISOR_TOKEN - okna przechwytywania 'noc'/'dzień' będą niedostępne "
+            "(traktowane jak 'zawsze'), dopóki dodatek nie zostanie zrestartowany z dostępem do API HA")
+        return
+    import urllib.request
+    url = "http://supervisor/core/api/states/sun.sun"
+    headers = {"Authorization": "Bearer " + SUPERVISOR_TOKEN}
+    while True:
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read())
+            with SUN_LOCK:
+                SUN["above_horizon"] = (data.get("state") == "above_horizon")
+                SUN["updated"] = time.time()
+        except Exception as e:
+            log("nie udało się odczytać stanu słońca (sun.sun) z Home Assistant: %r" % e)
+        time.sleep(120)   # stan słońca zmienia się rzadko - co 2 minuty w zupełności wystarczy
+
+
+def in_capture_window(cur):
+    mode = to_window(cur.get("capture_window"), "always")
+    if mode == "always":
+        return True
+    if mode == "time_range":
+        start = to_time(cur.get("window_start"), "20:00")
+        end = to_time(cur.get("window_end"), "06:00")
+        now_hm = time.strftime("%H:%M")
+        if start <= end:
+            return start <= now_hm <= end
+        return now_hm >= start or now_hm <= end   # zakres przechodzący przez północ, np. 20:00–06:00
+    # "night"/"day": brak jeszcze odczytu z HA (np. tuż po starcie dodatku, albo brak
+    # SUPERVISOR_TOKEN) - nie blokuj przechwytywania, lepiej złapać klatkę "na wszelki
+    # wypadek" niż przegapić całe okno przez chwilową niedostępność stanu słońca.
+    above = sun_above_horizon()
+    if above is None:
+        return True
+    return above if mode == "day" else (not above)
 
 
 def scrub_creds(text, url):
@@ -173,7 +275,7 @@ def capture_frame(rtsp_url, out_path, timeout=15, transport="tcp"):
 
 
 def capture_once(tid, t):
-    fdir = os.path.join(FRAMES_DIR, tid)
+    fdir = os.path.join(frames_root(), tid)
     os.makedirs(fdir, exist_ok=True)
     ts = int(time.time())
     path = os.path.join(fdir, "%010d.jpg" % ts)
@@ -218,7 +320,7 @@ def do_render(tid, reason):
     t = next((x for x in c["timelapses"] if x["id"] == tid), None)
     if not t:
         return
-    fdir = os.path.join(FRAMES_DIR, tid)
+    fdir = os.path.join(frames_root(), tid)
     last_ts = int(t.get("last_rendered_ts") or 0)
     now_ts = int(time.time())
     try:
@@ -240,7 +342,7 @@ def do_render(tid, reason):
     rt_set(tid, rendering=True)
     rt_log(tid, "renderowanie (%s): %d nowych klatek" % (reason, len(frames)))
     try:
-        vdir = os.path.join(VIDEOS_DIR, tid)
+        vdir = os.path.join(videos_root(), tid)
         os.makedirs(vdir, exist_ok=True)
         render_fps = to_fps(t.get("render_fps"), 24)
         dur = 1.0 / render_fps
@@ -296,7 +398,7 @@ def do_render(tid, reason):
 # ------------------------------------------------------------------- czyszczenie (retencja)
 
 def _cleanup_frames(tid, days):
-    d = os.path.join(FRAMES_DIR, tid)
+    d = os.path.join(frames_root(), tid)
     cutoff = time.time() - max(1, days) * 86400
     try:
         names = os.listdir(d)
@@ -319,7 +421,7 @@ def _cleanup_frames(tid, days):
 def _cleanup_videos(tid, days):
     if days <= 0:   # 0 = bez limitu
         return
-    d = os.path.join(VIDEOS_DIR, tid)
+    d = os.path.join(videos_root(), tid)
     cutoff = time.time() - days * 86400
     try:
         names = os.listdir(d)
@@ -343,6 +445,58 @@ def cleanup_loop():
         except Exception as e:
             log("czyszczenie: błąd %r" % e)
         time.sleep(600)
+
+
+# ------------------------------------------------------------------- miejsce na dysku
+
+DISK = {"path": DATA, "percent_free": 100.0, "total": 0, "free": 0, "low": False}
+DISK_LOCK = threading.Lock()
+LOW_DISK_NOTIF_ID = "timelapse_rtsp_low_disk"
+
+
+def _ha_notify_call(service, payload):
+    """Prawdziwe powiadomienie Home Assistant (persistent_notification), nie tylko baner w
+    panelu - widoczne nawet, gdy nikt akurat nie ma otwartego panelu dodatku. Przez to samo
+    proxy Supervisora co stan słońca (SUPERVISOR_TOKEN, wymaga homeassistant_api: true)."""
+    if not SUPERVISOR_TOKEN:
+        return
+    import urllib.request
+    try:
+        req = urllib.request.Request(
+            "http://supervisor/core/api/services/persistent_notification/%s" % service,
+            data=json.dumps(payload).encode(),
+            headers={"Authorization": "Bearer " + SUPERVISOR_TOKEN, "Content-Type": "application/json"},
+            method="POST")
+        urllib.request.urlopen(req, timeout=10).read()
+    except Exception as e:
+        log("nie udało się wysłać powiadomienia do Home Assistant: %r" % e)
+
+
+def diskspace_loop():
+    while True:
+        try:
+            d = storage_dir()
+            st = os.statvfs(d)
+            total = st.f_blocks * st.f_frsize
+            free = st.f_bavail * st.f_frsize
+            pct = (free / total * 100.0) if total else 100.0
+            with DISK_LOCK:
+                was_low = DISK["low"]
+                low = pct < DISK_WARN_PERCENT
+                DISK.update(path=d, percent_free=pct, total=total, free=free, low=low)
+            if low and not was_low:
+                log("UWAGA: mało miejsca na dysku w %s - %.1f%% wolnego" % (d, pct))
+                _ha_notify_call("create", {
+                    "notification_id": LOW_DISK_NOTIF_ID,
+                    "title": "Timelapse RTSP — mało miejsca na dysku",
+                    "message": ("Wolne miejsce w `%s` spadło do %.1f%% (próg: %.0f%%). Usuń stare "
+                                 "pliki, zmniejsz retencję klatek/wideo albo zmień miejsce "
+                                 "składowania w panelu dodatku (Ustawienia)." % (d, pct, DISK_WARN_PERCENT))})
+            elif not low and was_low:
+                _ha_notify_call("dismiss", {"notification_id": LOW_DISK_NOTIF_ID})
+        except Exception as e:
+            log("sprawdzanie miejsca na dysku: błąd %r" % e)
+        time.sleep(300)
 
 
 # ---------------------------------------------------------------- nadzór nad przechwytywaniem
@@ -381,8 +535,15 @@ class Worker:
                 self.pending = None
             if cur.get("enabled", True):
                 if time.time() >= self.next_capture:
-                    capture_once(self.id, cur)
-                    self.next_capture = time.time() + to_int(cur.get("interval_sec"), 5, 86400, 300)
+                    if in_capture_window(cur):
+                        capture_once(self.id, cur)
+                        self.next_capture = time.time() + to_int(cur.get("interval_sec"), 5, 86400, 300)
+                    else:
+                        # Poza oknem przechwytywania - nie łap klatki i nie przesuwaj
+                        # next_capture, żeby złapać od razu w momencie otwarcia okna
+                        # (sprawdzenie samego okna jest tanie, więc sprawdzanie go co 1 s,
+                        # zamiast dopiero po `interval_sec`, nie ma znaczenia dla obciążenia).
+                        rt_set(self.id, status="poza oknem przechwytywania")
                 self._maybe_render(cur)
             else:
                 rt_set(self.id, status="wstrzymany")
@@ -532,6 +693,23 @@ class Handler(BaseHTTPRequestHandler):
         if self.command == "GET" and path == "/api/config":
             return self.send(200, {"timelapses": load()["timelapses"], "version": ADDON_VERSION})
 
+        if self.command == "GET" and path == "/api/settings":
+            return self.send(200, {"storage_dir": storage_dir()})
+
+        if self.command == "POST" and path == "/api/settings":
+            b = self.body_json()
+            newdir = validate_storage_dir(b.get("storage_dir"))
+            c = load()
+            c["storage_dir"] = newdir
+            save(c)
+            log("miejsce składowania zmienione na: %s (dotyczy nowych klatek/renderów - "
+                "istniejące pliki zostają w starej lokalizacji)" % newdir)
+            return self.send(200, {"ok": True, "storage_dir": newdir})
+
+        if self.command == "GET" and path == "/api/diskspace":
+            with DISK_LOCK:
+                return self.send(200, dict(DISK))
+
         if self.command == "GET" and path == "/api/status":
             c = load()
             out = {}
@@ -539,7 +717,7 @@ class Handler(BaseHTTPRequestHandler):
                 tid = t["id"]
                 r = rt_get(tid)
                 try:
-                    fc = len([n for n in os.listdir(os.path.join(FRAMES_DIR, tid)) if n.endswith(".jpg")])
+                    fc = len([n for n in os.listdir(os.path.join(frames_root(), tid)) if n.endswith(".jpg")])
                 except OSError:
                     fc = 0
                 out[tid] = {"status": r["status"], "last_capture_ts": r["last_capture_ts"],
@@ -562,6 +740,9 @@ class Handler(BaseHTTPRequestHandler):
                 "render_fps": to_fps(b.get("render_fps"), 24),
                 "frame_days": to_int(b.get("frame_days"), 1, 365, 3),
                 "video_days": to_int(b.get("video_days"), 0, 3650, 90),
+                "capture_window": to_window(b.get("capture_window"), "always"),
+                "window_start": to_time(b.get("window_start"), "20:00"),
+                "window_end": to_time(b.get("window_end"), "06:00"),
                 "enabled": True,
                 "last_rendered_ts": 0,
             })
@@ -571,7 +752,7 @@ class Handler(BaseHTTPRequestHandler):
 
         ms = re.match(r"^/api/snapshot/([a-z0-9]{1,20})$", path)
         if self.command == "GET" and ms:
-            fdir = os.path.join(FRAMES_DIR, ms.group(1))
+            fdir = os.path.join(frames_root(), ms.group(1))
             try:
                 names = sorted(n for n in os.listdir(fdir) if n.endswith(".jpg"))
             except OSError:
@@ -590,7 +771,7 @@ class Handler(BaseHTTPRequestHandler):
 
         mv = re.match(r"^/api/timelapses/([a-z0-9]{1,20})/videos$", path)
         if self.command == "GET" and mv:
-            vdir = os.path.join(VIDEOS_DIR, mv.group(1))
+            vdir = os.path.join(videos_root(), mv.group(1))
             out = []
             try:
                 for n in sorted(os.listdir(vdir), reverse=True):
@@ -649,6 +830,12 @@ class Handler(BaseHTTPRequestHandler):
                 t["frame_days"] = to_int(b.get("frame_days"), 1, 365, t["frame_days"])
             if "video_days" in b:
                 t["video_days"] = to_int(b.get("video_days"), 0, 3650, t["video_days"])
+            if "capture_window" in b:
+                t["capture_window"] = to_window(b.get("capture_window"), t.get("capture_window", "always"))
+            if "window_start" in b:
+                t["window_start"] = to_time(b.get("window_start"), t.get("window_start", "20:00"))
+            if "window_end" in b:
+                t["window_end"] = to_time(b.get("window_end"), t.get("window_end", "06:00"))
             if "enabled" in b:
                 t["enabled"] = bool(b["enabled"])
             save(c)
@@ -663,7 +850,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise KeyError(m.group(1))
             save(c)
             reconcile()
-            for base in (FRAMES_DIR, VIDEOS_DIR):
+            for base in (frames_root(), videos_root()):
                 shutil.rmtree(os.path.join(base, m.group(1)), ignore_errors=True)
             shutil.rmtree(os.path.join(MEDIA_DIR, m.group(1)), ignore_errors=True)
             with RUNTIME_LOCK:
@@ -672,13 +859,13 @@ class Handler(BaseHTTPRequestHandler):
 
         mf = re.match(r"^/api/videos/([a-z0-9]{1,20})/([^/]+)$", path)
         if self.command in ("GET", "HEAD") and mf and FILE_RE.match(mf.group(2)):
-            p = os.path.join(VIDEOS_DIR, mf.group(1), mf.group(2))
+            p = os.path.join(videos_root(), mf.group(1), mf.group(2))
             if not os.path.isfile(p):
                 raise KeyError(mf.group(2))
             return self._serve_video(p)
 
         if self.command == "DELETE" and mf and FILE_RE.match(mf.group(2)):
-            p = os.path.join(VIDEOS_DIR, mf.group(1), mf.group(2))
+            p = os.path.join(videos_root(), mf.group(1), mf.group(2))
             if not os.path.isfile(p):
                 raise KeyError(mf.group(2))
             os.remove(p)
@@ -695,12 +882,14 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     os.makedirs(DATA, exist_ok=True)
-    os.makedirs(FRAMES_DIR, exist_ok=True)
-    os.makedirs(VIDEOS_DIR, exist_ok=True)
+    os.makedirs(frames_root(), exist_ok=True)
+    os.makedirs(videos_root(), exist_ok=True)
     os.makedirs(RUN_DIR, exist_ok=True)
     reconcile()
     threading.Thread(target=render_worker_loop, daemon=True).start()
     threading.Thread(target=cleanup_loop, daemon=True).start()
+    threading.Thread(target=sun_loop, daemon=True).start()
+    threading.Thread(target=diskspace_loop, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     srv.daemon_threads = True
     log("Timelapse RTSP: panel na porcie %d, timelapse'y: %d" % (PORT, len(load()["timelapses"])))

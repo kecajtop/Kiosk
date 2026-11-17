@@ -51,6 +51,40 @@ zamapowany jest folder `media` Home Assistant (domyślnie tak, `map: media:rw`),
 wyrenderowany film trafia też do `media/timelapse_rtsp/<id>/` i jest widoczny w
 Media Browser HA.
 
+## Okno przechwytywania
+
+Domyślnie dodatek łapie klatki przez cały czas. Można to ograniczyć do wybranych godzin:
+
+- **zakres godzin** — dowolny przedział `OD–DO`, może przechodzić przez północ (np.
+  20:00–06:00 obejmuje całą noc).
+- **noc** / **dzień** — liczone z rzeczywistego wschodu/zachodu słońca dla lokalizacji
+  skonfigurowanej w samym Home Assistant (encja `sun.sun`, odczytywana przez Supervisora —
+  dodatek nie potrzebuje współrzędnych geograficznych od użytkownika). Wymaga, żeby
+  dodatek miał dostęp do API Home Assistant (`homeassistant_api: true` — ustawione
+  domyślnie); jeśli z jakiegoś powodu nie jest dostępny, okno „noc”/„dzień” zachowuje się
+  jak „zawsze” (nie blokuje przechwytywania), żeby chwilowa niedostępność stanu słońca nie
+  spowodowała utraty całego okna.
+
+Przycisk „Testuj teraz” zawsze łapie klatkę natychmiast — niezależnie od okna
+przechwytywania i od tego, czy timelapse jest akurat wstrzymany. To świadomy wyjątek: ma
+służyć szybkiej diagnostyce (czy adres/dane logowania są poprawne), nie zwykłemu zbieraniu
+materiału.
+
+## Miejsce składowania i wolne miejsce na dysku
+
+Klatki i filmy można trzymać gdzie indziej niż domyślny `/data` dodatku — w Ustawieniach
+panelu można wybrać `/media/timelapse_rtsp_storage`, `/share/timelapse_rtsp` albo podać
+własną ścieżkę. Sama konfiguracja dodatku (lista timelapse'ów, ustawienia) zawsze zostaje
+w `/data`, niezależnie od tego wyboru. Zmiana ścieżki jest od razu sprawdzana próbnym
+zapisem i dotyczy tylko nowych klatek/renderów od tego momentu — **nie przenosi**
+automatycznie istniejących plików.
+
+Co 5 minut dodatek sprawdza wolne miejsce na dysku w aktualnym miejscu składowania. Jeśli
+spadnie poniżej 5%, w panelu pojawia się czerwony baner, a w Home Assistant prawdziwe
+powiadomienie (`persistent_notification`) — widoczne nawet, gdy nikt nie ma akurat
+otwartego panelu dodatku. Powiadomienie samo się usuwa, gdy wolnego miejsca znowu
+przybędzie powyżej progu.
+
 ## Testowanie i diagnostyka
 
 Przycisk „Testuj teraz” wymusza natychmiastowe przechwycenie jednej klatki (działa też,
