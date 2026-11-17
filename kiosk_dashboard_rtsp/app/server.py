@@ -31,7 +31,7 @@ INGRESS_GW = "172.30.32.2"
 MTX_RTSP_PORT = 8554
 ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.1.3"          # = version w config.yaml
+ADDON_VERSION = "1.1.4"          # = version w config.yaml
 
 CHROMIUM_BIN = shutil.which("chromium-browser") or shutil.which("chromium") or "/usr/bin/chromium-browser"
 
@@ -296,9 +296,30 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def body_json(self):
+    def _read_body(self):
+        """Proxy Ingress HA (zwłaszcza z ingress_stream: true) czasem przekazuje POST
+        bez nagłówka Content-Length, tylko z Transfer-Encoding: chunked — wtedy samo
+        czytanie self.rfile.read(Content-Length) dawało puste body (Content-Length=0),
+        mimo że klient faktycznie wysłał dane. Trzeba samemu zdekodować chunked."""
+        te = (self.headers.get("Transfer-Encoding") or "").lower()
+        if "chunked" in te:
+            chunks = []
+            while True:
+                size_line = self.rfile.readline().strip()
+                if not size_line:
+                    continue
+                size = int(size_line.split(b";", 1)[0], 16)
+                if size == 0:
+                    self.rfile.readline()
+                    break
+                chunks.append(self.rfile.read(size))
+                self.rfile.read(2)  # CRLF po danych chunku
+            return b"".join(chunks)
         n = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(n) if n else b"{}"
+        return self.rfile.read(n) if n else b""
+
+    def body_json(self):
+        raw = self._read_body()
         try:
             return json.loads(raw or b"{}")
         except ValueError:
@@ -329,6 +350,9 @@ class Handler(BaseHTTPRequestHandler):
                                     "version": ADDON_VERSION})
         if self.command == "POST" and path == "/api/settings":
             b = self.body_json()
+            if not b:
+                log("UWAGA: puste body w /api/settings (Content-Length=%r, Transfer-Encoding=%r)" %
+                    (self.headers.get("Content-Length"), self.headers.get("Transfer-Encoding")))
             c = load()
             if "ha_url" in b:
                 c["ha_url"] = str(b["ha_url"]).rstrip("/") or "http://homeassistant:8123"

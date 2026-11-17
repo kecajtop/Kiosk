@@ -1,3 +1,14 @@
+## 1.1.4
+- **Prawdziwa przyczyna "zapis tokenu zwraca 0 znaków" znaleziona i naprawiona.** Licznik
+  znaków dodany w 1.1.3 potwierdził, że przeglądarka poprawnie wysyła token (183 znaki), ale
+  serwer i tak zapisywał pusty łańcuch. Powód: żądania POST przechodzące przez proxy Ingress
+  Home Assistant (zwłaszcza z `ingress_stream: true`) przychodzą do dodatku bez nagłówka
+  `Content-Length`, tylko z `Transfer-Encoding: chunked` — kod czytający body polegał
+  wyłącznie na `Content-Length`, więc przy jego braku po prostu pomijał treść żądania jako
+  pustą. Dodano ręczne dekodowanie `chunked` (zweryfikowane lokalnym testem jednostkowym na
+  183-znakowym tokenie, dokładnie jak w zgłoszeniu). To dotyczyło każdego zapisu przez POST
+  (ustawienia, dodawanie dashboardu), nie tylko tokenu.
+
 ## 1.1.3
 - Dalsza diagnostyka tego samego zgłoszenia (zapis tokenu pokazywał "0 znaków" nawet przy
   ręcznym wpisaniu paru znaków, nie tylko wklejeniu). Dodano licznik znaków liczony **na
