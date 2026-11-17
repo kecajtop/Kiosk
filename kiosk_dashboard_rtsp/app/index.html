@@ -94,7 +94,9 @@ function buildRow(d){
     <div style="flex:1;min-width:180px"><b class="nm"></b> <span class="tag"></span><br>
     <span class="hint meta"></span><br>
     <span class="hint rtsp" style="word-break:break-all"></span>
-    <button data-act="copy" style="padding:2px 7px;font-size:12px;vertical-align:middle">Kopiuj link</button></div>
+    <button data-act="copy-rtsp" style="padding:2px 7px;font-size:12px;vertical-align:middle">Kopiuj RTSP</button><br>
+    <span class="hint mjpeg" style="word-break:break-all"></span>
+    <button data-act="copy-mjpeg" style="padding:2px 7px;font-size:12px;vertical-align:middle">Kopiuj MJPG</button></div>
     <div class="row">
       <button data-act="edit">Edytuj</button>
       <button data-act="log">Log</button>
@@ -117,6 +119,7 @@ function buildRow(d){
     row, edit, pre,
     img: row.querySelector('img'), tag: row.querySelector('.tag'),
     nm: row.querySelector('.nm'), meta: row.querySelector('.meta'), rtsp: row.querySelector('.rtsp'),
+    mjpeg: row.querySelector('.mjpeg'),
     ename: edit.querySelector('.ename'), epath: edit.querySelector('.epath'),
     ew: edit.querySelector('.ew'), eh: edit.querySelector('.eh'), efps: edit.querySelector('.efps'),
   };
@@ -138,28 +141,30 @@ function render(){
     const st=STATUS[d.id]||{status:'?'};
     const ok=st.status==='działa';
     const rtsp='rtsp://'+location.hostname+':'+CFG.mtx_port+'/'+d.id;
+    const mjpeg='http://'+location.hostname+':'+CFG.jpg_port+'/mjpeg/'+d.id;
     let e=rows.get(d.id);
     if(!e){ e=buildRow(d); rows.set(d.id, e); }
-    // Bezpieczne do odświeżania co 5s - nigdy nie dotyka pól edycji/fokusu/zaznaczenia tekstu.
+    // Gdy formularz edycji tego konkretnego wiersza jest otwarty, NIC w nim nie dotykamy —
+    // nawet samo przeładowanie obrazka podglądu potrafiło na telefonie zabierać fokus z
+    // pola, które ktoś akurat edytuje. Status/log/inne wiersze nadal się odświeżają normalnie.
+    if(editingIds.has(d.id)) continue;
     e.tag.textContent=st.status; e.tag.className='tag '+(ok?'ok':'err');
     e.nm.textContent=d.name;
     e.meta.textContent=d.path+' · '+d.width+'×'+d.height+'@'+d.fps+'fps';
     e.rtsp.textContent=rtsp;
-    e.row.querySelector('[data-act=copy]').dataset.url=rtsp;
+    e.mjpeg.textContent=mjpeg;
+    e.row.querySelector('[data-act=copy-rtsp]').dataset.url=rtsp;
+    e.row.querySelector('[data-act=copy-mjpeg]').dataset.url=mjpeg;
     e.img.src='api/snapshot/'+d.id+'?t='+Date.now();
-    // Pola formularza edycji dostają wartości z configu tylko, gdy NIE jest akurat otwarty
-    // (inaczej nadpisałoby to, co ktoś właśnie wpisuje).
-    if(!editingIds.has(d.id)){
-      e.ename.value=d.name; e.epath.value=d.path; e.ew.value=d.width; e.eh.value=d.height; e.efps.value=d.fps;
-    }
+    e.ename.value=d.name; e.epath.value=d.path; e.ew.value=d.width; e.eh.value=d.height; e.efps.value=d.fps;
   }
   for(const [id, e] of [...rows]) if(!seen.has(id)){
     e.row.remove(); e.edit.remove(); e.pre.remove(); rows.delete(id); editingIds.delete(id);
   }
 }
 async function act(a,id,e){
-  if(a==='copy'){
-    const url=e.row.querySelector('[data-act=copy]').dataset.url;
+  if(a==='copy-rtsp' || a==='copy-mjpeg'){
+    const url=e.row.querySelector('[data-act='+a+']').dataset.url;
     try{ await navigator.clipboard.writeText(url); }
     catch(err){ prompt('Skopiuj ręcznie:', url); }
     return;

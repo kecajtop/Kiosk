@@ -1,3 +1,13 @@
+## 1.3.1
+- **Naprawa: edycja dalej była przerywana przez odświeżanie co ~5 s.** Poprzednia poprawka
+  (1.3.0) chroniła tylko wartości pól formularza, ale samo przeładowanie miniaturki podglądu
+  w edytowanym wierszu potrafiło na telefonie zabrać fokus z pola, w którym ktoś akurat
+  pisał. Teraz, dopóki formularz edycji danego strumienia jest otwarty, ten wiersz (razem z
+  obrazkiem podglądu) jest całkowicie pomijany przy odświeżaniu — pozostałe wiersze nadal
+  się odświeżają normalnie.
+- **Link MJPG obok linku RTSP** przy każdym strumieniu, z własnym przyciskiem „Kopiuj MJPG”
+  (adres portu 8099 z 1.3.0, wcześniej dodanego bez widocznego linku w panelu).
+
 ## 1.3.0
 - **Automatyczne ukrywanie paska bocznego HA** w strumieniu — dodatek zapisuje też
   `localStorage.dockedSidebar = "always_hidden"` (oficjalny klucz ustawienia profilu
