@@ -1,3 +1,13 @@
+## 1.1.2
+- **Diagnostyka problemu "token się zapisał, ale dodanie dashboardu i tak zgłasza brak tokenu".**
+  Najbardziej prawdopodobna przyczyna: na niektórych telefonach wklejanie do ukrytego pola
+  typu "hasło" nie rejestruje się poprawnie (widać kropki, ale rzeczywista wartość pola
+  zostaje pusta albo obcięta). Dodano przycisk 👁 przy polu tokenu, żeby zobaczyć wklejoną
+  wartość przed zapisem, oraz liczbę zapisanych znaków w potwierdzeniu "✓ Zapisano" (token
+  HA ma zwykle grubo ponad 100 znaków — jeśli licznik pokazuje kilka/kilkanaście, wklejanie
+  się nie powiodło). Backend dodatkowo przycina białe znaki (`strip()`) i loguje długość
+  zapisanego tokenu (nie treść) przy każdym zapisie ustawień.
+
 ## 1.1.1
 - **Naprawa: panel nie pokazywał żadnego potwierdzenia po zapisaniu tokenu HA.** Literówka w
   JS wpisywała informację „token ustawiony” w pole adresu HA, a nie w pole tokenu — to pole

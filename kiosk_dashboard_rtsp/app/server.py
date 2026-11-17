@@ -31,7 +31,7 @@ INGRESS_GW = "172.30.32.2"
 MTX_RTSP_PORT = 8554
 ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.1.1"          # = version w config.yaml
+ADDON_VERSION = "1.1.2"          # = version w config.yaml
 
 CHROMIUM_BIN = shutil.which("chromium-browser") or shutil.which("chromium") or "/usr/bin/chromium-browser"
 
@@ -333,10 +333,12 @@ class Handler(BaseHTTPRequestHandler):
             if "ha_url" in b:
                 c["ha_url"] = str(b["ha_url"]).rstrip("/") or "http://homeassistant:8123"
             if "token" in b and b["token"]:
-                c["token"] = str(b["token"])
+                c["token"] = str(b["token"]).strip()
             save(c)
+            log("ustawienia zapisane: ha_url=%r, token=%s (%d znaków)" %
+                (c["ha_url"], "ustawiony" if c["token"] else "BRAK", len(c["token"])))
             reconcile()
-            return self.send(200, {"ok": True})
+            return self.send(200, {"ok": True, "token_len": len(c["token"])})
         if self.command == "GET" and path == "/api/status":
             with WORKERS_LOCK:
                 return self.send(200, {wid: {"status": w.status, "display": w.display} for wid, w in WORKERS.items()})
