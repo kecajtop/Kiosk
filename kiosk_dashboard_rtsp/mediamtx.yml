@@ -11,3 +11,11 @@ api: no
 metrics: no
 pprof: no
 logLevel: warn
+
+# Nasz plik całkowicie zastępuje domyślny mediamtx.yml (nie jest z nim scalany), a domyślny
+# katalog "all_others" (zezwala na publikowanie/odczyt dowolnej nowej nazwy ścieżki, tu:
+# jednej na dashboard) jest wtedy pomijany -> ffmpeg dostawał "400 Bad Request" na ANNOUNCE,
+# bo serwer w ogóle nie miał zdefiniowanej żadnej ścieżki do publikacji. Trzeba go wypisać
+# jawnie.
+paths:
+  all_others:

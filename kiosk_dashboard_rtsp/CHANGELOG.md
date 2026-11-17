@@ -1,3 +1,13 @@
+## 1.1.5
+- **Naprawa: ffmpeg nie mógł opublikować strumienia do MediaMTX — "Could not write header
+  (incorrect codec parameters ?): Server returned 400 Bad Request", w kółko restart co kilka
+  sekund.** Nasz `mediamtx.yml` całkowicie zastępuje domyślną konfigurację MediaMTX (nie jest
+  z nią scalany), a domyślny wpis `paths: all_others:` — który zezwala na publikowanie
+  dowolnej nowej nazwy ścieżki (tu: jednej na dashboard) — był w nim pominięty. Bez niego
+  MediaMTX odrzucał (`400`) żądanie ANNOUNCE ffmpeg dla każdej nieznanej ścieżki. Dodano
+  jawnie `paths: all_others:` do naszej konfiguracji, zgodnie z oficjalnym domyślnym plikiem
+  MediaMTX.
+
 ## 1.1.4
 - **Prawdziwa przyczyna "zapis tokenu zwraca 0 znaków" znaleziona i naprawiona.** Licznik
   znaków dodany w 1.1.3 potwierdził, że przeglądarka poprawnie wysyła token (183 znaki), ale
