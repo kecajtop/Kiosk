@@ -30,7 +30,7 @@ label{color:var(--muted);font-size:12.5px;display:block;margin-bottom:3px}
 <h2>Ustawienia</h2>
 <div class="row">
   <div class="field"><label>Adres Home Assistant</label><input id="haurl" placeholder="http://homeassistant:8123" style="width:260px"></div>
-  <div class="field"><label>Długoterminowy token (long-lived access token)</label>
+  <div class="field"><label>Długoterminowy token (long-lived access token) — <b id="tokcount" style="color:var(--amber)">0 znaków</b></label>
     <div class="row" style="gap:4px;flex-wrap:nowrap">
       <input id="token" type="password" placeholder="(bez zmian)" style="width:230px">
       <button id="tokeneye" type="button" style="padding:7px 9px" title="Pokaż/ukryj">👁</button>
@@ -110,6 +110,9 @@ async function act(a,id){
 $('tokeneye').onclick=()=>{
   const t=$('token'); t.type=(t.type==='password')?'text':'password';
 };
+['input','change','keyup','paste'].forEach(ev=>$('token').addEventListener(ev,()=>{
+  setTimeout(()=>{ $('tokcount').textContent = $('token').value.length + ' znaków (na żywo, w telefonie)'; }, 0);
+}));
 $('savebtn').onclick=async()=>{
   try{
     const tokVal=$('token').value.trim();

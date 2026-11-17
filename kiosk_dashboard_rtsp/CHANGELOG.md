@@ -1,3 +1,11 @@
+## 1.1.3
+- Dalsza diagnostyka tego samego zgłoszenia (zapis tokenu pokazywał "0 znaków" nawet przy
+  ręcznym wpisaniu paru znaków, nie tylko wklejeniu). Dodano licznik znaków liczony **na
+  żywo w przeglądarce**, bez wysyłania czegokolwiek na serwer — aktualizuje się przy każdym
+  wpisanym/wklejonym znaku. Pozwala sprawdzić, czy pole w ogóle rejestruje wpisywanie
+  (licznik > 0 od razu po wpisaniu), zanim dojdzie do kliknięcia "Zapisz" i zapytania do
+  serwera — odróżnia problem po stronie przeglądarki/klawiatury od błędu w samym zapisie.
+
 ## 1.1.2
 - **Diagnostyka problemu "token się zapisał, ale dodanie dashboardu i tak zgłasza brak tokenu".**
   Najbardziej prawdopodobna przyczyna: na niektórych telefonach wklejanie do ukrytego pola
