@@ -1,3 +1,24 @@
+## 1.3.0
+- **Automatyczne ukrywanie paska bocznego HA** w strumieniu — dodatek zapisuje też
+  `localStorage.dockedSidebar = "always_hidden"` (oficjalny klucz ustawienia profilu
+  użytkownika na "zawsze ukryty"), więc dashboard w strumieniu wypełnia cały ekran bez
+  menu nawigacji.
+- **Ułamkowe kl./s** — można teraz podać wartość poniżej 1, np. `0.2` (1 klatka na 5 s) albo
+  `0.05` (1 klatka na 20 s). Dla dashboardu, który rzadko się zmienia, to spora oszczędność
+  CPU względem sztywnego minimum 1 kl./s. Dotyczy zarówno nowych dashboardów, jak i edycji
+  istniejących.
+- **Opcjonalny podgląd JPG/MJPEG bez logowania**, równolegle do RTSP, na nowym porcie 8099
+  (ten sam model zaufania co RTSP — bez auth, do sieci lokalnej): `GET /snapshot/<id>.jpg`
+  (pojedyncza klatka) i `GET /mjpeg/<id>` (ciągły strumień `multipart/x-mixed-replace`,
+  wygodny dla integracji "Kamera generyczna" w HA, starszych NVR-ów czy podglądu wprost w
+  przeglądarce bez RTSP).
+- **Naprawa: odświeżanie podglądu (co ~5 s) niszczyło i odtwarzało cały wiersz strumienia**,
+  łącznie z otwartym formularzem edycji i możliwością zaznaczenia/skopiowania linku RTSP —
+  w trakcie pisania pola potrafiły "wracać" do starej wartości, a zaznaczenie tekstu się
+  gubiło. Przepisane tak, że każdy wiersz (i formularz edycji) jest tworzony raz; cykliczne
+  odświeżanie tylko podmienia obraz podglądu i status w miejscu, nigdy nie dotykając pól,
+  które ktoś akurat edytuje albo zaznacza.
+
 ## 1.2.2
 - **Prawdziwa przyczyna "w podglądzie widać ekran logowania HA" znaleziona i naprawiona.**
   Dzięki podglądowi obrazu (1.2.0) i logom Chromium (1.2.0) z 1.2.1 było już widać, że

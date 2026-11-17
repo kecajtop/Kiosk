@@ -31,7 +31,7 @@ INGRESS_GW = "172.30.32.2"
 MTX_RTSP_PORT = 8554
 ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.2.2"          # = version w config.yaml
+ADDON_VERSION = "1.3.0"          # = version w config.yaml
 
 CHROMIUM_BIN = shutil.which("chromium-browser") or shutil.which("chromium") or "/usr/bin/chromium-browser"
 
@@ -65,6 +65,18 @@ def to_int(v, lo, hi, default):
     except (TypeError, ValueError):
         return default
     return max(lo, min(hi, n))
+
+
+def to_fps(v, default):
+    """fps może być ułamkowe (np. 0.2 = 1 klatka na 5 s) - dashboard rzadko się zmienia,
+    więc bardzo niska klatkaż mocno oszczędza CPU. Dolna granica 0.05 (1 klatka na 20 s)."""
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return default
+    if n != n:  # NaN
+        return default
+    return max(0.05, min(30, n))
 
 
 # ---------------------------------------------------------------- nadzór nad strumieniami
@@ -158,12 +170,18 @@ class Worker:
                 "var t=%s; t.expires=Date.now()+t.expires_in*1000;"
                 "localStorage.setItem('hassTokens', JSON.stringify(t));"
                 "localStorage.setItem('selectedLanguage', JSON.stringify(\"pl\"));"
+                # "dockedSidebar" to oficjalny klucz, pod którym frontend HA trzyma wybór
+                # widoczności paska bocznego (profil użytkownika -> "zawsze ukryty"); wartości
+                # to zakodowane JSON-em stringi "docked"/"auto"/"always_hidden" (patrz
+                # home-assistant/frontend src/util/ha-pref-storage.ts). Bez tego po stronie HA
+                # trzeba by było ręcznie ustawiać tę opcję na koncie użytkownika od tokenu.
+                "localStorage.setItem('dockedSidebar', JSON.stringify('always_hidden'));"
                 "}catch(e){}" % tok)
         return d
 
     def _start_all(self, d):
         w, h = to_int(d.get("width"), 320, 3840, 1920), to_int(d.get("height"), 240, 2160, 1080)
-        fps = to_int(d.get("fps"), 1, 30, 6)
+        fps = to_fps(d.get("fps"), 6)
         self.cur_w, self.cur_h = w, h
         ha_url = (d.get("ha_url") or "").rstrip("/")
         token = d.get("token") or ""
@@ -212,10 +230,11 @@ class Worker:
         threading.Thread(target=self._pump_chromium_log, args=(chromium,), daemon=True).start()
         time.sleep(3)   # chwila na start Chromium i załadowanie dashboardu, zanim ffmpeg zacznie chwytać ekran
 
+        gop = max(1, round(fps * 2))  # przy fps<1 (np. 0.2 = 1 klatka/5s) każda klatka = keyframe
         ff = subprocess.Popen(
             ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "x11grab", "-video_size", "%dx%d" % (w, h),
              "-framerate", str(fps), "-i", ":%d" % self.display, "-c:v", "libx264", "-preset", "ultrafast",
-             "-tune", "zerolatency", "-pix_fmt", "yuv420p", "-g", str(fps * 2), "-f", "rtsp",
+             "-tune", "zerolatency", "-pix_fmt", "yuv420p", "-g", str(gop), "-f", "rtsp",
              "rtsp://127.0.0.1:%d/%s" % (MTX_RTSP_PORT, self.id)],
             env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         self.procs.append(ff)
@@ -264,6 +283,22 @@ class Worker:
             time.sleep(backoff)
             backoff = min(backoff * 2, 30)
         self.status = "zatrzymany"
+
+
+def grab_jpeg(w, timeout=8):
+    """Łapie jedną klatkę JPEG z tego samego ekranu X11, co ffmpeg->RTSP (x11grab pozwala
+    na wielu jednoczesnych czytelników tego samego displaya) - używane zarówno przez podgląd
+    w panelu (Ingress), jak i publiczny port JPG/MJPEG (PublicHandler, bez logowania)."""
+    try:
+        p = subprocess.run(["ffmpeg", "-y", "-f", "x11grab", "-video_size", "%dx%d" % (w.cur_w, w.cur_h),
+                             "-i", ":%d" % w.display, "-frames:v", "1", "-f", "image2",
+                             "-vcodec", "mjpeg", "-"],
+                            capture_output=True, timeout=timeout)
+        if not p.stdout:
+            raise RuntimeError((p.stderr or b"").decode(errors="replace")[:200] or "brak klatki")
+        return p.stdout
+    except Exception as e:
+        raise RuntimeError("podgląd niedostępny: %s" % e)
 
 
 def reconcile():
@@ -405,19 +440,7 @@ class Handler(BaseHTTPRequestHandler):
                 w = WORKERS.get(ms.group(1))
             if not w:
                 raise KeyError(ms.group(1))
-            try:
-                # Łapie jedną klatkę z tego samego ekranu X11, co ffmpeg->RTSP (x11grab
-                # pozwala na wielu jednoczesnych czytelników tego samego displaya) - żywy
-                # podgląd wprost w panelu, bez potrzeby odtwarzacza RTSP.
-                p = subprocess.run(["ffmpeg", "-y", "-f", "x11grab", "-video_size", "%dx%d" % (w.cur_w, w.cur_h),
-                                     "-i", ":%d" % w.display, "-frames:v", "1", "-f", "image2",
-                                     "-vcodec", "mjpeg", "-"],
-                                    capture_output=True, timeout=8)
-                if not p.stdout:
-                    raise RuntimeError((p.stderr or b"").decode(errors="replace")[:200] or "brak klatki")
-                return self.send(200, p.stdout, "image/jpeg")
-            except Exception as e:
-                raise RuntimeError("podgląd niedostępny: %s" % e)
+            return self.send(200, grab_jpeg(w), "image/jpeg")
         if self.command == "GET" and path.startswith("/api/log/"):
             wid = path[9:]
             with WORKERS_LOCK:
@@ -438,7 +461,7 @@ class Handler(BaseHTTPRequestHandler):
             c["dashboards"].append({"id": did, "name": name, "path": dpath,
                                      "width": to_int(b.get("width"), 320, 3840, 1920),
                                      "height": to_int(b.get("height"), 240, 2160, 1080),
-                                     "fps": to_int(b.get("fps"), 1, 30, 6)})
+                                     "fps": to_fps(b.get("fps"), 6)})
             save(c)
             reconcile()
             return self.send(200, {"ok": True, "id": did})
@@ -467,7 +490,7 @@ class Handler(BaseHTTPRequestHandler):
             if "height" in b:
                 dash["height"] = to_int(b.get("height"), 240, 2160, dash["height"])
             if "fps" in b:
-                dash["fps"] = to_int(b.get("fps"), 1, 30, dash["fps"])
+                dash["fps"] = to_fps(b.get("fps"), dash["fps"])
             save(c)
             reconcile()  # zmiana parametrów = pełny restart trójki procesów tego strumienia
             return self.send(200, {"ok": True})
@@ -485,16 +508,99 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_DELETE = do_PUT = route
 
 
+# ------------------------------------------------------------- podgląd JPG/MJPEG (bez loginu)
+
+PUBLIC_PORT = int(os.environ.get("KM_PUBLIC_PORT", "8099"))
+
+
+class PublicHandler(BaseHTTPRequestHandler):
+    """Port bez autoryzacji (jak RTSP na 8554) - do użytku w sieci lokalnej: NVR, integracja
+    'Kamera generyczna' w HA, VLC itp. Ten sam model zaufania co RTSP (zero auth, LAN)."""
+    protocol_version = "HTTP/1.1"
+    server_version = "dashboard-rtsp-public"
+
+    def log_message(self, fmt, *args):
+        if os.environ.get("KM_DEBUG"):
+            log("%s %s" % (self.client_address[0], fmt % args))
+
+    def _worker(self, wid):
+        with WORKERS_LOCK:
+            w = WORKERS.get(wid)
+        if not w:
+            self.send_response(404)
+            self.end_headers()
+        return w
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        ms = re.match(r"^/snapshot/([a-z0-9]{1,20})\.jpe?g$", path)
+        if ms:
+            w = self._worker(ms.group(1))
+            if not w:
+                return
+            try:
+                jpg = grab_jpeg(w)
+            except Exception as e:
+                self.send_response(503)
+                self.end_headers()
+                log("podgląd JPG błąd (%s): %r" % (ms.group(1), e))
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(jpg)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(jpg)
+            return
+        mm = re.match(r"^/mjpeg/([a-z0-9]{1,20})$", path)
+        if mm:
+            w = self._worker(mm.group(1))
+            if not w:
+                return
+            # ffmpeg->mpjpeg robi całe oklejanie multipart/x-mixed-replace samo - wystarczy
+            # przelać jego stdout bezpośrednio do klienta. Osobny proces ffmpeg na każdego
+            # oglądającego (x11grab pozwala na wielu czytelników tego samego ekranu X11).
+            p = subprocess.Popen(
+                ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "x11grab",
+                 "-video_size", "%dx%d" % (w.cur_w, w.cur_h), "-framerate", "2",
+                 "-i", ":%d" % w.display, "-f", "mpjpeg", "-q:v", "5", "-"],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "multipart/x-mixed-replace;boundary=ffmpeg")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                while True:
+                    chunk = p.stdout.read(65536)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass  # klient się rozłączył - normalne
+            finally:
+                p.terminate()
+                try:
+                    p.wait(timeout=3)
+                except Exception:
+                    p.kill()
+            return
+        self.send_response(404)
+        self.end_headers()
+
+
 def main():
     os.makedirs(DATA, exist_ok=True)
     os.makedirs(RUN_DIR, exist_ok=True)
     threading.Thread(target=mediamtx_loop, daemon=True).start()
     time.sleep(1)
     reconcile()
+    pub = ThreadingHTTPServer(("0.0.0.0", PUBLIC_PORT), PublicHandler)
+    pub.daemon_threads = True
+    threading.Thread(target=pub.serve_forever, daemon=True).start()
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     srv.daemon_threads = True
-    log("Dashboard RTSP: panel na porcie %d, RTSP na %d, dashboardów: %d" %
-        (PORT, MTX_RTSP_PORT, len(load()["dashboards"])))
+    log("Dashboard RTSP: panel na porcie %d, RTSP na %d, JPG/MJPEG (bez logowania) na %d, dashboardów: %d" %
+        (PORT, MTX_RTSP_PORT, PUBLIC_PORT, len(load()["dashboards"])))
     srv.serve_forever()
 
 

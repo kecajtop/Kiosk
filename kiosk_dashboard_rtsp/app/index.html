@@ -52,10 +52,12 @@ się wkleił (na niektórych telefonach wklejanie do ukrytego pola czasem nie dz
   <div class="field"><label>Ścieżka w HA</label><input id="npath" placeholder="/lovelace-dash/0" style="width:200px"></div>
   <div class="field"><label>Szerokość</label><input id="nw" type="number" value="1920"></div>
   <div class="field"><label>Wysokość</label><input id="nh" type="number" value="1080"></div>
-  <div class="field"><label>kl./s</label><input id="nfps" type="number" value="6"></div>
+  <div class="field"><label>kl./s</label><input id="nfps" type="number" step="0.05" value="6"></div>
   <button id="addbtn" style="align-self:flex-end">Dodaj</button>
 </div>
-<p class="hint">Niska klatkaż (4–8 kl./s) wystarcza dla dashboardu i mocno odciąża CPU — to nie jest film.</p>
+<p class="hint">Niska klatkaż (4–8 kl./s) wystarcza dla dashboardu i mocno odciąża CPU — to nie jest film.
+Można też podać ułamek poniżej 1, np. <b>0.2</b> = 1 klatka na 5 s, <b>0.05</b> = 1 klatka na 20 s —
+dla dashboardu, który rzadko się zmienia, to duża oszczędność CPU.</p>
 </div>
 
 <div class="card">
@@ -73,80 +75,115 @@ async function api(path, method, body){
 }
 let CFG={dashboards:[]}, STATUS={};
 const editingIds=new Set();  // strumienie z aktualnie otwartym formularzem edycji
+const rows=new Map();  // d.id -> referencje do DOM utworzonego RAZ (żeby odświeżanie co 5s
+                        // nigdy nie niszczyło pól, które ktoś akurat edytuje albo zaznacza)
 async function load(){
   CFG=await api('api/config');
   $('haurl').value=CFG.ha_url;
   $('token').placeholder=CFG.token_set?'(token ustawiony ✓)':'(brak tokenu)';
   try{ STATUS=await api('api/status'); }catch(e){ STATUS={}; }
-  // Pełne odświeżenie co 5 s niszczyło i odtwarzało formularz edycji (ze starymi
-  // wartościami z CFG), kasując to co ktoś właśnie wpisywał. Dopóki jakaś edycja jest
-  // otwarta, pomijamy przerysowanie listy — reszta (ustawienia HA) i tak się odświeża.
-  if(!editingIds.size) render();
+  render();
+}
+function buildRow(d){
+  const l=$('list');
+  const row=document.createElement('div'); row.className='dash';
+  row.innerHTML=`<img alt="podgląd"
+       style="width:120px;height:68px;object-fit:cover;background:var(--field);border:1px solid var(--line);border-radius:6px;flex-shrink:0"
+       onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+    <div style="width:120px;height:68px;border:1px dashed var(--line);border-radius:6px;display:none;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--muted);flex-shrink:0">brak<br>podglądu</div>
+    <div style="flex:1;min-width:180px"><b class="nm"></b> <span class="tag"></span><br>
+    <span class="hint meta"></span><br>
+    <span class="hint rtsp" style="word-break:break-all"></span>
+    <button data-act="copy" style="padding:2px 7px;font-size:12px;vertical-align:middle">Kopiuj link</button></div>
+    <div class="row">
+      <button data-act="edit">Edytuj</button>
+      <button data-act="log">Log</button>
+      <button data-act="restart">Restart</button>
+      <button class="danger" data-act="del">Usuń</button>
+    </div>`;
+  l.appendChild(row);
+  const edit=document.createElement('div'); edit.hidden=true;
+  edit.className='row'; edit.style.cssText='padding:8px 0 4px 0';
+  edit.innerHTML=`<div class="field"><label>Nazwa</label><input class="ename" style="width:160px"></div>
+    <div class="field"><label>Ścieżka w HA</label><input class="epath" style="width:200px"></div>
+    <div class="field"><label>Szerokość</label><input class="ew" type="number"></div>
+    <div class="field"><label>Wysokość</label><input class="eh" type="number"></div>
+    <div class="field"><label>kl./s (ułamek = rzadziej, np. 0.2 = 1 klatka/5s)</label><input class="efps" type="number" step="0.05"></div>
+    <button data-act="saveedit" style="align-self:flex-end">Zapisz edycję</button>
+    <button data-act="canceledit" style="align-self:flex-end">Anuluj</button>`;
+  l.appendChild(edit);
+  const pre=document.createElement('pre'); pre.hidden=true; l.appendChild(pre);
+  const entry={
+    row, edit, pre,
+    img: row.querySelector('img'), tag: row.querySelector('.tag'),
+    nm: row.querySelector('.nm'), meta: row.querySelector('.meta'), rtsp: row.querySelector('.rtsp'),
+    ename: edit.querySelector('.ename'), epath: edit.querySelector('.epath'),
+    ew: edit.querySelector('.ew'), eh: edit.querySelector('.eh'), efps: edit.querySelector('.efps'),
+  };
+  row.querySelectorAll('button').forEach(b=>b.onclick=()=>act(b.dataset.act, d.id, entry));
+  edit.querySelectorAll('button').forEach(b=>b.onclick=()=>act(b.dataset.act, d.id, entry));
+  return entry;
 }
 function render(){
   const l=$('list');
-  if(!CFG.dashboards.length){ l.innerHTML='<p class="hint">Brak dashboardów — dodaj pierwszy powyżej.</p>'; return; }
-  l.innerHTML='';
+  if(!CFG.dashboards.length){
+    rows.forEach(e=>{e.row.remove(); e.edit.remove(); e.pre.remove();}); rows.clear();
+    l.innerHTML='<p class="hint">Brak dashboardów — dodaj pierwszy powyżej.</p>';
+    return;
+  }
+  if(l.querySelector('p.hint')) l.innerHTML='';
+  const seen=new Set();
   for(const d of CFG.dashboards){
+    seen.add(d.id);
     const st=STATUS[d.id]||{status:'?'};
     const ok=st.status==='działa';
     const rtsp='rtsp://'+location.hostname+':'+CFG.mtx_port+'/'+d.id;
-    const row=document.createElement('div'); row.className='dash';
-    row.innerHTML=`<img id="snap-${d.id}" src="api/snapshot/${d.id}?t=${Date.now()}" alt="podgląd"
-         style="width:120px;height:68px;object-fit:cover;background:var(--field);border:1px solid var(--line);border-radius:6px;flex-shrink:0"
-         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-      <div style="width:120px;height:68px;border:1px dashed var(--line);border-radius:6px;display:none;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--muted);flex-shrink:0">brak<br>podglądu</div>
-      <div style="flex:1;min-width:180px"><b>${d.name}</b> <span class="tag ${ok?'ok':'err'}">${st.status}</span><br>
-      <span class="hint">${d.path} · ${d.width}×${d.height}@${d.fps}fps</span><br>
-      <span class="hint" style="word-break:break-all">${rtsp}</span>
-      <button data-act="copy" data-url="${rtsp}" style="padding:2px 7px;font-size:12px;vertical-align:middle">Kopiuj link</button></div>
-      <div class="row">
-        <button data-act="edit" data-id="${d.id}">Edytuj</button>
-        <button data-act="log" data-id="${d.id}">Log</button>
-        <button data-act="restart" data-id="${d.id}">Restart</button>
-        <button class="danger" data-act="del" data-id="${d.id}">Usuń</button>
-      </div>`;
-    l.appendChild(row);
-    const edit=document.createElement('div'); edit.id='edit-'+d.id; edit.hidden=true;
-    edit.className='row'; edit.style.cssText='padding:8px 0 4px 0';
-    edit.innerHTML=`<div class="field"><label>Nazwa</label><input id="ename-${d.id}" value="${d.name.replace(/"/g,'&quot;')}" style="width:160px"></div>
-      <div class="field"><label>Ścieżka w HA</label><input id="epath-${d.id}" value="${d.path.replace(/"/g,'&quot;')}" style="width:200px"></div>
-      <div class="field"><label>Szerokość</label><input id="ew-${d.id}" type="number" value="${d.width}"></div>
-      <div class="field"><label>Wysokość</label><input id="eh-${d.id}" type="number" value="${d.height}"></div>
-      <div class="field"><label>kl./s</label><input id="efps-${d.id}" type="number" value="${d.fps}"></div>
-      <button data-act="saveedit" data-id="${d.id}" style="align-self:flex-end">Zapisz edycję</button>
-      <button data-act="canceledit" data-id="${d.id}" style="align-self:flex-end">Anuluj</button>`;
-    l.appendChild(edit);
-    const pre=document.createElement('pre'); pre.id='log-'+d.id; pre.hidden=true; l.appendChild(pre);
+    let e=rows.get(d.id);
+    if(!e){ e=buildRow(d); rows.set(d.id, e); }
+    // Bezpieczne do odświeżania co 5s - nigdy nie dotyka pól edycji/fokusu/zaznaczenia tekstu.
+    e.tag.textContent=st.status; e.tag.className='tag '+(ok?'ok':'err');
+    e.nm.textContent=d.name;
+    e.meta.textContent=d.path+' · '+d.width+'×'+d.height+'@'+d.fps+'fps';
+    e.rtsp.textContent=rtsp;
+    e.row.querySelector('[data-act=copy]').dataset.url=rtsp;
+    e.img.src='api/snapshot/'+d.id+'?t='+Date.now();
+    // Pola formularza edycji dostają wartości z configu tylko, gdy NIE jest akurat otwarty
+    // (inaczej nadpisałoby to, co ktoś właśnie wpisuje).
+    if(!editingIds.has(d.id)){
+      e.ename.value=d.name; e.epath.value=d.path; e.ew.value=d.width; e.eh.value=d.height; e.efps.value=d.fps;
+    }
   }
-  l.querySelectorAll('button').forEach(b=>b.onclick=()=>act(b.dataset.act,b.dataset.id,b.dataset.url));
+  for(const [id, e] of [...rows]) if(!seen.has(id)){
+    e.row.remove(); e.edit.remove(); e.pre.remove(); rows.delete(id); editingIds.delete(id);
+  }
 }
-async function act(a,id,url){
+async function act(a,id,e){
   if(a==='copy'){
+    const url=e.row.querySelector('[data-act=copy]').dataset.url;
     try{ await navigator.clipboard.writeText(url); }
-    catch(e){ prompt('Skopiuj ręcznie:', url); }
+    catch(err){ prompt('Skopiuj ręcznie:', url); }
     return;
   }
   if(a==='del'){ if(!confirm('Usunąć strumień?')) return; await api('api/dashboards/'+id,'DELETE'); return load(); }
   if(a==='restart'){ await api('api/dashboards/'+id+'/restart','POST'); return load(); }
   if(a==='log'){
-    const pre=$('log-'+id); pre.hidden=!pre.hidden;
-    if(!pre.hidden) pre.textContent=await (await fetch('api/log/'+id)).text();
+    e.pre.hidden=!e.pre.hidden;
+    if(!e.pre.hidden) e.pre.textContent=await (await fetch('api/log/'+id)).text();
   }
   if(a==='edit'){
-    const e=$('edit-'+id); e.hidden=!e.hidden;
-    if(e.hidden) editingIds.delete(id); else editingIds.add(id);
+    e.edit.hidden=!e.edit.hidden;
+    if(e.edit.hidden) editingIds.delete(id); else editingIds.add(id);
   }
-  if(a==='canceledit'){ $('edit-'+id).hidden=true; editingIds.delete(id); }
+  if(a==='canceledit'){ e.edit.hidden=true; editingIds.delete(id); }
   if(a==='saveedit'){
     try{
       await api('api/dashboards/'+id, 'PUT', {
-        name: $('ename-'+id).value.trim(), path: $('epath-'+id).value.trim()||'/',
-        width: +$('ew-'+id).value, height: +$('eh-'+id).value, fps: +$('efps-'+id).value
+        name: e.ename.value.trim(), path: e.epath.value.trim()||'/',
+        width: +e.ew.value, height: +e.eh.value, fps: +e.efps.value
       });
       editingIds.delete(id);
       await load();
-    }catch(e){ alert(e.message); }
+    }catch(err){ alert(err.message); }
   }
 }
 $('tokeneye').onclick=()=>{
