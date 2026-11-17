@@ -76,6 +76,9 @@ W Home Assistant: **Ustawienia → Dodatki → Sklep z dodatkami → ⋮ → Rep
 - **Kioski** — panel administracyjny wszystkich kiosków kiosk-setup w jednym miejscu.
 - **Dashboard RTSP** — zamienia dowolny dashboard/widok Home Assistant w kamerę RTSP
   (do NVR-a, kiosk-setup, dowolnego odtwarzacza RTSP). Zobacz [`kiosk_dashboard_rtsp/README.md`](kiosk_dashboard_rtsp/README.md).
+- **Timelapse RTSP** — nagrywa poklatkowe filmy (timelapse) z dowolnych strumieni RTSP
+  (kamer, NVR-ów, strumieni z Dashboard RTSP), z renderowaniem według harmonogramu i
+  automatyczną retencją. Zobacz [`kiosk_timelapse/README.md`](kiosk_timelapse/README.md).
 
 ## Budowanie ze źródeł
 

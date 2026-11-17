@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="pl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timelapse RTSP</title>
+<style>
+:root{--bg:#0A0C08;--card:#0F120D;--field:#080A06;--line:#2C3127;--ink:#D9DCCB;--muted:#8E937F;--amber:#F5B400;--amberbg:#231E0C;--amberline:#7A5E12;--bad:#EF5B50;--badbg:#2E1714;--badline:#74302A;--ok:#86CF6A;--mono:ui-monospace,Menlo,Consolas,"DejaVu Sans Mono",monospace}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--mono);padding:16px;max-width:900px;margin:0 auto}
+h1{font-size:18px;margin:8px 0 16px} h2{font-size:14px;color:var(--amber);margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+input,select{background:var(--field);border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:7px 9px;font:inherit}
+input[type=number]{width:90px}
+button{background:var(--amberbg);border:1px solid var(--amberline);color:var(--amber);border-radius:6px;padding:7px 12px;font:inherit;cursor:pointer}
+button.danger{background:var(--badbg);border-color:var(--badline);color:var(--bad)}
+button:hover{filter:brightness(1.15)}
+button:disabled{opacity:.5;cursor:default;filter:none}
+.hint{color:var(--muted);font-size:12.5px}
+.dash{border-top:1px solid var(--line);padding:10px 0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.dash:first-child{border-top:none}
+.tag{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line)}
+.tag.ok{color:var(--ok);border-color:var(--ok)}
+.tag.err{color:var(--bad);border-color:var(--bad)}
+.tag.paused{color:var(--muted);border-color:var(--muted)}
+pre{background:var(--field);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:200px;overflow:auto;font-size:12px;white-space:pre-wrap}
+label{color:var(--muted);font-size:12.5px;display:block;margin-bottom:3px}
+.field{display:flex;flex-direction:column;gap:3px}
+.vids{background:var(--field);border:1px solid var(--line);border-radius:6px;padding:8px;font-size:12.5px}
+.vids .vrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-top:1px solid var(--line)}
+.vids .vrow:first-child{border-top:none}
+.vids a{color:var(--amber)}
+</style></head>
+<body>
+<h1>🎞️ Timelapse RTSP — poklatkowe filmy z kamer RTSP</h1>
+
+<div class="card">
+<h2>Nowy timelapse</h2>
+<div class="row">
+  <div class="field"><label>Nazwa</label><input id="nname" placeholder="np. Ogród" style="width:150px"></div>
+  <div class="field"><label>Adres RTSP</label><input id="nurl" placeholder="rtsp://user:pass@host:554/stream1" style="width:270px"></div>
+  <div class="field"><label>Transport</label><select id="ntransport"><option value="tcp">TCP</option><option value="udp">UDP</option></select></div>
+  <div class="field"><label>Interwał (s)</label><input id="ninterval" type="number" value="300" min="5" max="86400"></div>
+  <div class="field"><label>Render o</label><input id="nrendertime" type="time" value="00:05"></div>
+  <div class="field"><label>kl./s wideo</label><input id="nfps" type="number" value="24" min="1" max="60"></div>
+  <div class="field"><label>Klatki (dni)</label><input id="nframedays" type="number" value="3" min="1" max="365"></div>
+  <div class="field"><label>Wideo (dni, 0=zawsze)</label><input id="nvideodays" type="number" value="90" min="0" max="3650"></div>
+  <button id="addbtn" style="align-self:flex-end">Dodaj</button>
+</div>
+<p class="hint">Co <b>interwał</b> sekund dodatek krótko łączy się ze strumieniem RTSP i zapisuje jedną
+klatkę JPEG. O godzinie z pola <b>„Render o”</b> wszystkie nowe klatki od ostatniego renderu są
+automatycznie składane w jeden plik mp4 (<b>kl./s wideo</b> = tempo odtwarzania gotowego filmu, nie ma
+związku z interwałem przechwytywania). Renderowanie całego dodatku jest jedno na raz i działa z niskim
+priorytetem CPU — na obciążonym komputerze po prostu potrwa dłużej, nie zabierze CPU innym procesom.</p>
+</div>
+
+<div class="card">
+<h2>Timelapse'y</h2>
+<div id="list"><p class="hint">Brak timelapse'ów — dodaj pierwszy powyżej.</p></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+async function api(path, method, body){
+  const r=await fetch(path,{method:method||'GET',headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error||r.statusText);
+  return j;
+}
+function maskUrl(u){
+  try{
+    const x=new URL(u);
+    return x.protocol+'//'+(x.username?'•••@':'')+x.hostname+(x.port?':'+x.port:'')+x.pathname;
+  }catch(e){ return u.replace(/\/\/[^@/]*@/,'//•••@'); }
+}
+function fmtBytes(n){
+  if(n>1e6) return (n/1e6).toFixed(1)+' MB';
+  if(n>1e3) return (n/1e3).toFixed(0)+' KB';
+  return n+' B';
+}
+function fmtTs(ts){
+  if(!ts) return '—';
+  return new Date(ts*1000).toLocaleString();
+}
+let CFG={timelapses:[]}, STATUS={};
+const editingIds=new Set();
+const rows=new Map();
+async function load(){
+  CFG=await api('api/config');
+  try{ STATUS=await api('api/status'); }catch(e){ STATUS={}; }
+  render();
+}
+function buildRow(t){
+  const l=$('list');
+  const row=document.createElement('div'); row.className='dash';
+  row.innerHTML=`<img alt="podgląd"
+       style="width:120px;height:68px;object-fit:cover;background:var(--field);border:1px solid var(--line);border-radius:6px;flex-shrink:0"
+       onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+    <div style="width:120px;height:68px;border:1px dashed var(--line);border-radius:6px;display:none;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--muted);flex-shrink:0">brak<br>podglądu</div>
+    <div style="flex:1;min-width:200px"><b class="nm"></b> <span class="tag"></span><br>
+    <span class="hint url" style="word-break:break-all"></span><br>
+    <span class="hint meta"></span></div>
+    <div class="row">
+      <button data-act="capture">Testuj teraz</button>
+      <button data-act="render">Renderuj teraz</button>
+      <button data-act="pause">Pauza</button>
+      <button data-act="videos">Filmy</button>
+      <button data-act="edit">Edytuj</button>
+      <button data-act="log">Log</button>
+      <button class="danger" data-act="del">Usuń</button>
+    </div>`;
+  l.appendChild(row);
+  const edit=document.createElement('div'); edit.hidden=true;
+  edit.className='row'; edit.style.cssText='padding:8px 0 4px 0';
+  edit.innerHTML=`<div class="field"><label>Nazwa</label><input class="ename" style="width:150px"></div>
+    <div class="field"><label>Adres RTSP</label><input class="eurl" style="width:270px"></div>
+    <div class="field"><label>Transport</label><select class="etransport"><option value="tcp">TCP</option><option value="udp">UDP</option></select></div>
+    <div class="field"><label>Interwał (s)</label><input class="einterval" type="number" min="5" max="86400"></div>
+    <div class="field"><label>Render o</label><input class="erendertime" type="time"></div>
+    <div class="field"><label>kl./s wideo</label><input class="efps" type="number" min="1" max="60"></div>
+    <div class="field"><label>Klatki (dni)</label><input class="eframedays" type="number" min="1" max="365"></div>
+    <div class="field"><label>Wideo (dni, 0=zawsze)</label><input class="evideodays" type="number" min="0" max="3650"></div>
+    <button data-act="saveedit" style="align-self:flex-end">Zapisz edycję</button>
+    <button data-act="canceledit" style="align-self:flex-end">Anuluj</button>`;
+  l.appendChild(edit);
+  const pre=document.createElement('pre'); pre.hidden=true; l.appendChild(pre);
+  const vids=document.createElement('div'); vids.className='vids'; vids.hidden=true; l.appendChild(vids);
+  const entry={
+    row, edit, pre, vids,
+    img: row.querySelector('img'), tag: row.querySelector('.tag'),
+    nm: row.querySelector('.nm'), url: row.querySelector('.url'), meta: row.querySelector('.meta'),
+    pauseBtn: row.querySelector('[data-act=pause]'),
+    ename: edit.querySelector('.ename'), eurl: edit.querySelector('.eurl'),
+    etransport: edit.querySelector('.etransport'), einterval: edit.querySelector('.einterval'),
+    erendertime: edit.querySelector('.erendertime'), efps: edit.querySelector('.efps'),
+    eframedays: edit.querySelector('.eframedays'), evideodays: edit.querySelector('.evideodays'),
+  };
+  row.querySelectorAll('button').forEach(b=>b.onclick=()=>act(b.dataset.act, t.id, entry));
+  edit.querySelectorAll('button').forEach(b=>b.onclick=()=>act(b.dataset.act, t.id, entry));
+  return entry;
+}
+function render(){
+  const l=$('list');
+  if(!CFG.timelapses.length){
+    rows.forEach(e=>{e.row.remove(); e.edit.remove(); e.pre.remove(); e.vids.remove();}); rows.clear();
+    l.innerHTML='<p class="hint">Brak timelapse\'ów — dodaj pierwszy powyżej.</p>';
+    return;
+  }
+  if(l.querySelector('p.hint')) l.innerHTML='';
+  const seen=new Set();
+  for(const t of CFG.timelapses){
+    seen.add(t.id);
+    const st=STATUS[t.id]||{status:'?', frame_count:0, last_capture_ts:0, rendering:false};
+    let e=rows.get(t.id);
+    if(!e){ e=buildRow(t); rows.set(t.id, e); }
+    // Dopóki formularz edycji tego wiersza jest otwarty, NIC w nim nie dotykamy (patrz
+    // ten sam problem i naprawa w dodatku Dashboard RTSP - przeładowanie miniaturki czy
+    // zmiana statusu w trakcie pisania w polu edycji potrafiły zabierać fokus/kasować wpis).
+    if(editingIds.has(t.id)) continue;
+    const ok=st.status==='działa', paused=st.status==='wstrzymany';
+    e.tag.textContent=st.rendering?'renderowanie…':st.status;
+    e.tag.className='tag '+(st.rendering?'ok':ok?'ok':paused?'paused':'err');
+    e.nm.textContent=t.name;
+    e.url.textContent=maskUrl(t.rtsp_url);
+    e.meta.textContent='co '+t.interval_sec+'s · render o '+t.render_time+' · '+t.render_fps+' kl./s wideo · '+
+      st.frame_count+' klatek · ostatnia: '+fmtTs(st.last_capture_ts);
+    e.img.src='api/snapshot/'+t.id+'?t='+Date.now();
+    e.pauseBtn.textContent=paused||!t.enabled?'Wznów':'Pauza';
+    e.ename.value=t.name; e.eurl.value=t.rtsp_url; e.etransport.value=t.transport;
+    e.einterval.value=t.interval_sec; e.erendertime.value=t.render_time; e.efps.value=t.render_fps;
+    e.eframedays.value=t.frame_days; e.evideodays.value=t.video_days;
+  }
+  for(const [id, e] of [...rows]) if(!seen.has(id)){
+    e.row.remove(); e.edit.remove(); e.pre.remove(); e.vids.remove(); rows.delete(id); editingIds.delete(id);
+  }
+}
+async function loadVideos(id, e){
+  const list=await api('api/timelapses/'+id+'/videos');
+  if(!list.length){ e.vids.innerHTML='<p class="hint">Brak gotowych filmów jeszcze.</p>'; return; }
+  e.vids.innerHTML=list.map(v=>
+    `<div class="vrow"><a href="api/videos/${id}/${v.name}" target="_blank">${v.name}</a>
+     <span class="hint">${fmtBytes(v.size)} · ${new Date(v.mtime*1000).toLocaleString()}</span>
+     <button class="danger" data-del="${v.name}" style="padding:2px 7px;font-size:12px">Usuń</button></div>`
+  ).join('');
+  e.vids.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Usunąć plik '+b.dataset.del+'?')) return;
+    await api('api/videos/'+id+'/'+b.dataset.del, 'DELETE');
+    loadVideos(id, e);
+  });
+}
+async function act(a,id,e){
+  if(a==='del'){ if(!confirm('Usunąć timelapse (razem z klatkami i filmami)?')) return; await api('api/timelapses/'+id,'DELETE'); return load(); }
+  if(a==='capture'){ await api('api/timelapses/'+id+'/capture-now','POST'); return; }
+  if(a==='render'){ await api('api/timelapses/'+id+'/render','POST'); return; }
+  if(a==='pause'){
+    const t=CFG.timelapses.find(x=>x.id===id);
+    await api('api/timelapses/'+id,'PUT',{enabled: !t.enabled});
+    return load();
+  }
+  if(a==='videos'){
+    e.vids.hidden=!e.vids.hidden;
+    if(!e.vids.hidden) loadVideos(id, e);
+    return;
+  }
+  if(a==='log'){
+    e.pre.hidden=!e.pre.hidden;
+    if(!e.pre.hidden) e.pre.textContent=await (await fetch('api/log/'+id)).text();
+    return;
+  }
+  if(a==='edit'){
+    e.edit.hidden=!e.edit.hidden;
+    if(e.edit.hidden) editingIds.delete(id); else editingIds.add(id);
+    return;
+  }
+  if(a==='canceledit'){ e.edit.hidden=true; editingIds.delete(id); return; }
+  if(a==='saveedit'){
+    try{
+      await api('api/timelapses/'+id, 'PUT', {
+        name: e.ename.value.trim(), rtsp_url: e.eurl.value.trim(), transport: e.etransport.value,
+        interval_sec: +e.einterval.value, render_time: e.erendertime.value,
+        render_fps: +e.efps.value, frame_days: +e.eframedays.value, video_days: +e.evideodays.value
+      });
+      editingIds.delete(id);
+      await load();
+    }catch(err){ alert(err.message); }
+  }
+}
+$('addbtn').onclick=async()=>{
+  try{
+    await api('api/timelapses','POST',{
+      name:$('nname').value.trim(), rtsp_url:$('nurl').value.trim(), transport:$('ntransport').value,
+      interval_sec:+$('ninterval').value, render_time:$('nrendertime').value, render_fps:+$('nfps').value,
+      frame_days:+$('nframedays').value, video_days:+$('nvideodays').value
+    });
+    $('nname').value=''; $('nurl').value='';
+    await load();
+  }catch(e){ alert(e.message); }
+};
+load();
+// Dopóki jakikolwiek formularz edycji jest otwarty, cykliczne odświeżanie w ogóle się nie
+// wykonuje - ani zapytanie do serwera, ani dotknięcie DOM (patrz komentarz w render()).
+setInterval(()=>{ if(editingIds.size===0) load(); }, 5000);
+</script>
+</body></html>

@@ -1,0 +1,20 @@
+name: Timelapse RTSP
+version: "1.0.0"
+slug: timelapse_rtsp
+description: Nagrywa poklatkowe filmy (timelapse) z dowolnych strumieni RTSP (kamer, NVR) według harmonogramu
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+ingress: true
+ingress_port: 8097
+ingress_stream: true
+panel_icon: mdi:movie-filter
+panel_title: Timelapse RTSP
+hassio_api: true
+map:
+  - media:rw
+options: {}
+schema: {}
