@@ -1,5 +1,5 @@
 name: Dashboard RTSP
-version: "1.1.0"
+version: "1.1.1"
 slug: dashboard_rtsp
 description: Streamuje wybrane dashboardy/widoki Home Assistant jako kamery RTSP (do NVR, kiosk-setup, itp.)
 arch:

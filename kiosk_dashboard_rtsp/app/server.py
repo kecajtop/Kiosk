@@ -31,7 +31,7 @@ INGRESS_GW = "172.30.32.2"
 MTX_RTSP_PORT = 8554
 ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.1.0"          # = version w config.yaml
+ADDON_VERSION = "1.1.1"          # = version w config.yaml
 
 CHROMIUM_BIN = shutil.which("chromium-browser") or shutil.which("chromium") or "/usr/bin/chromium-browser"
 

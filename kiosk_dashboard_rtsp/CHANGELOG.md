@@ -1,3 +1,10 @@
+## 1.1.1
+- **Naprawa: panel nie pokazywał żadnego potwierdzenia po zapisaniu tokenu HA.** Literówka w
+  JS wpisywała informację „token ustawiony” w pole adresu HA, a nie w pole tokenu — to pole
+  samo nigdy nie zmieniało wyglądu, więc kliknięcie „Zapisz” wyglądało jak nic nie robiące.
+  Teraz: pole tokenu po zapisaniu pokazuje jako placeholder „(token ustawiony ✓)”, a przy
+  samym przycisku „Zapisz” pojawia się na chwilę „✓ Zapisano”.
+
 ## 1.1.0
 - **Naprawa: strumień zawieszał się na statusie "błąd" / czarnym ekranie bez auto-restartu.**
   Jeśli padał Xvfb albo Chromium, a ffmpeg (celowo cichy, `-loglevel error`) jeszcze żył, wątek

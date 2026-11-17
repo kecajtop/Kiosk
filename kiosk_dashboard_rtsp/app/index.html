@@ -32,6 +32,7 @@ label{color:var(--muted);font-size:12.5px;display:block;margin-bottom:3px}
   <div class="field"><label>Adres Home Assistant</label><input id="haurl" placeholder="http://homeassistant:8123" style="width:260px"></div>
   <div class="field"><label>Długoterminowy token (long-lived access token)</label><input id="token" type="password" placeholder="(bez zmian)" style="width:260px"></div>
   <button id="savebtn" style="align-self:flex-end">Zapisz</button>
+  <span id="saveok" class="hint" style="color:var(--ok);display:none">✓ Zapisano</span>
 </div>
 <p class="hint">Token: profil użytkownika HA (kliknij avatar w lewym dolnym rogu) → Zabezpieczenia →
 „Utwórz token długoterminowy”. Wklej tutaj raz — używany jest do bezobsługowego zalogowania Chromium
@@ -68,7 +69,7 @@ let CFG={dashboards:[]}, STATUS={};
 async function load(){
   CFG=await api('api/config');
   $('haurl').value=CFG.ha_url;
-  $('haurl').placeholder=CFG.token_set?'(token ustawiony)':'';
+  $('token').placeholder=CFG.token_set?'(token ustawiony ✓)':'(brak tokenu)';
   try{ STATUS=await api('api/status'); }catch(e){ STATUS={}; }
   render();
 }
@@ -101,8 +102,12 @@ async function act(a,id){
   }
 }
 $('savebtn').onclick=async()=>{
-  try{ await api('api/settings','POST',{ha_url:$('haurl').value.trim(), token:$('token').value.trim()}); $('token').value=''; await load(); }
-  catch(e){ alert(e.message); }
+  try{
+    await api('api/settings','POST',{ha_url:$('haurl').value.trim(), token:$('token').value.trim()});
+    $('token').value='';
+    await load();
+    const ok=$('saveok'); ok.style.display='inline'; clearTimeout(ok._t); ok._t=setTimeout(()=>ok.style.display='none', 4000);
+  }catch(e){ alert(e.message); }
 };
 $('addbtn').onclick=async()=>{
   try{
