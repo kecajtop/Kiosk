@@ -31,7 +31,7 @@ INGRESS_GW = "172.30.32.2"
 MTX_RTSP_PORT = 8554
 ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.1.5"          # = version w config.yaml
+ADDON_VERSION = "1.2.0"          # = version w config.yaml
 
 CHROMIUM_BIN = shutil.which("chromium-browser") or shutil.which("chromium") or "/usr/bin/chromium-browser"
 
@@ -85,6 +85,7 @@ class Worker:
         self.log_lines = []
         self.status = "start…"
         self.procs = []
+        self.cur_w, self.cur_h = 1920, 1080  # aktualizowane w _start_all; czyta je /api/snapshot
         self.thread = threading.Thread(target=self._run, args=(dict(d),), daemon=True)
         self.thread.start()
 
@@ -92,6 +93,19 @@ class Worker:
         self.log_lines.append(time.strftime("%H:%M:%S ") + msg)
         del self.log_lines[:-300]
         log("[%s] %s" % (self.id, msg))
+
+    def _pump_chromium_log(self, chromium):
+        try:
+            for raw in iter(chromium.stderr.readline, b""):
+                line = raw.decode(errors="replace").strip()
+                # Chromium z --disable-gpu/--no-sandbox jest bardzo gadatliwy (GPU/cache/
+                # sandbox warningi niezwiązane z problemem) - pokazujemy tylko to, co realnie
+                # pomaga diagnozować białą stronę: błędy JS/sieci/nawigacji i sam fakt crasha.
+                if line and ("ERROR" in line or "FATAL" in line or "Uncaught" in line
+                              or "net::ERR" in line or "Renderer process" in line):
+                    self._log("chromium: " + line[:300])
+        except Exception:
+            pass
 
     def update(self, d):
         self.pending = dict(d)
@@ -136,6 +150,7 @@ class Worker:
     def _start_all(self, d):
         w, h = to_int(d.get("width"), 320, 3840, 1920), to_int(d.get("height"), 240, 2160, 1080)
         fps = to_int(d.get("fps"), 1, 30, 6)
+        self.cur_w, self.cur_h = w, h
         ha_url = (d.get("ha_url") or "").rstrip("/")
         token = d.get("token") or ""
         path = d.get("path") or "/"
@@ -171,12 +186,16 @@ class Worker:
                 "--disable-software-rasterizer", "--window-size=%d,%d" % (w, h), "--window-position=0,0",
                 "--kiosk", "--noerrdialogs", "--disable-infobars", "--no-first-run",
                 "--disable-session-crashed-bubble", "--autoplay-policy=no-user-gesture-required",
-                "--user-data-dir=" + prof]
+                "--enable-logging=stderr", "--log-level=1", "--user-data-dir=" + prof]
         if ext:
             args += ["--load-extension=" + ext, "--disable-extensions-except=" + ext]
         args.append(url)
-        chromium = subprocess.Popen(args, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        chromium = subprocess.Popen(args, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         self.procs.append(chromium)
+        # Chromium nigdy sam "nie pada" przy błędzie strony (złym tokenie, złej ścieżce,
+        # błędzie JS) - proces żyje dalej, tylko pokazuje pustą/białą stronę. Bez czytania
+        # jego stderr na żywo taki błąd był całkowicie niewidoczny w Logu strumienia.
+        threading.Thread(target=self._pump_chromium_log, args=(chromium,), daemon=True).start()
         time.sleep(3)   # chwila na start Chromium i załadowanie dashboardu, zanim ffmpeg zacznie chwytać ekran
 
         ff = subprocess.Popen(
@@ -366,6 +385,25 @@ class Handler(BaseHTTPRequestHandler):
         if self.command == "GET" and path == "/api/status":
             with WORKERS_LOCK:
                 return self.send(200, {wid: {"status": w.status, "display": w.display} for wid, w in WORKERS.items()})
+        ms = re.match(r"^/api/snapshot/([a-z0-9]{1,20})$", path)
+        if self.command == "GET" and ms:
+            with WORKERS_LOCK:
+                w = WORKERS.get(ms.group(1))
+            if not w:
+                raise KeyError(ms.group(1))
+            try:
+                # Łapie jedną klatkę z tego samego ekranu X11, co ffmpeg->RTSP (x11grab
+                # pozwala na wielu jednoczesnych czytelników tego samego displaya) - żywy
+                # podgląd wprost w panelu, bez potrzeby odtwarzacza RTSP.
+                p = subprocess.run(["ffmpeg", "-y", "-f", "x11grab", "-video_size", "%dx%d" % (w.cur_w, w.cur_h),
+                                     "-i", ":%d" % w.display, "-frames:v", "1", "-f", "image2",
+                                     "-vcodec", "mjpeg", "-"],
+                                    capture_output=True, timeout=8)
+                if not p.stdout:
+                    raise RuntimeError((p.stderr or b"").decode(errors="replace")[:200] or "brak klatki")
+                return self.send(200, p.stdout, "image/jpeg")
+            except Exception as e:
+                raise RuntimeError("podgląd niedostępny: %s" % e)
         if self.command == "GET" and path.startswith("/api/log/"):
             wid = path[9:]
             with WORKERS_LOCK:
@@ -400,6 +438,25 @@ class Handler(BaseHTTPRequestHandler):
             save(c)
             reconcile()
             return self.send(200, {"ok": True})
+        if self.command == "PUT" and m:
+            b = self.body_json()
+            c = load()
+            dash = next((x for x in c["dashboards"] if x["id"] == m.group(1)), None)
+            if not dash:
+                raise KeyError(m.group(1))
+            if "name" in b:
+                dash["name"] = str(b["name"]).strip()[:60] or dash["name"]
+            if "path" in b:
+                dash["path"] = str(b["path"]).strip() or "/"
+            if "width" in b:
+                dash["width"] = to_int(b.get("width"), 320, 3840, dash["width"])
+            if "height" in b:
+                dash["height"] = to_int(b.get("height"), 240, 2160, dash["height"])
+            if "fps" in b:
+                dash["fps"] = to_int(b.get("fps"), 1, 30, dash["fps"])
+            save(c)
+            reconcile()  # zmiana parametrów = pełny restart trójki procesów tego strumienia
+            return self.send(200, {"ok": True})
         mr = re.match(r"^/api/dashboards/([a-z0-9]{1,20})/restart$", path)
         if self.command == "POST" and mr:
             with WORKERS_LOCK:
@@ -411,7 +468,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"ok": True})
         return self.send(404, {"error": "nie znaleziono"})
 
-    do_GET = do_POST = do_DELETE = route
+    do_GET = do_POST = do_DELETE = do_PUT = route
 
 
 def main():

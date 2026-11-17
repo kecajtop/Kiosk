@@ -1,3 +1,20 @@
+## 1.2.0
+- **Edycja istniejących strumieni** — przycisk „Edytuj" przy każdym strumieniu pozwala
+  zmienić nazwę, ścieżkę w HA, rozdzielczość i kl./s bez usuwania i dodawania od nowa
+  (zmiana parametrów automatycznie restartuje tylko ten jeden strumień).
+- **Prawdziwy, klikalny link RTSP z przyciskiem „Kopiuj link"** — zamiast placeholdera
+  `<adres-HA>` panel generuje teraz rzeczywisty adres (na podstawie adresu, pod którym
+  sam jest otwierany) gotowy do wklejenia w VLC czy innym odtwarzaczu RTSP.
+- **Podgląd obrazu wprost w panelu** — przy każdym strumieniu miniaturka (odświeżana co
+  ok. 5 s) z tego samego ekranu X11, który koduje ffmpeg — widać od razu, czy dashboard
+  się faktycznie renderuje, bez potrzeby zewnętrznego odtwarzacza RTSP. Gdy podgląd
+  niedostępny (strumień nie działa), pokazuje się czytelny placeholder zamiast zepsutej
+  ikony obrazka.
+- **Log strumienia pokazuje teraz też błędy Chromium**, nie tylko ffmpeg. Wcześniej, gdy
+  strona się nie wczytała poprawnie (zły token, zła ścieżka, błąd JS) i wyszedł np. biały
+  ekran z kursorem, Chromium nie "padał" jako proces, więc Log nic nie pokazywał — teraz
+  jego stderr (błędy JS/sieci/nawigacji) trafia do tego samego Logu co błędy ffmpeg.
+
 ## 1.1.5
 - **Naprawa: ffmpeg nie mógł opublikować strumienia do MediaMTX — "Could not write header
   (incorrect codec parameters ?): Server returned 400 Bad Request", w kółko restart co kilka

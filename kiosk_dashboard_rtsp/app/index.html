@@ -86,25 +86,59 @@ function render(){
   for(const d of CFG.dashboards){
     const st=STATUS[d.id]||{status:'?'};
     const ok=st.status==='działa';
+    const rtsp='rtsp://'+location.hostname+':'+CFG.mtx_port+'/'+d.id;
     const row=document.createElement('div'); row.className='dash';
-    row.innerHTML=`<div><b>${d.name}</b> <span class="tag ${ok?'ok':'err'}">${st.status}</span><br>
-      <span class="hint">${d.path} · ${d.width}×${d.height}@${d.fps}fps · rtsp://&lt;adres-HA&gt;:${CFG.mtx_port}/${d.id}</span></div>
+    row.innerHTML=`<img id="snap-${d.id}" src="api/snapshot/${d.id}?t=${Date.now()}" alt="podgląd"
+         style="width:120px;height:68px;object-fit:cover;background:var(--field);border:1px solid var(--line);border-radius:6px;flex-shrink:0"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+      <div style="width:120px;height:68px;border:1px dashed var(--line);border-radius:6px;display:none;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--muted);flex-shrink:0">brak<br>podglądu</div>
+      <div style="flex:1;min-width:180px"><b>${d.name}</b> <span class="tag ${ok?'ok':'err'}">${st.status}</span><br>
+      <span class="hint">${d.path} · ${d.width}×${d.height}@${d.fps}fps</span><br>
+      <span class="hint" style="word-break:break-all">${rtsp}</span>
+      <button data-act="copy" data-url="${rtsp}" style="padding:2px 7px;font-size:12px;vertical-align:middle">Kopiuj link</button></div>
       <div class="row">
+        <button data-act="edit" data-id="${d.id}">Edytuj</button>
         <button data-act="log" data-id="${d.id}">Log</button>
         <button data-act="restart" data-id="${d.id}">Restart</button>
         <button class="danger" data-act="del" data-id="${d.id}">Usuń</button>
       </div>`;
     l.appendChild(row);
+    const edit=document.createElement('div'); edit.id='edit-'+d.id; edit.hidden=true;
+    edit.className='row'; edit.style.cssText='padding:8px 0 4px 0';
+    edit.innerHTML=`<div class="field"><label>Nazwa</label><input id="ename-${d.id}" value="${d.name.replace(/"/g,'&quot;')}" style="width:160px"></div>
+      <div class="field"><label>Ścieżka w HA</label><input id="epath-${d.id}" value="${d.path.replace(/"/g,'&quot;')}" style="width:200px"></div>
+      <div class="field"><label>Szerokość</label><input id="ew-${d.id}" type="number" value="${d.width}"></div>
+      <div class="field"><label>Wysokość</label><input id="eh-${d.id}" type="number" value="${d.height}"></div>
+      <div class="field"><label>kl./s</label><input id="efps-${d.id}" type="number" value="${d.fps}"></div>
+      <button data-act="saveedit" data-id="${d.id}" style="align-self:flex-end">Zapisz edycję</button>
+      <button data-act="canceledit" data-id="${d.id}" style="align-self:flex-end">Anuluj</button>`;
+    l.appendChild(edit);
     const pre=document.createElement('pre'); pre.id='log-'+d.id; pre.hidden=true; l.appendChild(pre);
   }
-  l.querySelectorAll('button').forEach(b=>b.onclick=()=>act(b.dataset.act,b.dataset.id));
+  l.querySelectorAll('button').forEach(b=>b.onclick=()=>act(b.dataset.act,b.dataset.id,b.dataset.url));
 }
-async function act(a,id){
+async function act(a,id,url){
+  if(a==='copy'){
+    try{ await navigator.clipboard.writeText(url); }
+    catch(e){ prompt('Skopiuj ręcznie:', url); }
+    return;
+  }
   if(a==='del'){ if(!confirm('Usunąć strumień?')) return; await api('api/dashboards/'+id,'DELETE'); return load(); }
   if(a==='restart'){ await api('api/dashboards/'+id+'/restart','POST'); return load(); }
   if(a==='log'){
     const pre=$('log-'+id); pre.hidden=!pre.hidden;
     if(!pre.hidden) pre.textContent=await (await fetch('api/log/'+id)).text();
+  }
+  if(a==='edit'){ $('edit-'+id).hidden=!$('edit-'+id).hidden; }
+  if(a==='canceledit'){ $('edit-'+id).hidden=true; }
+  if(a==='saveedit'){
+    try{
+      await api('api/dashboards/'+id, 'PUT', {
+        name: $('ename-'+id).value.trim(), path: $('epath-'+id).value.trim()||'/',
+        width: +$('ew-'+id).value, height: +$('eh-'+id).value, fps: +$('efps-'+id).value
+      });
+      await load();
+    }catch(e){ alert(e.message); }
   }
 }
 $('tokeneye').onclick=()=>{
