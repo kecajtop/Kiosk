@@ -31,7 +31,7 @@ INGRESS_GW = "172.30.32.2"
 MTX_RTSP_PORT = 8554
 ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.2.1"          # = version w config.yaml
+ADDON_VERSION = "1.2.2"          # = version w config.yaml
 
 CHROMIUM_BIN = shutil.which("chromium-browser") or shutil.which("chromium") or "/usr/bin/chromium-browser"
 
@@ -98,11 +98,13 @@ class Worker:
         try:
             for raw in iter(chromium.stderr.readline, b""):
                 line = raw.decode(errors="replace").strip()
-                # Chromium z --disable-gpu/--no-sandbox jest bardzo gadatliwy (GPU/cache/
-                # sandbox warningi niezwiązane z problemem) - pokazujemy tylko to, co realnie
-                # pomaga diagnozować białą stronę: błędy JS/sieci/nawigacji i sam fakt crasha.
-                if line and ("ERROR" in line or "FATAL" in line or "Uncaught" in line
-                              or "net::ERR" in line or "Renderer process" in line):
+                # Chromium w kontenerze bez systemowego D-Busa/UPower generuje mnóstwo
+                # kompletnie nieszkodliwego, normalnego szumu ("Failed to connect to the
+                # bus", "NameHasOwner", GetAll na UPower) - pomijamy go, bo inaczej zalewa
+                # log i zasłania to, co faktycznie pomaga zdiagnozować białą stronę/login.
+                if not line or "dbus/" in line or "UPower" in line or "NameHasOwner" in line:
+                    continue
+                if "FATAL" in line or "Uncaught" in line or "net::ERR" in line or "Renderer process" in line:
                     self._log("chromium: " + line[:300])
         except Exception:
             pass
@@ -140,11 +142,23 @@ class Worker:
                                           "all_frames": False}]}
         with open(os.path.join(d, "manifest.json"), "w") as f:
             json.dump(manifest, f)
-        tok = json.dumps({"access_token": token, "token_type": "Bearer", "expires_in": 1800,
-                           "hass_url": ha_url, "clientId": ha_url})
+        # home-assistant-js-websocket (getAuth) akceptuje zapisany token TYLKO, gdy
+        # data.hassUrl jest DOKŁADNIE równe żądanemu URL-owi (porównanie stringów) - inaczej
+        # cichutko go ignoruje i przechodzi do prawdziwego logowania (OAuth redirect), bez
+        # żadnego błędu w konsoli. Klucz MUSI się nazywać "hassUrl" (camelCase), nie
+        # "hass_url" - to była pierwsza wersja tego pliku i właśnie dlatego token był
+        # ignorowany. "expires" to bezwzględny czas (ms) wygaśnięcia - liczony w JS w
+        # momencie wstrzyknięcia, nie z góry w Pythonie. "refresh_token" dla tokenu
+        # długoterminowego to pusty string (pole wymagane, ale nieużywane bez odświeżania).
+        tok = json.dumps({"hassUrl": ha_url, "clientId": None, "access_token": token,
+                           "refresh_token": "", "expires_in": 1800})
         with open(os.path.join(d, "content.js"), "w") as f:
-            f.write("try{localStorage.setItem('hassTokens', JSON.stringify(%s));"
-                    "localStorage.setItem('selectedLanguage', JSON.stringify(\"pl\"));}catch(e){}" % tok)
+            f.write(
+                "try{"
+                "var t=%s; t.expires=Date.now()+t.expires_in*1000;"
+                "localStorage.setItem('hassTokens', JSON.stringify(t));"
+                "localStorage.setItem('selectedLanguage', JSON.stringify(\"pl\"));"
+                "}catch(e){}" % tok)
         return d
 
     def _start_all(self, d):

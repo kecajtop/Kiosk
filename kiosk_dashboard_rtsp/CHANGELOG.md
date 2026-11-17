@@ -1,3 +1,18 @@
+## 1.2.2
+- **Prawdziwa przyczyna "w podglądzie widać ekran logowania HA" znaleziona i naprawiona.**
+  Dzięki podglądowi obrazu (1.2.0) i logom Chromium (1.2.0) z 1.2.1 było już widać, że
+  strona faktycznie się ładuje — tylko jako ekran logowania, nie dashboard. Zweryfikowane
+  względem źródeł `home-assistant-js-websocket`: zapisany w `localStorage.hassTokens` obiekt
+  jest akceptowany TYLKO, gdy jego pole `hassUrl` (dokładnie taka pisownia, camelCase) jest
+  równe żądanemu adresowi — nasz kod zapisywał `hass_url` (podkreślenie), więc frontend HA
+  po cichu ignorował token (bez żadnego błędu w konsoli) i przechodził do prawdziwego
+  logowania. Naprawione: poprawny klucz `hassUrl`, dodane wymagane `refresh_token` (pusty
+  string dla tokenu długoterminowego) i `expires` (bezwzględny czas wygaśnięcia, liczony w
+  przeglądarce w momencie wstrzyknięcia). Zweryfikowane lokalnym testem jednostkowym
+  kształtu generowanego obiektu.
+- Log Chromium nie jest już zalewany nieszkodliwym szumem D-Bus/UPower (normalnym w
+  kontenerze bez systemowego D-Busa) — zasłaniał realne błędy.
+
 ## 1.2.1
 - **Naprawa: edycja strumienia "gryzła się" z automatycznym odświeżaniem** — panel
   odświeża listę co 5 s, co niszczyło i odtwarzało formularz edycji ze starymi wartościami
