@@ -31,7 +31,7 @@ INGRESS_GW = "172.30.32.2"
 MTX_RTSP_PORT = 8554
 ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.3.1"          # = version w config.yaml
+ADDON_VERSION = "1.4.0"          # = version w config.yaml
 
 CHROMIUM_BIN = shutil.which("chromium-browser") or shutil.which("chromium") or "/usr/bin/chromium-browser"
 
@@ -176,7 +176,38 @@ class Worker:
                 # home-assistant/frontend src/util/ha-pref-storage.ts). Bez tego po stronie HA
                 # trzeba by było ręcznie ustawiać tę opcję na koncie użytkownika od tokenu.
                 "localStorage.setItem('dockedSidebar', JSON.stringify('always_hidden'));"
-                "}catch(e){}" % tok)
+                "}catch(e){}" % tok +
+                # Górny pasek (zegar/nazwa widoku/przyciski) nie ma żadnego klucza w
+                # localStorage jak pasek boczny - trzeba go znaleźć i ukryć w DOM. Siedzi
+                # jako <div class="header"> wewnątrz OTWARTEGO shadow rootu elementu
+                # <hui-root> (zweryfikowane w źródle home-assistant/frontend,
+                # hui-root.ts). <hui-root> jest zagnieżdżony kilka poziomów w głąb przez
+                # inne komponenty, które też używają shadow DOM - więc szukamy go
+                # rekurencyjnie po całym drzewie (włącznie z shadow rootami), nie
+                # zakładając konkretnej ścieżki zagnieżdżenia (ta może się zmienić między
+                # wersjami frontendu HA). Strona dashboardu renderuje się dopiero po
+                # starcie, więc sprawdzamy w pętli co 1 s (document_start odpala się
+                # zanim DOM istnieje) - działa to też po ewentualnym przeładowaniu widoku.
+                "try{"
+                "function dr_deepFind(tag,root){"
+                "root=root||document;"
+                "var el=root.querySelector(tag); if(el) return el;"
+                "var all=root.querySelectorAll('*');"
+                "for(var i=0;i<all.length;i++){"
+                "if(all[i].shadowRoot){ var f=dr_deepFind(tag,all[i].shadowRoot); if(f) return f; }"
+                "}"
+                "return null;"
+                "}"
+                "function dr_hideHeader(){"
+                "try{"
+                "var root=dr_deepFind('hui-root');"
+                "var sr=root&&root.shadowRoot;"
+                "var header=sr&&sr.querySelector('.header');"
+                "if(header&&header.style.display!=='none') header.style.display='none';"
+                "}catch(e){}"
+                "}"
+                "setInterval(dr_hideHeader, 1000);"
+                "}catch(e){}")
         return d
 
     def _start_all(self, d):

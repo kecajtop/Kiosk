@@ -79,7 +79,9 @@ const rows=new Map();  // d.id -> referencje do DOM utworzonego RAZ (żeby odśw
                         // nigdy nie niszczyło pól, które ktoś akurat edytuje albo zaznacza)
 async function load(){
   CFG=await api('api/config');
-  $('haurl').value=CFG.ha_url;
+  // Nigdy nie nadpisuj pola adresu HA, jeśli ktoś akurat w nim pisze (ma fokus) —
+  // cykliczne odświeżanie nie powinno kasować wpisywanego tekstu.
+  if(document.activeElement!==$('haurl')) $('haurl').value=CFG.ha_url;
   $('token').placeholder=CFG.token_set?'(token ustawiony ✓)':'(brak tokenu)';
   try{ STATUS=await api('api/status'); }catch(e){ STATUS={}; }
   render();
@@ -217,6 +219,10 @@ $('addbtn').onclick=async()=>{
   }catch(e){ alert(e.message); }
 };
 load();
-setInterval(load, 5000);
+// Dopóki jakikolwiek formularz edycji jest otwarty, cykliczne odświeżanie w ogóle się
+// nie wykonuje — ani zapytania do serwera, ani dotknięcie DOM. To jest teraz jedyny
+// warunek (zamiast punktowego omijania pól/obrazka per wiersz): dzięki temu żadna
+// przyszła zmiana w render() nie może już przypadkiem znowu zacząć przerywać edycji.
+setInterval(()=>{ if(editingIds.size===0) load(); }, 5000);
 </script>
 </body></html>

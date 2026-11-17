@@ -1,3 +1,21 @@
+## 1.4.0
+- **Automatyczne ukrywanie górnego paska HA** (zegar, nazwa widoku, przyciski odświeżania
+  i menu) — oprócz już ukrywanego paska bocznego. W odróżnieniu od paska bocznego, pasek
+  górny nie ma żadnego klucza w `localStorage` — jest to `<div class="header">` wewnątrz
+  *otwartego* shadow rootu elementu `<hui-root>` (zweryfikowane w źródle
+  `home-assistant/frontend`). Wstrzyknięty skrypt szuka go teraz rekurencyjnie po całym
+  drzewie DOM (włącznie z zagnieżdżonymi shadow rootami), więc nie zależy od konkretnej
+  ścieżki zagnieżdżenia komponentów, która może się zmienić między wersjami frontendu HA,
+  i sprawdza w pętli co 1 s — bo strona dashboardu renderuje `hui-root` z opóźnieniem
+  (po starcie Chromium), nie od razu przy starcie skryptu.
+- **Odświeżanie listy strumieni już całkowicie się wyłącza (nie tylko omija dany wiersz)**,
+  dopóki jakikolwiek formularz edycji jest otwarty — ani zapytanie do serwera, ani
+  jakakolwiek zmiana w DOM nie następuje, więc żadna przyszła zmiana w sposobie
+  renderowania listy nie może już przypadkiem znów zacząć przerywać edycji. Naprawiono
+  też pole adresu Home Assistant w Ustawieniach, które cyklicznie nadpisywało swoją
+  wartość nawet w trakcie pisania w nim (tylko tam akurat nie było żadnego zgłoszenia, ale
+  to ten sam rodzaj błędu).
+
 ## 1.3.1
 - **Naprawa: edycja dalej była przerywana przez odświeżanie co ~5 s.** Poprzednia poprawka
   (1.3.0) chroniła tylko wartości pól formularza, ale samo przeładowanie miniaturki podglądu
