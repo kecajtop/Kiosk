@@ -31,7 +31,7 @@ INGRESS_GW = "172.30.32.2"
 MTX_RTSP_PORT = 8554
 ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 LOCK = threading.Lock()
-ADDON_VERSION = "1.0.0"          # = version w config.yaml
+ADDON_VERSION = "1.1.0"          # = version w config.yaml
 
 CHROMIUM_BIN = shutil.which("chromium-browser") or shutil.which("chromium") or "/usr/bin/chromium-browser"
 
@@ -143,6 +143,17 @@ class Worker:
             path = "/" + path
         url = ha_url + path
 
+        # A previous Xvfb on this same display that was killed (not exited cleanly)
+        # can leave its socket/lock behind. If so, the readiness check below would
+        # see it as "ready" immediately — even though it belongs to the dead
+        # instance, not the one just started — so a genuinely failed Xvfb would go
+        # unnoticed and chromium/ffmpeg would be pointed at a dead display.
+        for stale in ("/tmp/.X11-unix/X%d" % self.display, "/tmp/.X%d-lock" % self.display):
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
+
         xvfb = subprocess.Popen(["Xvfb", ":%d" % self.display, "-screen", "0", "%dx%dx24" % (w, h),
                                   "-nolisten", "tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.procs.append(xvfb)
@@ -190,13 +201,23 @@ class Worker:
                 xvfb, chromium, ff = self._start_all(cur)
                 backoff = 2
                 while not self.stop_flag.is_set() and self.pending is None:
-                    if xvfb.poll() is not None or chromium.poll() is not None or ff.poll() is not None:
+                    dead = [name for name, p in (("xvfb", xvfb), ("chromium", chromium), ("ffmpeg", ff))
+                            if p.poll() is not None]
+                    if dead:
+                        self.status = "błąd — próbuję ponownie"
+                        # Stop whatever is still alive FIRST. If e.g. chromium died but
+                        # ffmpeg is still running, ff.stderr is a live pipe that nothing
+                        # has closed yet — reading from it below would block forever
+                        # (ffmpeg logs nothing at -loglevel error while idle), freezing
+                        # this thread and leaving the stream stuck instead of restarting.
+                        self._kill_all()
                         err = b""
                         try:
                             err = ff.stderr.read(2000) if ff.stderr else b""
                         except Exception:
                             pass
-                        self._log("proces padł, restart za %ds (%s)" % (backoff, err.decode(errors="replace")[:300]))
+                        self._log("proces padł (%s), restart za %ds (%s)" %
+                                   (",".join(dead), backoff, err.decode(errors="replace")[:300]))
                         break
                     time.sleep(1)
             except Exception as e:

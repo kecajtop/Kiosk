@@ -56,6 +56,11 @@ bez potrzeby ręcznej interwencji.
 - Port 8554 musi być osiągalny z urządzenia, które próbuje się połączyć (ten sam port dla
   wszystkich strumieni, różne ścieżki).
 
+**Status "błąd" nie znika, restart w panelu nie pomaga (przed 1.1.0):** to był błąd w samym
+dodatku, nie w Twojej konfiguracji — jeśli Xvfb albo Chromium padał, a ffmpeg jeszcze żył,
+nadzór nad strumieniem zawieszał się na stałe, nigdy nie restartując trójki procesów.
+Naprawione w 1.1.0 — zaktualizuj dodatek.
+
 ## Ograniczenia
 
 - To nie jest „prawdziwa” integracja z silnikiem renderującym HA — po prostu działająca w
