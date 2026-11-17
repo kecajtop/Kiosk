@@ -72,12 +72,16 @@ async function api(path, method, body){
   return j;
 }
 let CFG={dashboards:[]}, STATUS={};
+const editingIds=new Set();  // strumienie z aktualnie otwartym formularzem edycji
 async function load(){
   CFG=await api('api/config');
   $('haurl').value=CFG.ha_url;
   $('token').placeholder=CFG.token_set?'(token ustawiony ✓)':'(brak tokenu)';
   try{ STATUS=await api('api/status'); }catch(e){ STATUS={}; }
-  render();
+  // Pełne odświeżenie co 5 s niszczyło i odtwarzało formularz edycji (ze starymi
+  // wartościami z CFG), kasując to co ktoś właśnie wpisywał. Dopóki jakaś edycja jest
+  // otwarta, pomijamy przerysowanie listy — reszta (ustawienia HA) i tak się odświeża.
+  if(!editingIds.size) render();
 }
 function render(){
   const l=$('list');
@@ -129,14 +133,18 @@ async function act(a,id,url){
     const pre=$('log-'+id); pre.hidden=!pre.hidden;
     if(!pre.hidden) pre.textContent=await (await fetch('api/log/'+id)).text();
   }
-  if(a==='edit'){ $('edit-'+id).hidden=!$('edit-'+id).hidden; }
-  if(a==='canceledit'){ $('edit-'+id).hidden=true; }
+  if(a==='edit'){
+    const e=$('edit-'+id); e.hidden=!e.hidden;
+    if(e.hidden) editingIds.delete(id); else editingIds.add(id);
+  }
+  if(a==='canceledit'){ $('edit-'+id).hidden=true; editingIds.delete(id); }
   if(a==='saveedit'){
     try{
       await api('api/dashboards/'+id, 'PUT', {
         name: $('ename-'+id).value.trim(), path: $('epath-'+id).value.trim()||'/',
         width: +$('ew-'+id).value, height: +$('eh-'+id).value, fps: +$('efps-'+id).value
       });
+      editingIds.delete(id);
       await load();
     }catch(e){ alert(e.message); }
   }

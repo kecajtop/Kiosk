@@ -1,3 +1,10 @@
+## 1.2.1
+- **Naprawa: edycja strumienia "gryzła się" z automatycznym odświeżaniem** — panel
+  odświeża listę co 5 s, co niszczyło i odtwarzało formularz edycji ze starymi wartościami
+  z konfiguracji, kasując na bieżąco to, co ktoś akurat wpisywał (pole "wracało" do
+  poprzedniej wartości w trakcie pisania). Dopóki formularz edycji jakiegokolwiek strumienia
+  jest otwarty, panel przestaje przerysowywać listę strumieni (reszta nadal się odświeża).
+
 ## 1.2.0
 - **Edycja istniejących strumieni** — przycisk „Edytuj" przy każdym strumieniu pozwala
   zmienić nazwę, ścieżkę w HA, rozdzielczość i kl./s bez usuwania i dodawania od nowa
