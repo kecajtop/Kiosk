@@ -1,3 +1,16 @@
+## 1.1.2
+- **Port panelu zmieniony z 8097 na 18097.** Retry z 1.1.1 nie pomaga, gdy port jest zajęty
+  trwale, nie tylko na chwilę po restarcie — zgłoszenie użytkownika pokazało właśnie taki
+  przypadek (10 prób przez ~20 s i dalej „Address in use”). `host_network: true` (1.1.0)
+  oznacza, że port panelu jest teraz prawdziwym portem na całym komputerze, więc może
+  kolidować z dosłownie czymkolwiek innym na tej maszynie, nie tylko z innym dodatkiem
+  tego repo — co w domyślnej, odizolowanej sieci kontenera było fizycznie niemożliwe.
+  18097 to nietypowy numer, więc mniej prawdopodobna przypadkowa kolizja.
+- Jeśli port i tak jest trwale zajęty, dodatek po wyczerpaniu prób pisze w logu wprost, że
+  to nie chwilowy wyścig przy restarcie, i podaje komendę (`ss -tlnp | grep <port>`) do
+  sprawdzenia przez dodatek Terminal/SSH, co dokładnie go zajmuje — zamiast kończyć się
+  samym surowym tracebackiem.
+
 ## 1.1.1
 - **Naprawa: dodatek nie startował po restarcie/aktualizacji — `OSError: [Errno 98]
   Address in use`, cały proces się wywalał.** Efekt domku z kart po `host_network: true`

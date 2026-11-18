@@ -28,7 +28,7 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-PORT = int(os.environ.get("TL_PORT", "8097"))
+PORT = int(os.environ.get("TL_PORT", "18097"))   # = ingress_port w config.yaml
 # DATA to WŁASNY, zawsze dostępny katalog dodatku (Supervisor gwarantuje go bez żadnego
 # `map:` w config.yaml) - tu zawsze mieszka config.json, niezależnie od tego, gdzie
 # użytkownik skonfiguruje przechowywanie klatek/wideo (storage_dir, patrz niżej). Inaczej
@@ -45,7 +45,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.1.1"          # = version w config.yaml
+ADDON_VERSION = "1.1.2"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
@@ -893,7 +893,19 @@ def _bind_server(retries=10, delay=2):
             srv.daemon_threads = True
             return srv
         except OSError as e:
-            if e.errno != 98 or attempt == retries:   # 98 = Address already in use
+            if e.errno != 98:   # 98 = Address already in use
+                raise
+            if attempt == retries:
+                # Po tylu próbach i tylu sekundach to już nie jest chwilowy wyścig przy
+                # restarcie (ten się rozwiązuje w ciągu sekund) - coś INNEGO na tym
+                # komputerze trwale trzyma ten port. Skoro host_network: true robi z niego
+                # prawdziwy port hosta, może to być cokolwiek: inny dodatek z
+                # host_network, albo zupełnie niezwiązany proces na tej maszynie.
+                log("port %d jest zajęty na trwale (nie tylko tuż po restarcie) - "
+                    "prawdopodobnie inny proces na tym komputerze używa tego samego portu. "
+                    "Sprawdź przez dodatek Terminal/SSH: `ss -tlnp | grep %d` (albo "
+                    "`netstat -tlnp | grep %d`), żeby zobaczyć, co go zajmuje." %
+                    (PORT, PORT, PORT))
                 raise
             log("port %d jest jeszcze zajęty (zwykle poprzedni proces dodatku kończy "
                 "działanie po restarcie) - czekam i próbuję ponownie (%d/%d)…" %

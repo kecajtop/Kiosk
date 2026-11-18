@@ -1,5 +1,5 @@
 name: Timelapse RTSP
-version: "1.1.1"
+version: "1.1.2"
 slug: timelapse_rtsp
 description: Nagrywa poklatkowe filmy (timelapse) z dowolnych strumieni RTSP (kamer, NVR) według harmonogramu
 arch:
@@ -9,7 +9,7 @@ init: false
 startup: application
 boot: auto
 ingress: true
-ingress_port: 8097
+ingress_port: 18097
 ingress_stream: true
 panel_icon: mdi:movie-filter
 panel_title: Timelapse RTSP
@@ -21,6 +21,12 @@ homeassistant_api: true
 # host Home Assistant (tak jak zwykły serwis RTSP/NVR by miał). Panel (Ingress) i tak
 # odrzuca połączenia spoza Supervisora/loopbacku (patrz allowed() w server.py), więc to
 # nie otwiera panelu na całą sieć LAN.
+#
+# UWAGA: host_network oznacza też, że port panelu (ingress_port) jest teraz prawdziwym
+# portem na samym hoście, nie odizolowaną siecią kontenera - może więc kolidować z
+# CZYMKOLWIEK innym na tym komputerze (nie tylko z innymi dodatkami tego repo), co wcześniej
+# było fizycznie niemożliwe. Stąd 18097 (nietypowy numer, mniejsza szansa na przypadkową
+# kolizję) zamiast pierwotnego 8097.
 host_network: true
 map:
   - media:rw
