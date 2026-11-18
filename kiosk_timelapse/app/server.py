@@ -45,7 +45,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.1.0"          # = version w config.yaml
+ADDON_VERSION = "1.1.1"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
@@ -880,6 +880,27 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_DELETE = do_HEAD = route
 
 
+def _bind_server(retries=10, delay=2):
+    """host_network: true (dodane w 1.1.0, żeby dodatek widział kamery w sieci LAN - patrz
+    komentarz w config.yaml) oznacza, że port jest teraz prawdziwym gniazdem na hoście, nie
+    odizolowaną siecią kontenera. Przy restarcie/aktualizacji bywa krótka chwila, w której
+    poprzedni proces dodatku jeszcze nie zwolnił portu, a nowy już próbuje się na niego
+    zbindować - bez tej pętli to kończyło się od razu crashem (OSError: Address in use) i
+    całym dodatkiem nie startującym, zamiast po prostu chwilę zaczekać."""
+    for attempt in range(1, retries + 1):
+        try:
+            srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+            srv.daemon_threads = True
+            return srv
+        except OSError as e:
+            if e.errno != 98 or attempt == retries:   # 98 = Address already in use
+                raise
+            log("port %d jest jeszcze zajęty (zwykle poprzedni proces dodatku kończy "
+                "działanie po restarcie) - czekam i próbuję ponownie (%d/%d)…" %
+                (PORT, attempt, retries))
+            time.sleep(delay)
+
+
 def main():
     os.makedirs(DATA, exist_ok=True)
     os.makedirs(frames_root(), exist_ok=True)
@@ -890,8 +911,7 @@ def main():
     threading.Thread(target=cleanup_loop, daemon=True).start()
     threading.Thread(target=sun_loop, daemon=True).start()
     threading.Thread(target=diskspace_loop, daemon=True).start()
-    srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    srv.daemon_threads = True
+    srv = _bind_server()
     log("Timelapse RTSP: panel na porcie %d, timelapse'y: %d" % (PORT, len(load()["timelapses"])))
     srv.serve_forever()
 

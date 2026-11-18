@@ -1,3 +1,12 @@
+## 1.1.1
+- **Naprawa: dodatek nie startował po restarcie/aktualizacji — `OSError: [Errno 98]
+  Address in use`, cały proces się wywalał.** Efekt domku z kart po `host_network: true`
+  z 1.1.0: port panelu jest teraz prawdziwym gniazdem na hoście (wcześniej każdy
+  restart dostawał świeżą, odizolowaną sieć kontenera, więc kolizja portu była
+  niemożliwa) — przy restarcie bywa krótka chwila, w której poprzedni proces dodatku
+  jeszcze nie zwolnił portu, a nowy już próbuje się na niego zbindować. Dodatek teraz w
+  takiej sytuacji czeka i próbuje ponownie (do ~20 s), zamiast od razu się wywalać.
+
 ## 1.1.0
 - **Naprawa: przechwytywanie klatek kończyło się „Host is unreachable” dla kamer w sieci
   LAN.** Domyślna, izolowana sieć Dockera dodatków (bridge) nie ma trasy do zwykłych
