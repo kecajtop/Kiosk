@@ -1,3 +1,12 @@
+## 1.4.2
+- **Naprawa (prewencyjna): ten sam problem co „znika kamera” w Timelapse RTSP 1.1.4 —
+  `config.json` mógł się uszkodzić, gdy dwa zapisy (np. dodanie dashboardu i jednoczesna
+  zmiana ustawień) trafiły się w tym samym momencie na dwóch różnych wątkach, bo nic nie
+  synchronizowało zapisu do wspólnego pliku tymczasowego.** Tu nikt tego jeszcze nie
+  zgłosił, ale kod miał dokładnie ten sam wzorzec (brak blokady wokół `load()`+zmiana+
+  `save()`), więc naprawione na wszelki wypadek, zanim ktoś na to trafi: wszystkie zapisy
+  konfiguracji zsynchronizowane jedną blokadą, każdy zapis do osobnego pliku tymczasowego.
+
 ## 1.4.1
 - **Kolejna próba naprawy: odświeżanie podglądu listy przerywało edycję na telefonie**,
   mimo że ochrona w JS (`editingIds`) jest poprawna i podczas edycji w ogóle nie wykonuje

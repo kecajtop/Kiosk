@@ -1,3 +1,18 @@
+## 1.1.4
+- **Naprawa: czasem znikał cały skonfigurowany timelapse z panelu** (pojawiał się komunikat
+  „Brak timelapse'ów — dodaj pierwszy powyżej”, mimo że był wcześniej dodany) — po chwili
+  zwykle wracał sam. Przyczyna: `config.json` nie był w żaden sposób chroniony przed
+  jednoczesnym zapisem z dwóch wątków naraz — każde żądanie panelu (dodanie/edycja/
+  usunięcie/zmiana ustawień) obsługiwane jest przez osobny wątek, a do tego dochodzi wątek
+  renderujący, który też dopisuje datę ostatniego renderu. Dwa takie zapisy trafiające się
+  w tym samym momencie pisały do tego samego pliku tymczasowego i potrafiły się nawzajem
+  popsuć w trakcie zapisu, zostawiając w `config.json` uszkodzony/obcięty JSON. Odczyt
+  takiego pliku kończył się wyjątkiem, który po cichu był łapany i zamieniany na pustą
+  konfigurację — stąd wrażenie, że timelapse „znika znikąd”, a po kolejnym poprawnym
+  zapisie (np. edycji czegoś) wracał. Naprawione: wszystkie miejsca zapisujące
+  `config.json` są teraz zsynchronizowane jedną blokadą, a dodatkowo każdy zapis używa
+  osobnego pliku tymczasowego (druga, niezależna warstwa zabezpieczenia).
+
 ## 1.1.3
 - **Naprawa: przechwytywanie klatki kończyło się „Error initializing the muxer... Invalid
   argument” po tym, jak ffmpeg w ogóle zdołał się połączyć ze strumieniem RTSP.** Plik

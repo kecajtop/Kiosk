@@ -30,8 +30,16 @@ INGRESS_ONLY = os.environ.get("KM_ANY_CLIENT") != "1"
 INGRESS_GW = "172.30.32.2"
 MTX_RTSP_PORT = 8554
 ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
+# Chroni config.json przed ściganiem się wątków: każde żądanie HTTP (ustawienia/dodanie/
+# edycja/usunięcie dashboardu) jest obsługiwane przez osobny wątek ThreadingHTTPServer. Bez
+# tej blokady dwa zapisy w tym samym momencie mogły pisać do tego samego pliku tymczasowego
+# (ten sam "CONF + '.tmp'" dla każdego wątku) i nawzajem się popsuć w trakcie zapisu - co
+# czasem kończyło się uszkodzonym/obciętym JSON-em w config.json: load() łapał wtedy wyjątek
+# przy parsowaniu i po cichu wracał do pustej konfiguracji - w panelu wyglądało to tak, jakby
+# wszystkie dashboardy nagle zniknęły (ten sam mechanizm naprawiony w Timelapse RTSP 1.1.4,
+# zgłoszony tam jako "znika kamera").
 LOCK = threading.Lock()
-ADDON_VERSION = "1.4.1"          # = version w config.yaml
+ADDON_VERSION = "1.4.2"          # = version w config.yaml
 
 CHROMIUM_BIN = shutil.which("chromium-browser") or shutil.which("chromium") or "/usr/bin/chromium-browser"
 
@@ -53,7 +61,9 @@ def load():
 
 def save(c):
     os.makedirs(DATA, exist_ok=True)
-    tmp = CONF + ".tmp"
+    # Osobny plik tymczasowy na wątek (nie tylko blokada) - dodatkowe zabezpieczenie na
+    # wypadek, gdyby kiedyś jakiś zapis odbył się poza LOCK.
+    tmp = CONF + (".tmp.%d" % threading.get_ident())
     with open(tmp, "w") as f:
         json.dump(c, f, ensure_ascii=False, indent=1)
     os.replace(tmp, CONF)
@@ -452,12 +462,13 @@ class Handler(BaseHTTPRequestHandler):
             if not b:
                 log("UWAGA: puste body w /api/settings (Content-Length=%r, Transfer-Encoding=%r)" %
                     (self.headers.get("Content-Length"), self.headers.get("Transfer-Encoding")))
-            c = load()
-            if "ha_url" in b:
-                c["ha_url"] = str(b["ha_url"]).rstrip("/") or "http://homeassistant:8123"
-            if "token" in b and b["token"]:
-                c["token"] = str(b["token"]).strip()
-            save(c)
+            with LOCK:
+                c = load()
+                if "ha_url" in b:
+                    c["ha_url"] = str(b["ha_url"]).rstrip("/") or "http://homeassistant:8123"
+                if "token" in b and b["token"]:
+                    c["token"] = str(b["token"]).strip()
+                save(c)
             log("ustawienia zapisane: ha_url=%r, token=%s (%d znaków)" %
                 (c["ha_url"], "ustawiony" if c["token"] else "BRAK", len(c["token"])))
             reconcile()
@@ -485,44 +496,47 @@ class Handler(BaseHTTPRequestHandler):
             dpath = str(b.get("path", "/")).strip() or "/"
             if not name:
                 raise ValueError("nazwa jest wymagana")
-            c = load()
-            if not c["token"]:
-                raise ValueError("najpierw ustaw długoterminowy token Home Assistant (Ustawienia powyżej)")
             did = secrets.token_hex(4)
-            c["dashboards"].append({"id": did, "name": name, "path": dpath,
-                                     "width": to_int(b.get("width"), 320, 3840, 1920),
-                                     "height": to_int(b.get("height"), 240, 2160, 1080),
-                                     "fps": to_fps(b.get("fps"), 6)})
-            save(c)
+            with LOCK:
+                c = load()
+                if not c["token"]:
+                    raise ValueError("najpierw ustaw długoterminowy token Home Assistant (Ustawienia powyżej)")
+                c["dashboards"].append({"id": did, "name": name, "path": dpath,
+                                         "width": to_int(b.get("width"), 320, 3840, 1920),
+                                         "height": to_int(b.get("height"), 240, 2160, 1080),
+                                         "fps": to_fps(b.get("fps"), 6)})
+                save(c)
             reconcile()
             return self.send(200, {"ok": True, "id": did})
         m = re.match(r"^/api/dashboards/([a-z0-9]{1,20})$", path)
         if self.command == "DELETE" and m:
-            c = load()
-            before = len(c["dashboards"])
-            c["dashboards"] = [x for x in c["dashboards"] if x["id"] != m.group(1)]
-            if len(c["dashboards"]) == before:
-                raise KeyError(m.group(1))
-            save(c)
+            with LOCK:
+                c = load()
+                before = len(c["dashboards"])
+                c["dashboards"] = [x for x in c["dashboards"] if x["id"] != m.group(1)]
+                if len(c["dashboards"]) == before:
+                    raise KeyError(m.group(1))
+                save(c)
             reconcile()
             return self.send(200, {"ok": True})
         if self.command == "PUT" and m:
             b = self.body_json()
-            c = load()
-            dash = next((x for x in c["dashboards"] if x["id"] == m.group(1)), None)
-            if not dash:
-                raise KeyError(m.group(1))
-            if "name" in b:
-                dash["name"] = str(b["name"]).strip()[:60] or dash["name"]
-            if "path" in b:
-                dash["path"] = str(b["path"]).strip() or "/"
-            if "width" in b:
-                dash["width"] = to_int(b.get("width"), 320, 3840, dash["width"])
-            if "height" in b:
-                dash["height"] = to_int(b.get("height"), 240, 2160, dash["height"])
-            if "fps" in b:
-                dash["fps"] = to_fps(b.get("fps"), dash["fps"])
-            save(c)
+            with LOCK:
+                c = load()
+                dash = next((x for x in c["dashboards"] if x["id"] == m.group(1)), None)
+                if not dash:
+                    raise KeyError(m.group(1))
+                if "name" in b:
+                    dash["name"] = str(b["name"]).strip()[:60] or dash["name"]
+                if "path" in b:
+                    dash["path"] = str(b["path"]).strip() or "/"
+                if "width" in b:
+                    dash["width"] = to_int(b.get("width"), 320, 3840, dash["width"])
+                if "height" in b:
+                    dash["height"] = to_int(b.get("height"), 240, 2160, dash["height"])
+                if "fps" in b:
+                    dash["fps"] = to_fps(b.get("fps"), dash["fps"])
+                save(c)
             reconcile()  # zmiana parametrów = pełny restart trójki procesów tego strumienia
             return self.send(200, {"ok": True})
         mr = re.match(r"^/api/dashboards/([a-z0-9]{1,20})/restart$", path)

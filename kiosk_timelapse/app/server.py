@@ -45,7 +45,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.1.3"          # = version w config.yaml
+ADDON_VERSION = "1.1.4"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
@@ -53,6 +53,17 @@ SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_
 
 def log(msg):
     print(time.strftime("%H:%M:%S ") + msg, flush=True)
+
+
+# Chroni config.json przed ściganiem się wątków: każde żądanie HTTP (dodanie/edycja/usunięcie/
+# ustawienia) obsługiwane jest przez ThreadingHTTPServer na osobnym wątku, a do tego dochodzi
+# wątek renderowania (do_render), który też dopisuje last_rendered_ts. Bez tej blokady dwa
+# zapisy w tym samym momencie potrafiły się nawzajem nadpisać w trakcie pisania do wspólnego
+# pliku tymczasowego (ten sam "CONF + '.tmp'" dla każdego wątku) - co czasem kończyło się
+# uszkodzonym/obciętym JSON-em w config.json. load() wtedy łapał wyjątek przy parsowaniu i po
+# cichu wracał do pustej konfiguracji ({"timelapses": []}) - w panelu wyglądało to tak, jakby
+# wszystkie timelapse'y nagle zniknęły (aż do kolejnego poprawnego zapisu, który je przywracał).
+CONF_LOCK = threading.Lock()
 
 
 def load():
@@ -67,7 +78,9 @@ def load():
 
 def save(c):
     os.makedirs(DATA, exist_ok=True)
-    tmp = CONF + ".tmp"
+    # Osobny plik tymczasowy na wątek (nie tylko blokada) - dodatkowe zabezpieczenie na
+    # wypadek, gdyby kiedyś jakiś zapis odbył się poza CONF_LOCK.
+    tmp = CONF + (".tmp.%d" % threading.get_ident())
     with open(tmp, "w") as f:
         json.dump(c, f, ensure_ascii=False, indent=1)
     os.replace(tmp, CONF)
@@ -382,11 +395,12 @@ def do_render(tid, reason):
                     except OSError:
                         pass
 
-        c2 = load()
-        t2 = next((x for x in c2["timelapses"] if x["id"] == tid), None)
-        if t2:
-            t2["last_rendered_ts"] = now_ts
-            save(c2)
+        with CONF_LOCK:
+            c2 = load()
+            t2 = next((x for x in c2["timelapses"] if x["id"] == tid), None)
+            if t2:
+                t2["last_rendered_ts"] = now_ts
+                save(c2)
         rt_log(tid, "renderowanie zakończone: %s (%d klatek @ %.1f kl./s)" % (out_name, len(frames), render_fps))
 
         # Kopia do /media (Media Browser HA) - wygodny, nieobowiązkowy bonus; brak zamapowanego
@@ -705,9 +719,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.command == "POST" and path == "/api/settings":
             b = self.body_json()
             newdir = validate_storage_dir(b.get("storage_dir"))
-            c = load()
-            c["storage_dir"] = newdir
-            save(c)
+            with CONF_LOCK:
+                c = load()
+                c["storage_dir"] = newdir
+                save(c)
             log("miejsce składowania zmienione na: %s (dotyczy nowych klatek/renderów - "
                 "istniejące pliki zostają w starej lokalizacji)" % newdir)
             return self.send(200, {"ok": True, "storage_dir": newdir})
@@ -736,23 +751,24 @@ class Handler(BaseHTTPRequestHandler):
             url = str(b.get("rtsp_url", "")).strip()
             if not url.lower().startswith("rtsp://"):
                 raise ValueError("adres musi zaczynać się od rtsp://")
-            c = load()
             tid = secrets.token_hex(4)
-            c["timelapses"].append({
-                "id": tid, "name": name, "rtsp_url": url,
-                "transport": "udp" if str(b.get("transport")) == "udp" else "tcp",
-                "interval_sec": to_int(b.get("interval_sec"), 5, 86400, 300),
-                "render_time": to_time(b.get("render_time"), "00:05"),
-                "render_fps": to_fps(b.get("render_fps"), 24),
-                "frame_days": to_int(b.get("frame_days"), 1, 365, 3),
-                "video_days": to_int(b.get("video_days"), 0, 3650, 90),
-                "capture_window": to_window(b.get("capture_window"), "always"),
-                "window_start": to_time(b.get("window_start"), "20:00"),
-                "window_end": to_time(b.get("window_end"), "06:00"),
-                "enabled": True,
-                "last_rendered_ts": 0,
-            })
-            save(c)
+            with CONF_LOCK:
+                c = load()
+                c["timelapses"].append({
+                    "id": tid, "name": name, "rtsp_url": url,
+                    "transport": "udp" if str(b.get("transport")) == "udp" else "tcp",
+                    "interval_sec": to_int(b.get("interval_sec"), 5, 86400, 300),
+                    "render_time": to_time(b.get("render_time"), "00:05"),
+                    "render_fps": to_fps(b.get("render_fps"), 24),
+                    "frame_days": to_int(b.get("frame_days"), 1, 365, 3),
+                    "video_days": to_int(b.get("video_days"), 0, 3650, 90),
+                    "capture_window": to_window(b.get("capture_window"), "always"),
+                    "window_start": to_time(b.get("window_start"), "20:00"),
+                    "window_end": to_time(b.get("window_end"), "06:00"),
+                    "enabled": True,
+                    "last_rendered_ts": 0,
+                })
+                save(c)
             reconcile()
             return self.send(200, {"ok": True, "id": tid})
 
@@ -813,48 +829,50 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/api/timelapses/([a-z0-9]{1,20})$", path)
         if self.command == "PUT" and m:
             b = self.body_json()
-            c = load()
-            t = next((x for x in c["timelapses"] if x["id"] == m.group(1)), None)
-            if not t:
-                raise KeyError(m.group(1))
-            if "name" in b:
-                t["name"] = str(b["name"]).strip()[:60] or t["name"]
-            if "rtsp_url" in b and str(b["rtsp_url"]).strip():
-                url = str(b["rtsp_url"]).strip()
-                if not url.lower().startswith("rtsp://"):
-                    raise ValueError("adres musi zaczynać się od rtsp://")
-                t["rtsp_url"] = url
-            if "transport" in b:
-                t["transport"] = "udp" if str(b["transport"]) == "udp" else "tcp"
-            if "interval_sec" in b:
-                t["interval_sec"] = to_int(b.get("interval_sec"), 5, 86400, t["interval_sec"])
-            if "render_time" in b:
-                t["render_time"] = to_time(b.get("render_time"), t["render_time"])
-            if "render_fps" in b:
-                t["render_fps"] = to_fps(b.get("render_fps"), t["render_fps"])
-            if "frame_days" in b:
-                t["frame_days"] = to_int(b.get("frame_days"), 1, 365, t["frame_days"])
-            if "video_days" in b:
-                t["video_days"] = to_int(b.get("video_days"), 0, 3650, t["video_days"])
-            if "capture_window" in b:
-                t["capture_window"] = to_window(b.get("capture_window"), t.get("capture_window", "always"))
-            if "window_start" in b:
-                t["window_start"] = to_time(b.get("window_start"), t.get("window_start", "20:00"))
-            if "window_end" in b:
-                t["window_end"] = to_time(b.get("window_end"), t.get("window_end", "06:00"))
-            if "enabled" in b:
-                t["enabled"] = bool(b["enabled"])
-            save(c)
+            with CONF_LOCK:
+                c = load()
+                t = next((x for x in c["timelapses"] if x["id"] == m.group(1)), None)
+                if not t:
+                    raise KeyError(m.group(1))
+                if "name" in b:
+                    t["name"] = str(b["name"]).strip()[:60] or t["name"]
+                if "rtsp_url" in b and str(b["rtsp_url"]).strip():
+                    url = str(b["rtsp_url"]).strip()
+                    if not url.lower().startswith("rtsp://"):
+                        raise ValueError("adres musi zaczynać się od rtsp://")
+                    t["rtsp_url"] = url
+                if "transport" in b:
+                    t["transport"] = "udp" if str(b["transport"]) == "udp" else "tcp"
+                if "interval_sec" in b:
+                    t["interval_sec"] = to_int(b.get("interval_sec"), 5, 86400, t["interval_sec"])
+                if "render_time" in b:
+                    t["render_time"] = to_time(b.get("render_time"), t["render_time"])
+                if "render_fps" in b:
+                    t["render_fps"] = to_fps(b.get("render_fps"), t["render_fps"])
+                if "frame_days" in b:
+                    t["frame_days"] = to_int(b.get("frame_days"), 1, 365, t["frame_days"])
+                if "video_days" in b:
+                    t["video_days"] = to_int(b.get("video_days"), 0, 3650, t["video_days"])
+                if "capture_window" in b:
+                    t["capture_window"] = to_window(b.get("capture_window"), t.get("capture_window", "always"))
+                if "window_start" in b:
+                    t["window_start"] = to_time(b.get("window_start"), t.get("window_start", "20:00"))
+                if "window_end" in b:
+                    t["window_end"] = to_time(b.get("window_end"), t.get("window_end", "06:00"))
+                if "enabled" in b:
+                    t["enabled"] = bool(b["enabled"])
+                save(c)
             reconcile()
             return self.send(200, {"ok": True})
 
         if self.command == "DELETE" and m:
-            c = load()
-            before = len(c["timelapses"])
-            c["timelapses"] = [x for x in c["timelapses"] if x["id"] != m.group(1)]
-            if len(c["timelapses"]) == before:
-                raise KeyError(m.group(1))
-            save(c)
+            with CONF_LOCK:
+                c = load()
+                before = len(c["timelapses"])
+                c["timelapses"] = [x for x in c["timelapses"] if x["id"] != m.group(1)]
+                if len(c["timelapses"]) == before:
+                    raise KeyError(m.group(1))
+                save(c)
             reconcile()
             for base in (frames_root(), videos_root()):
                 shutil.rmtree(os.path.join(base, m.group(1)), ignore_errors=True)
