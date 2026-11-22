@@ -1,3 +1,15 @@
+## 1.2.0
+- **Wykrywanie osób przez zewnętrzny serwer [DOODS](https://github.com/snowzach/doods).**
+  Dodatek nie uruchamia ani nie konfiguruje samego DOODS — tylko wysyła do niego już
+  skonfigurowanego serwera każdą zwykłą, zaplanowaną klatkę i pyta, czy jest na niej osoba.
+  Jeśli tak, natychmiast łapie jedną dodatkową klatkę poza normalnym interwałem (nie
+  częściej niż raz na 20 s na timelapse, żeby osoba stojąca dłużej w kadrze nie zasypała
+  klatek niemal identycznymi ujęciami). Konfiguracja globalna (adres DOODS, detektor,
+  opcjonalny klucz autoryzacji, próg pewności) w nowej sekcji „Ustawienia” w panelu;
+  włączenie per-timelapse osobnym polem w formularzu dodawania/edycji. Brak odpowiedzi z
+  DOODS, błąd połączenia albo brak skonfigurowanego adresu nigdy nie przerywa ani nie
+  spowalnia zwykłego przechwytywania klatek — to czysty dodatek, nie zależność.
+
 ## 1.1.4
 - **Naprawa: czasem znikał cały skonfigurowany timelapse z panelu** (pojawiał się komunikat
   „Brak timelapse'ów — dodaj pierwszy powyżej”, mimo że był wcześniej dodany) — po chwili

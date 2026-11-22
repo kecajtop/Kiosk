@@ -85,6 +85,34 @@ powiadomienie (`persistent_notification`) — widoczne nawet, gdy nikt nie ma ak
 otwartego panelu dodatku. Powiadomienie samo się usuwa, gdy wolnego miejsca znowu
 przybędzie powyżej progu.
 
+## Wykrywanie osób (DOODS)
+
+Dodatek może wysyłać każdą złapaną klatkę do zewnętrznego serwera
+[DOODS](https://github.com/snowzach/doods) (Dedicated Open Object Detection Service) i, jeśli
+DOODS rozpozna na niej osobę, od razu złapać dodatkową klatkę — poza normalnym interwałem.
+Dodatek **nie uruchamia ani nie konfiguruje** samego DOODS — to osobny serwer, który trzeba
+mieć już działający (np. jako kontener Docker albo inny dodatek) i tylko wskazać jego adres.
+
+Konfiguracja (w panelu, sekcja „Ustawienia — wykrywanie osób”):
+
+- **Adres DOODS** — np. `http://192.168.1.50:8080`. Pusty adres = funkcja całkowicie
+  wyłączona, nawet jeśli dla danego timelapse'u zaznaczono „Wykrywanie osób”.
+- **Detektor** — nazwa detektora skonfigurowanego w DOODS (domyślnie `default`).
+- **Klucz autoryzacji** — opcjonalny, jeśli DOODS go wymaga (`auth_key`/`DOODS_AUTH_KEY`).
+- **Pewność (%)** — minimalny próg pewności wykrycia etykiety „person”, przekazywany wprost
+  do DOODS w zapytaniu.
+
+Dla konkretnego timelapse'u trzeba dodatkowo zaznaczyć pole „Wykrywanie osób” (przy dodawaniu
+albo w edycji) — dzięki temu można je włączyć tylko tam, gdzie ma to sens (np. podjazd), a
+zostawić wyłączone np. dla kamery z widokiem na krajobraz.
+
+Jak to działa: po każdej zwykłej, zaplanowanej klatce (nie po „Testuj teraz”) dodatek wysyła ją
+do DOODS. Jeśli DOODS zwróci wykrycie osoby, dodatek natychmiast łapie jedną dodatkową klatkę —
+ale nie częściej niż raz na 20 sekund na timelapse (żeby osoba stojąca dłużej w kadrze nie
+zasypała klatek niemal identycznymi ujęciami). Brak odpowiedzi z DOODS, błąd połączenia albo
+w ogóle brak skonfigurowanego adresu nigdy nie przerywa ani nie spowalnia zwykłego,
+zaplanowanego przechwytywania — to czysty dodatek, nie zależność.
+
 ## Testowanie i diagnostyka
 
 Przycisk „Testuj teraz” wymusza natychmiastowe przechwycenie jednej klatki (działa też,

@@ -15,6 +15,7 @@ szybko — bez twardego, sztywnego limitu, który i tak trzeba by było zgadywa�
 Panel (Ingress) pozwala dodawać/edytować/usuwać timelapse'y, podglądać ostatnią klatkę i log,
 wymuszać przechwycenie/render od ręki oraz przeglądać/pobierać/usuwać gotowe pliki mp4.
 """
+import base64
 import json
 import os
 import queue
@@ -45,7 +46,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.1.4"          # = version w config.yaml
+ADDON_VERSION = "1.2.0"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
@@ -73,6 +74,12 @@ def load():
         c = {}
     c.setdefault("timelapses", [])
     c.setdefault("storage_dir", DATA)
+    # Globalne ustawienia DOODS (jeden współdzielony serwer wykrywania dla wszystkich
+    # timelapse'ów - samo DOODS nie jest częścią tego dodatku, użytkownik uruchamia je osobno).
+    c.setdefault("doods_url", "")
+    c.setdefault("doods_detector", "default")
+    c.setdefault("doods_auth_key", "")
+    c.setdefault("doods_confidence", 50)
     return c
 
 
@@ -293,6 +300,60 @@ def capture_frame(rtsp_url, out_path, timeout=15, transport="tcp"):
             pass
 
 
+def _free_frame_path(fdir, ts):
+    """Zwraca ścieżkę "%010d.jpg" dla danego ts, a jeśli jest już zajęta (dodatkowe
+    przechwycenie po wykryciu osoby trafiło w tę samą sekundę co zwykłe), przesuwa się o
+    kolejne sekundy, żeby nie nadpisać istniejącej klatki."""
+    while True:
+        path = os.path.join(fdir, "%010d.jpg" % ts)
+        if not os.path.exists(path):
+            return path, ts
+        ts += 1
+
+
+# ------------------------------------------------------------------ wykrywanie osób (DOODS)
+# Integracja z DOODS (Dedicated Open Object Detection Service, github.com/snowzach/doods) -
+# osobnym, już działającym u użytkownika serwerem wykrywania obiektów. Ten dodatek go nie
+# uruchamia ani nie konfiguruje - tylko wysyła do niego już złapaną klatkę i pyta, czy jest
+# na niej osoba. Brak skonfigurowanego adresu albo jakikolwiek błąd połączenia z DOODS nigdy
+# nie przerywa zwykłego przechwytywania klatek - wykrywanie osób to czysty dodatek, nie
+# zależność.
+DOODS_COOLDOWN_SEC = 20   # nie częściej niż raz na tyle sekund na timelapse - inaczej osoba
+                          # stojąca dłużej w kadrze zasypałaby klatki niemal tym samym ujęciem
+_last_person_capture = {}
+_last_person_capture_lock = threading.Lock()
+
+
+def detect_person(cfg, jpeg_path):
+    """Wysyła klatkę JPEG do DOODS (POST /detect, patrz github.com/snowzach/doods) i zwraca
+    True, jeśli DOODS zwrócił wykrycie etykiety "person" (próg pewności ustawiony w samym
+    zapytaniu, w polu "detect")."""
+    url = (cfg.get("doods_url") or "").rstrip("/")
+    if not url:
+        return False
+    import urllib.request
+    try:
+        with open(jpeg_path, "rb") as f:
+            data = base64.b64encode(f.read()).decode("ascii")
+        conf = to_int(cfg.get("doods_confidence"), 1, 99, 50)
+        body = {
+            "detector_name": cfg.get("doods_detector") or "default",
+            "data": data,
+            "detect": {"person": conf},
+        }
+        if cfg.get("doods_auth_key"):
+            body["auth_key"] = cfg["doods_auth_key"]
+        req = urllib.request.Request(
+            url + "/detect", data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as r:
+            res = json.loads(r.read())
+        return any(d.get("label") == "person" for d in res.get("detections", []))
+    except Exception as e:
+        log("DOODS: zapytanie o wykrywanie osób nie powiodło się: %r" % e)
+        return False
+
+
 def capture_once(tid, t):
     fdir = os.path.join(frames_root(), tid)
     os.makedirs(fdir, exist_ok=True)
@@ -304,6 +365,29 @@ def capture_once(tid, t):
     except Exception as e:
         rt_set(tid, status="błąd przechwytywania")
         rt_log(tid, "przechwytywanie klatki nie powiodło się: %s" % scrub_creds(str(e), t.get("rtsp_url", "")))
+        return
+
+    if not t.get("person_detect"):
+        return
+    cfg = load()
+    if not cfg.get("doods_url"):
+        return
+    with _last_person_capture_lock:
+        last = _last_person_capture.get(tid, 0)
+        if time.time() - last < DOODS_COOLDOWN_SEC:
+            return
+    if detect_person(cfg, path):
+        with _last_person_capture_lock:
+            _last_person_capture[tid] = time.time()
+        rt_log(tid, "wykryto osobę (DOODS) — dodatkowe przechwycenie klatki")
+        extra_ts = int(time.time())
+        extra_path, extra_ts = _free_frame_path(fdir, extra_ts)
+        try:
+            capture_frame(t["rtsp_url"], extra_path, transport=t.get("transport", "tcp"))
+            rt_set(tid, status="działa", last_capture_ts=extra_ts)
+        except Exception as e:
+            rt_log(tid, "dodatkowe przechwycenie po wykryciu osoby nie powiodło się: %s" %
+                   scrub_creds(str(e), t.get("rtsp_url", "")))
 
 
 # --------------------------------------------------------------------------- renderowanie
@@ -714,18 +798,34 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"timelapses": load()["timelapses"], "version": ADDON_VERSION})
 
         if self.command == "GET" and path == "/api/settings":
-            return self.send(200, {"storage_dir": storage_dir()})
+            c = load()
+            return self.send(200, {
+                "storage_dir": storage_dir(),
+                "doods_url": c.get("doods_url", ""),
+                "doods_detector": c.get("doods_detector", "default"),
+                "doods_auth_key_set": bool(c.get("doods_auth_key")),
+                "doods_confidence": c.get("doods_confidence", 50),
+            })
 
         if self.command == "POST" and path == "/api/settings":
             b = self.body_json()
-            newdir = validate_storage_dir(b.get("storage_dir"))
             with CONF_LOCK:
                 c = load()
-                c["storage_dir"] = newdir
+                if "storage_dir" in b:
+                    newdir = validate_storage_dir(b.get("storage_dir"))
+                    c["storage_dir"] = newdir
+                    log("miejsce składowania zmienione na: %s (dotyczy nowych klatek/renderów - "
+                        "istniejące pliki zostają w starej lokalizacji)" % newdir)
+                if "doods_url" in b:
+                    c["doods_url"] = str(b["doods_url"]).strip().rstrip("/")
+                if "doods_detector" in b:
+                    c["doods_detector"] = str(b["doods_detector"]).strip() or "default"
+                if "doods_auth_key" in b and b["doods_auth_key"]:
+                    c["doods_auth_key"] = str(b["doods_auth_key"]).strip()
+                if "doods_confidence" in b:
+                    c["doods_confidence"] = to_int(b.get("doods_confidence"), 1, 99, 50)
                 save(c)
-            log("miejsce składowania zmienione na: %s (dotyczy nowych klatek/renderów - "
-                "istniejące pliki zostają w starej lokalizacji)" % newdir)
-            return self.send(200, {"ok": True, "storage_dir": newdir})
+            return self.send(200, {"ok": True, "storage_dir": c["storage_dir"]})
 
         if self.command == "GET" and path == "/api/diskspace":
             with DISK_LOCK:
@@ -765,6 +865,7 @@ class Handler(BaseHTTPRequestHandler):
                     "capture_window": to_window(b.get("capture_window"), "always"),
                     "window_start": to_time(b.get("window_start"), "20:00"),
                     "window_end": to_time(b.get("window_end"), "06:00"),
+                    "person_detect": bool(b.get("person_detect")),
                     "enabled": True,
                     "last_rendered_ts": 0,
                 })
@@ -859,6 +960,8 @@ class Handler(BaseHTTPRequestHandler):
                     t["window_start"] = to_time(b.get("window_start"), t.get("window_start", "20:00"))
                 if "window_end" in b:
                     t["window_end"] = to_time(b.get("window_end"), t.get("window_end", "06:00"))
+                if "person_detect" in b:
+                    t["person_detect"] = bool(b["person_detect"])
                 if "enabled" in b:
                     t["enabled"] = bool(b["enabled"])
                 save(c)

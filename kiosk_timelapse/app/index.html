@@ -65,6 +65,23 @@ przenieś je ręcznie i usuń stare, żeby nie zajmowały miejsca w dwóch miejs
 </div>
 
 <div class="card">
+<h2>Ustawienia — wykrywanie osób (DOODS)</h2>
+<div class="row">
+  <div class="field"><label>Adres DOODS</label><input id="durl" placeholder="http://192.168.1.50:8080" style="width:220px"></div>
+  <div class="field"><label>Detektor</label><input id="ddetector" placeholder="default" style="width:110px"></div>
+  <div class="field"><label>Klucz autoryzacji (opcjonalnie)</label><input id="dauth" type="password" placeholder="pozostaw puste, jeśli bez zmian" style="width:200px"></div>
+  <div class="field"><label>Pewność (%)</label><input id="dconf" type="number" value="50" min="1" max="99"></div>
+  <button id="dsave" style="align-self:flex-end">Zapisz</button>
+  <span id="dok" class="hint" style="color:var(--ok);display:none">✓ Zapisano</span>
+</div>
+<p class="hint">Wymaga osobno działającego serwera <a href="https://github.com/snowzach/doods" target="_blank" rel="noopener">DOODS</a>
+(ten dodatek go nie uruchamia). Po podaniu adresu włącz „Wykrywanie osób” przy wybranych timelapse'ach
+poniżej — po każdej zwykłej klatce zostanie ona wysłana do DOODS, a jeśli DOODS rozpozna na niej osobę,
+dodatek natychmiast złapie dodatkową klatkę (nie częściej niż raz na 20 s na timelapse). Brak
+odpowiedzi z DOODS nigdy nie przerywa zwykłego przechwytywania.</p>
+</div>
+
+<div class="card">
 <h2>Nowy timelapse</h2>
 <div class="row">
   <div class="field"><label>Nazwa</label><input id="nname" placeholder="np. Ogród" style="width:150px"></div>
@@ -88,6 +105,9 @@ przenieś je ręcznie i usuń stare, żeby nie zajmowały miejsca w dwóch miejs
     <div class="row" style="gap:4px;flex-wrap:nowrap">
       <input id="nwinstart" type="time" value="20:00"><input id="nwinend" type="time" value="06:00">
     </div>
+  </div>
+  <div class="field"><label>Wykrywanie osób</label>
+    <input type="checkbox" id="npersondetect" style="width:auto;margin-top:8px">
   </div>
   <button id="addbtn" style="align-self:flex-end">Dodaj</button>
 </div>
@@ -181,6 +201,9 @@ function buildRow(t){
         <input class="ewinstart" type="time"><input class="ewinend" type="time">
       </div>
     </div>
+    <div class="field"><label>Wykrywanie osób</label>
+      <input type="checkbox" class="epersondetect" style="width:auto;margin-top:8px">
+    </div>
     <button data-act="saveedit" style="align-self:flex-end">Zapisz edycję</button>
     <button data-act="canceledit" style="align-self:flex-end">Anuluj</button>`;
   l.appendChild(edit);
@@ -197,6 +220,7 @@ function buildRow(t){
     eframedays: edit.querySelector('.eframedays'), evideodays: edit.querySelector('.evideodays'),
     ecapwindow: edit.querySelector('.ecapwindow'), ewinstart: edit.querySelector('.ewinstart'),
     ewinend: edit.querySelector('.ewinend'), ewindowrange: edit.querySelector('.ewindowrange'),
+    epersondetect: edit.querySelector('.epersondetect'),
   };
   entry.ecapwindow.onchange=()=>{ entry.ewindowrange.style.display = entry.ecapwindow.value==='time_range' ? '' : 'none'; };
   row.querySelectorAll('button').forEach(b=>b.onclick=()=>act(b.dataset.act, t.id, entry));
@@ -228,7 +252,7 @@ function render(){
     e.url.textContent=maskUrl(t.rtsp_url);
     const winLabel={always:'zawsze', time_range:t.window_start+'–'+t.window_end, night:'noc', day:'dzień'}[t.capture_window]||'zawsze';
     e.meta.textContent='co '+t.interval_sec+'s ('+winLabel+') · render o '+t.render_time+' · '+t.render_fps+' kl./s wideo · '+
-      st.frame_count+' klatek · ostatnia: '+fmtTs(st.last_capture_ts);
+      st.frame_count+' klatek · ostatnia: '+fmtTs(st.last_capture_ts)+(t.person_detect?' · 🧍 wykrywanie osób':'');
     e.img.src='api/snapshot/'+t.id+'?t='+Date.now();
     e.pauseBtn.textContent=paused||!t.enabled?'Wznów':'Pauza';
     e.ename.value=t.name; e.eurl.value=t.rtsp_url; e.etransport.value=t.transport;
@@ -236,6 +260,7 @@ function render(){
     e.eframedays.value=t.frame_days; e.evideodays.value=t.video_days;
     e.ecapwindow.value=t.capture_window||'always'; e.ewinstart.value=t.window_start||'20:00'; e.ewinend.value=t.window_end||'06:00';
     e.ewindowrange.style.display = e.ecapwindow.value==='time_range' ? '' : 'none';
+    e.epersondetect.checked=!!t.person_detect;
   }
   for(const [id, e] of [...rows]) if(!seen.has(id)){
     e.row.remove(); e.edit.remove(); e.pre.remove(); e.vids.remove(); rows.delete(id); editingIds.delete(id);
@@ -286,7 +311,8 @@ async function act(a,id,e){
         name: e.ename.value.trim(), rtsp_url: e.eurl.value.trim(), transport: e.etransport.value,
         interval_sec: +e.einterval.value, render_time: e.erendertime.value,
         render_fps: +e.efps.value, frame_days: +e.eframedays.value, video_days: +e.evideodays.value,
-        capture_window: e.ecapwindow.value, window_start: e.ewinstart.value, window_end: e.ewinend.value
+        capture_window: e.ecapwindow.value, window_start: e.ewinstart.value, window_end: e.ewinend.value,
+        person_detect: e.epersondetect.checked
       });
       editingIds.delete(id);
       await load();
@@ -300,9 +326,10 @@ $('addbtn').onclick=async()=>{
       name:$('nname').value.trim(), rtsp_url:$('nurl').value.trim(), transport:$('ntransport').value,
       interval_sec:+$('ninterval').value, render_time:$('nrendertime').value, render_fps:+$('nfps').value,
       frame_days:+$('nframedays').value, video_days:+$('nvideodays').value,
-      capture_window:$('ncapwindow').value, window_start:$('nwinstart').value, window_end:$('nwinend').value
+      capture_window:$('ncapwindow').value, window_start:$('nwinstart').value, window_end:$('nwinend').value,
+      person_detect:$('npersondetect').checked
     });
-    $('nname').value=''; $('nurl').value='';
+    $('nname').value=''; $('nurl').value=''; $('npersondetect').checked=false;
     await load();
   }catch(e){ alert(e.message); }
 };
@@ -318,6 +345,9 @@ async function loadSettings(){
   }else{
     $('sdirpreset').value='custom'; $('sdircustomwrap').style.display=''; $('sdircustom').value=s.storage_dir;
   }
+  $('durl').value=s.doods_url||''; $('ddetector').value=s.doods_detector||'default';
+  $('dconf').value=s.doods_confidence||50;
+  $('dauth').placeholder=s.doods_auth_key_set?'ustawiony - pozostaw puste, żeby nie zmieniać':'pozostaw puste, jeśli bez autoryzacji';
 }
 $('sdirpreset').onchange=()=>{ $('sdircustomwrap').style.display = $('sdirpreset').value==='custom' ? '' : 'none'; };
 $('sdirsave').onclick=async()=>{
@@ -326,6 +356,16 @@ $('sdirsave').onclick=async()=>{
     await api('api/settings','POST',{storage_dir:dir});
     const ok=$('sdirok'); ok.style.display='inline'; clearTimeout(ok._t); ok._t=setTimeout(()=>ok.style.display='none', 4000);
     loadDisk();
+  }catch(e){ alert(e.message); }
+};
+$('dsave').onclick=async()=>{
+  try{
+    const body={doods_url:$('durl').value.trim(), doods_detector:$('ddetector').value.trim(), doods_confidence:+$('dconf').value};
+    if($('dauth').value.trim()) body.doods_auth_key=$('dauth').value.trim();
+    await api('api/settings','POST',body);
+    $('dauth').value='';
+    const ok=$('dok'); ok.style.display='inline'; clearTimeout(ok._t); ok._t=setTimeout(()=>ok.style.display='none', 4000);
+    loadSettings();
   }catch(e){ alert(e.message); }
 };
 function fmtGB(bytes){ return (bytes/1e9).toFixed(1)+' GB'; }
