@@ -1,3 +1,24 @@
+## 1.6.2
+- **Naprawa: cała przeglądarka wisła po przełączeniu strony w „Prawdziwym LVGL"
+  (nie tylko po pierwszym otwarciu, ale od DRUGIEGO renderu).** Sterownik
+  wyświetlacza w `wasm/interpreter.c` miał `flush_cb` ustawione na `NULL` — LVGL
+  normalnie czeka, aż sterownik potwierdzi (`lv_display_flush_ready`) skopiowanie
+  klatki na ekran, zanim zacznie następne odświeżenie (na prawdziwym sprzęcie to
+  przychodzi z przerwania DMA). Bez tego potwierdzenia **pierwszy** render działał
+  (nic wcześniej nie czekało), ale **każdy kolejny** — czyli każda zmiana strony,
+  każda edycja widgetu — wisiał w nieskończoność w `lv_refr_now()`, blokując cały
+  wątek główny przeglądarki (stąd realne zawieszenie karty/okna, nie tylko
+  komponentu). Naprawione przez `flush_cb`, który woła `lv_display_flush_ready()`
+  natychmiast (bo tu nie ma żadnego faktycznego transferu do poczekania na niego —
+  bufor czytany jest wprost z pamięci WASM).
+  - Zweryfikowane end-to-end na realnym pliku urządzenia z wieloma stronami i
+    widgetami (meter, buttonmatrix, spinbox, style_definitions) — dwa pełne
+    przejścia po wszystkich stronach, każdy render < 1s, zero błędów; osobny test
+    obciążeniowy: 200 renderów pod rząd w ~70ms bez spowolnienia czy wycieku.
+- Nowy skrypt diagnostyczny `scripts/extract-scenes.ts` — zrzuca JSON „scen”
+  (bez przeglądarki) dla każdej strony danego pliku YAML, do szybkiej diagnozy
+  podobnych problemów w przyszłości bez klikania w całej aplikacji.
+
 ## 1.6.1
 - **Naprawa: edytor wisnie/zawiesza się (biały ekran) po wczytaniu YAML, w którym
   widget ma `styles: [nazwa_stylu]` zapisane jako lista** (ESPHome dopuszcza zarówno

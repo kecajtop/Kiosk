@@ -22,6 +22,13 @@ przeglądarce użytkownika - bez instalowania czegokolwiek, bez przebudowy ESPHo
    kolejność kanałów `lv_color32_t` (B,G,R,A) na RGBA, gotowe do `ImageData`.
 4. `src/components/RealLvglPreview.tsx` - rysuje ten `ImageData` na `<canvas>`.
 
+**Ważne przy modyfikacji `interpreter.c`:** `flush_cb` przekazany do
+`lv_display_set_flush_cb()` MUSI wołać `lv_display_flush_ready()` (nawet jeśli nic
+nie robi poza tym - nie ma tu żadnego prawdziwego transferu do poczekania na niego).
+Bez tego pierwszy `lv_preview_render()` działa normalnie, ale KAŻDY następny wisi w
+nieskończoność w `lv_refr_now()`/`lv_timer_handler()`, blokując cały wątek główny
+przeglądarki (1.6.2 naprawiła dokładnie to - `flush_cb` było `NULL`).
+
 Dzięki temu nie trzeba kompilować C przy każdej edycji (co trwałoby zbyt długo na
 podgląd na żywo) - kompiluje się tylko generyczny "interpreter" raz, a każda zmiana
 w edytorze to tylko nowy JSON + jedno wywołanie render().

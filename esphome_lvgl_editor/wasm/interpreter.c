@@ -238,6 +238,22 @@ static void build_node(lv_obj_t *parent, cJSON *node) {
 
 /* -------------------------------------------------------------------------- API dla JS */
 
+/*
+ * LVGL czeka, aż sterownik wyświetlacza "potwierdzi" skopiowanie ramki na ekran
+ * (lv_display_flush_ready) zanim zacznie kolejne odświeżenie - na prawdziwym
+ * sprzęcie to potwierdzenie przychodzi z przerwania DMA po zakończeniu transferu.
+ * Tutaj nie ma żadnego transferu - bufor czytamy wprost z pamięci WASM w JS - więc
+ * potwierdzamy natychmiast. Bez tego pierwsze lv_refr_now() działa (nic wcześniej
+ * nie czekało), ale KAŻDE następne wywołanie lv_preview_render() wisi w nieskończoność
+ * w lv_refr_now()/lv_timer_handler(), czekając na potwierdzenie flusha, które nigdy
+ * nie przychodzi (flush_cb był NULL - żadna funkcja go nie wołała).
+ */
+static void flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+    (void)area;
+    (void)px_map;
+    lv_display_flush_ready(disp);
+}
+
 EMSCRIPTEN_KEEPALIVE
 void lv_preview_init(int32_t width, int32_t height) {
     lv_init();
@@ -249,8 +265,9 @@ void lv_preview_init(int32_t width, int32_t height) {
 
     g_disp = lv_display_create(width, height);
     lv_display_set_buffers(g_disp, g_draw_buf, NULL, (uint32_t)buf_size, LV_DISPLAY_RENDER_MODE_FULL);
-    /* Brak prawdziwego ekranu - nic nie trzeba "wysyłać" przy flush, bufor czytamy wprost z WASM. */
-    lv_display_set_flush_cb(g_disp, NULL);
+    /* Brak prawdziwego ekranu - nic nie trzeba "wysyłać" przy flush, bufor czytamy wprost z WASM -
+       ale flush_cb MUSI istnieć i wołać lv_display_flush_ready(), patrz komentarz przy flush_cb. */
+    lv_display_set_flush_cb(g_disp, flush_cb);
     lv_display_set_default(g_disp);
 }
 
