@@ -34,7 +34,7 @@ export interface BaseWidget {
   opacity?: number;
   hidden?: boolean;
   align?: string;
-  styles?: string;
+  styles?: string | string[]; // ESPHome accepts a single id, a space-separated string, or a YAML list
   text_font?: string;
   text_align?: string;
   text_letter_space?: number;

@@ -4,6 +4,7 @@ import { useEditorStore } from '../store/editorStore';
 import { parseHexColor, colorToRgb, parseOpacity } from '../utils/colorUtils';
 import { getFontRegistry } from '../utils/fontRegistry';
 import { measurePreviewText, resolvePreviewFont } from '../utils/textMetrics';
+import { normalizeStyleNames } from '../utils/yamlConverter';
 
 interface CanvasWidgetProps {
   widget: Widget;
@@ -65,8 +66,8 @@ export const CanvasWidget: React.FC<CanvasWidgetProps> = ({ widget, isSelected, 
   // Get applied styles from style_definitions
   const getAppliedStyles = () => {
     if (!widget.styles || !config.style_definitions) return {};
-    
-    const styleNames = widget.styles.split(' ');
+
+    const styleNames = normalizeStyleNames(widget.styles);
     let appliedStyles: any = {};
     
     styleNames.forEach(styleName => {
@@ -82,7 +83,7 @@ export const CanvasWidget: React.FC<CanvasWidgetProps> = ({ widget, isSelected, 
   const getMergedStylesForWidget = (targetWidget: Widget) => {
     if (!targetWidget.styles || !config.style_definitions) return {} as any;
 
-    const styleNames = targetWidget.styles.split(' ');
+    const styleNames = normalizeStyleNames(targetWidget.styles);
     const mergedStyles: any = {};
 
     styleNames.forEach(styleName => {

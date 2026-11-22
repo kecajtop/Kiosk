@@ -1,3 +1,16 @@
+## 1.6.1
+- **Naprawa: edytor wisnie/zawiesza się (biały ekran) po wczytaniu YAML, w którym
+  widget ma `styles: [nazwa_stylu]` zapisane jako lista** (ESPHome dopuszcza zarówno
+  `styles: nazwa`, `styles: "a b"`, jak i `styles: [a, b]` — importer zachowywał
+  oryginalny kształt, ale kod renderujący podglądy (zwykły i „Prawdziwy LVGL") zakładał
+  zawsze zwykły string i wołał na nim `.split(' ')`, co dla listy wyrzucało wyjątek i
+  wysypywało cały interfejs (stąd wrażenie zawieszenia — aplikacja nie zamrażała się,
+  tylko ubijał się komponent bez żadnego komunikatu). Naprawione przez użycie jednej,
+  już istniejącej w kodzie funkcji normalizującej wszystkie trzy zapisy do tablicy,
+  konsekwentnie w obu miejscach renderowania.
+- Przy tej samej okazji: typ `styles` w widgetach poprawiony na `string | string[]`,
+  zgodnie z tym, co faktycznie może tam wylądować po imporcie YAML.
+
 ## 1.6.0
 - **Prawdziwy podgląd LVGL (krok 2 z 2 — kontynuacja 1.5.0).** Nowy przycisk w pasku
   narzędzi, **„Prawdziwy LVGL”**, pokazuje aktualną stronę wyrenderowaną przez

@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 .tmp-roundtrip
+.tmp-fixtures
 *.local
 
 # wasm/ - "silnik" prawdziwego podglądu LVGL (patrz wasm/README.md):

@@ -9,6 +9,7 @@
 import { LVGLConfig, Widget } from '../types/widgets';
 import { getFontRegistry } from './fontRegistry';
 import { parseHexColor, colorToRgb } from './colorUtils';
+import { normalizeStyleNames } from './yamlConverter';
 
 const SUPPORTED_FONT_SIZES = [12, 14, 16, 20, 24, 28, 32, 36, 40, 48];
 
@@ -63,7 +64,7 @@ export interface PreviewScene {
 
 function mergedStyles(widget: Widget, config: LVGLConfig): Record<string, any> {
   if (!(widget as any).styles || !config.style_definitions) return {};
-  const names = String((widget as any).styles).split(' ');
+  const names = normalizeStyleNames((widget as any).styles);
   const merged: Record<string, any> = {};
   names.forEach(name => {
     const def = config.style_definitions?.find(s => s.id === name);

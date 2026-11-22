@@ -464,7 +464,7 @@ const resolveDimension = (
 // ESPHome's `styles:` property on an lvgl widget accepts either a single
 // style id as a string ("my_style"), a space-separated string of several
 // ("a b"), or a YAML list ([a, b]) — normalize all three to a plain array.
-const normalizeStyleNames = (styleNames: string | string[] | undefined): string[] => {
+export const normalizeStyleNames = (styleNames: string | string[] | undefined): string[] => {
   if (!styleNames) return [];
   if (Array.isArray(styleNames)) {
     return styleNames.filter((name): name is string => typeof name === 'string' && name.length > 0);
