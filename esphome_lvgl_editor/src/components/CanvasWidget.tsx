@@ -705,18 +705,31 @@ export const CanvasWidget: React.FC<CanvasWidgetProps> = ({ widget, isSelected, 
     const fontEntry = effectiveTextFont ? fontRegistry.get(effectiveTextFont) : undefined;
     const usesIconFont = Boolean(fontEntry?.hasIcons);
 
+    // Domyślne wartości motywu LVGL (lv_theme_default), stosowane TYLKO gdy widget/styl nie
+    // ustawia danej właściwości jawnie. To przybliżenie prawdziwego motywu (dokładne wartości
+    // zależą m.in. od zadeklarowanego rozmiaru wyświetlacza w ESPHome) - docelowo zastąpi to
+    // prawdziwy render LVGL (WASM), ale już teraz usuwa najbardziej mylące różnice: w
+    // prawdziwym LVGL zwykły kontener (`obj`) NIE jest niewidzialny (ma jasne, nieprzezroczyste
+    // tło), a domyślny tekst jest ciemny, nie biały - białe litery na niewidzialnym tle (jak
+    // dotychczas) są w praktyce niewidoczne, więc edytor wygląda zupełnie inaczej niż urządzenie.
+    const BOX_LIKE_TYPES = new Set(['obj', 'msgbox']);
+    const LIGHT_TEXT_ON_DEFAULT_BG_TYPES = new Set(['button']); // mają domyślnie kolorowe (niebieskie) tło -> biały tekst ma sens
+    const ROUNDED_BY_DEFAULT_TYPES = new Set(['obj', 'msgbox', 'button', 'bar', 'dropdown', 'textarea', 'spinbox']);
+
     // Parse colors
-    const bgColorStr = effectiveBgColor 
+    const bgColorStr = effectiveBgColor
       ? (typeof effectiveBgColor === 'object' ? colorToRgb(effectiveBgColor) : parseHexColor(effectiveBgColor))
-      : 'transparent';
-    
+      : (BOX_LIKE_TYPES.has(widget.type) ? '#ffffff' : 'transparent');
+
     const textColorStr = effectiveTextColor
       ? (typeof effectiveTextColor === 'object' ? colorToRgb(effectiveTextColor) : parseHexColor(effectiveTextColor))
-      : '#ffffff';
-    
+      : (LIGHT_TEXT_ON_DEFAULT_BG_TYPES.has(widget.type) ? '#ffffff' : '#1a1a2e');
+
     const borderColorStr = effectiveBorderColor
       ? (typeof effectiveBorderColor === 'object' ? colorToRgb(effectiveBorderColor) : parseHexColor(effectiveBorderColor))
       : '#555';
+
+    const radiusPx = effectiveRadius ?? (ROUNDED_BY_DEFAULT_TYPES.has(widget.type) ? 8 : 0);
 
     // Handle gradient
     let backgroundStyle = bgColorStr;
@@ -733,8 +746,8 @@ export const CanvasWidget: React.FC<CanvasWidgetProps> = ({ widget, isSelected, 
     const commonStyle: React.CSSProperties = {
       backgroundColor: bgColorStr,
       background: backgroundStyle,
-      borderRadius: effectiveRadius ? `${effectiveRadius}px` : '0px',
-      border: effectiveBorderWidth 
+      borderRadius: `${radiusPx}px`,
+      border: effectiveBorderWidth
         ? `${effectiveBorderWidth}px solid ${borderColorStr}`
         : 'none',
       opacity: effectiveBgOpa ? parseOpacity(effectiveBgOpa) : 1,
@@ -1392,7 +1405,7 @@ export const CanvasWidget: React.FC<CanvasWidgetProps> = ({ widget, isSelected, 
                       background: 'rgba(255,255,255,0.06)',
                       backgroundColor: 'transparent',
                       border: '1px solid rgba(0,0,0,0.08)',
-                      borderRadius: effectiveRadius ? `${effectiveRadius}px` : '0px',
+                      borderRadius: effectiveRadius ? `${effectiveRadius}px` : '4px',
                       padding: '3px 6px',
                       minWidth: 0,
                       fontSize: `${matrixFontPx}px`,

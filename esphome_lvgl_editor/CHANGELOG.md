@@ -1,3 +1,23 @@
+## 1.5.0
+- **Poprawiona trafność podglądu względem prawdziwego LVGL (pierwszy krok — pełna naprawa
+  to osobny, większy projekt: prawdziwy render przez skompilowany LVGL/WebAssembly).**
+  Dotychczas podgląd miał trzy duże rozjazdy z tym, jak naprawdę wygląda to na urządzeniu:
+  - zwykły kontener (`obj`) bez jawnie ustawionego `bg_color` renderował się jako
+    **całkowicie niewidzialny** (przezroczyste tło) — w prawdziwym LVGL (motyw domyślny)
+    kontener ma nieprzezroczyste, jasne tło i jest widoczny,
+  - tekst bez jawnie ustawionego `text_color` renderował się na **biało** — w motywie
+    domyślnym LVGL tekst jest domyślnie ciemny; biały tekst na (dotychczas niewidzialnym,
+    jasnym) tle był w praktyce nieczytelny,
+  - prawie wszystkie widgety (kontenery, przyciski, paski, rozwijane listy, pola tekstowe)
+    renderowały się z **ostrymi, kwadratowymi rogami** (promień 0), mimo że zaokrąglone rogi
+    to jeden z charakterystycznych elementów domyślnego motywu LVGL.
+
+  Te trzy wartości to najbardziej pewne, dobrze znane fakty o domyślnym motywie LVGL —
+  dokładne liczby (promień w pikselach zależy m.in. od zadeklarowanego rozmiaru wyświetlacza
+  w ESPHome) to nadal przybliżenie, nie 1:1 odwzorowanie. Pełne, dokładne „piksel w piksel”
+  rozwiązanie wymaga uruchomienia prawdziwej, skompilowanej biblioteki LVGL (WebAssembly) —
+  to osobny, większy projekt, zaplanowany jako kolejny krok.
+
 ## 1.4.0
 
 - **Naprawa: pusty ekran po otwarciu dodatku.** Strona ładowała się przez Ingress Home Assistant pod
