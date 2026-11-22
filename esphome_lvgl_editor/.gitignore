@@ -13,6 +13,16 @@ dist-ssr
 .tmp-roundtrip
 *.local
 
+# wasm/ - "silnik" prawdziwego podglądu LVGL (patrz wasm/README.md):
+# - vendor/ to ~22M ściąganego źródła LVGL + cJSON, odtwarzane przez ./fetch_vendor.sh -
+#   nie trzymamy tego w git.
+# - dist/lvgl_preview.js (i jego kopia w src/wasm/) to natomiast skompilowany artefakt,
+#   który JEST commitowany (działa w przeglądarce użytkownika, nie wymaga Emscriptenu
+#   w pipeline addonu) - stąd wyjątek od ogólnej reguły "dist" powyżej.
+wasm/vendor/
+!wasm/dist
+!wasm/dist/**
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

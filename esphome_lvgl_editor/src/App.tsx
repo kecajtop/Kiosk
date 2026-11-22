@@ -3,6 +3,7 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { WidgetPalette } from './components/WidgetPalette';
 import { Canvas } from './components/Canvas';
+import { RealLvglPreview } from './components/RealLvglPreview';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { CodeEditor } from './components/CodeEditor';
 import { Toolbar } from './components/Toolbar';
@@ -19,6 +20,7 @@ type ViewMode = 'visual' | 'code' | 'split';
 function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('visual');
   const [showStylesPanel, setShowStylesPanel] = useState(false);
+  const [showRealPreview, setShowRealPreview] = useState(false);
   const { showPageTree } = useEditorStore();
   
   // Enable keyboard shortcuts
@@ -34,7 +36,13 @@ function App() {
         color: '#fff',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
       }}>
-        <Toolbar viewMode={viewMode} onViewModeChange={setViewMode} onShowStylesPanel={() => setShowStylesPanel(!showStylesPanel)} />
+        <Toolbar
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onShowStylesPanel={() => setShowStylesPanel(!showStylesPanel)}
+          showRealPreview={showRealPreview}
+          onToggleRealPreview={() => setShowRealPreview(!showRealPreview)}
+        />
         <PageSelector />
         
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
@@ -46,7 +54,7 @@ function App() {
             <>
               {showPageTree && <PageTree />}
               <WidgetPalette />
-              <Canvas />
+              {showRealPreview ? <RealLvglPreview /> : <Canvas />}
               <PropertiesPanel />
               <WidgetIdList />
             </>

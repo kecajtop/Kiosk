@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Save, Upload, Download, Monitor, Code, Eye, FileJson, Clipboard, Undo, Redo, Layers, List, AlertTriangle, Info, AlertCircle, X } from 'lucide-react';
+import { Save, Upload, Download, Monitor, Code, Eye, FileJson, Clipboard, Undo, Redo, Layers, List, AlertTriangle, Info, AlertCircle, X, Scan } from 'lucide-react';
 import { useEditorStore } from '../store/editorStore';
 import { configToPagesYaml, parseFullESPHomeFile, reconstructFullESPHomeYaml } from '../utils/yamlConverter';
 import { DISPLAY_PRESETS } from '../config/widgetConfigs';
@@ -11,9 +11,11 @@ interface ToolbarProps {
   viewMode: 'visual' | 'code' | 'split';
   onViewModeChange: (mode: 'visual' | 'code' | 'split') => void;
   onShowStylesPanel?: () => void;
+  showRealPreview?: boolean;
+  onToggleRealPreview?: () => void;
 }
 
-export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, onShowStylesPanel }) => {
+export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, onShowStylesPanel, showRealPreview, onToggleRealPreview }) => {
   const { config, loadConfig, displaySize, previewScale, setDisplaySize, setPreviewScale, undo, redo, canUndo, canRedo, snapToGrid, setSnapToGrid, previewMode, setPreviewMode, showPageTree, setShowPageTree, rawEsphomeYaml, setRawEsphomeYaml, lastImportIssues, setLastImportIssues, setOpenEsphomePath, setOpenEsphomeOriginalContent, saveVersion } = useEditorStore();
   const [displayPreset, setDisplayPreset] = useState<keyof typeof DISPLAY_PRESETS>('ESP32-2432S028');
   const [showPasteModal, setShowPasteModal] = useState(false);
@@ -409,6 +411,28 @@ export const Toolbar: React.FC<ToolbarProps> = ({ viewMode, onViewModeChange, on
           <Eye size={16} />
           {previewMode ? 'Exit Preview' : 'Preview'}
         </button>
+
+        {onToggleRealPreview && (
+          <button
+            onClick={onToggleRealPreview}
+            title="Pokaż jak strona wygląda w prawdziwej bibliotece LVGL (WebAssembly), nie w przybliżeniu CSS"
+            style={{
+              backgroundColor: showRealPreview ? '#007acc' : '#444',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '4px',
+              padding: '8px 12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '14px'
+            }}
+          >
+            <Scan size={16} />
+            {showRealPreview ? 'Wróć do edycji' : 'Prawdziwy LVGL'}
+          </button>
+        )}
 
         <button
           onClick={() => setShowPageTree(!showPageTree)}

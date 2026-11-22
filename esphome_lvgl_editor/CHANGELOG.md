@@ -1,3 +1,19 @@
+## 1.6.0
+- **Prawdziwy podgląd LVGL (krok 2 z 2 — kontynuacja 1.5.0).** Nowy przycisk w pasku
+  narzędzi, **„Prawdziwy LVGL”**, pokazuje aktualną stronę wyrenderowaną przez
+  **prawdziwą, skompilowaną do WebAssembly bibliotekę LVGL** (v9.1), a nie przez
+  przybliżenie CSS z widoku edycji. Działa całkowicie w przeglądarce — bez instalacji
+  czegokolwiek, bez przebudowy ESPHome, bez wysyłania niczego na serwer.
+  - To widok tylko-do-podglądu w tej wersji: nie da się w nim jeszcze przeciągać/edytować
+    widgetów — edycja zostaje w zwykłym widoku.
+  - Zakres v1: obsługiwane typy — `obj, label, button, bar, slider, switch, checkbox,
+    arc, led, dropdown, roller, textarea`. Jeszcze nieobsługiwane: `meter, spinner,
+    image, msgbox`, pełny `buttonmatrix`, pełny `spinbox`. Widgety/właściwości spoza tej
+    listy są pomijane po cichu (prawdziwy podgląd pokaże wtedy mniej niż CSS-owy) —
+    pełny opis w `wasm/README.md`.
+  - Dla deweloperów: `wasm/README.md` opisuje architekturę i instrukcję przebudowy
+    silnika WASM.
+
 ## 1.5.0
 - **Poprawiona trafność podglądu względem prawdziwego LVGL (pierwszy krok — pełna naprawa
   to osobny, większy projekt: prawdziwy render przez skompilowany LVGL/WebAssembly).**
