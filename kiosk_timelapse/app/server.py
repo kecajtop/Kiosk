@@ -45,7 +45,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.1.2"          # = version w config.yaml
+ADDON_VERSION = "1.1.3"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
@@ -259,8 +259,14 @@ def capture_frame(rtsp_url, out_path, timeout=15, transport="tcp"):
     tmp = out_path + ".tmp"
     try:
         p = subprocess.run(
+            # "-f mjpeg" wymusza format wyjścia wprost - bez tego ffmpeg zgaduje go z
+            # rozszerzenia pliku, a plik tymczasowy kończy się na ".tmp" (nie ".jpg"), co
+            # ffmpeg nie rozpoznaje jako żaden znany format i wywala się "Error initializing
+            # the muxer... Invalid argument" (widoczne tylko wtedy, gdy ffmpeg w ogóle
+            # zdołał się połączyć ze strumieniem - inaczej ten błąd był zasłonięty przez
+            # wcześniejszy błąd połączenia).
             ["ffmpeg", "-y", "-rtsp_transport", transport, "-i", rtsp_url,
-             "-frames:v", "1", "-q:v", "3", tmp],
+             "-frames:v", "1", "-q:v", "3", "-f", "mjpeg", tmp],
             capture_output=True, timeout=timeout)
         if p.returncode != 0 or not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
             raise RuntimeError(_ffmpeg_err(p.stderr) or "brak klatki")

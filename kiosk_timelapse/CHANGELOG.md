@@ -1,3 +1,21 @@
+## 1.1.3
+- **Naprawa: przechwytywanie klatki kończyło się „Error initializing the muxer... Invalid
+  argument” po tym, jak ffmpeg w ogóle zdołał się połączyć ze strumieniem RTSP.** Plik
+  tymczasowy, do którego ffmpeg zapisuje klatkę, kończył się na `.jpg.tmp` — a ffmpeg bez
+  wprost podanego formatu zgaduje go z rozszerzenia pliku, więc `.tmp` (nieznane mu
+  rozszerzenie) powodowało ten błąd. Wcześniej był on niewidoczny, bo w typowych
+  zgłoszeniach ffmpeg nie docierał nawet tak daleko (padał już na samym połączeniu RTSP —
+  „Host is unreachable” itp.) — dopiero po naprawieniu dostępu do sieci (1.1.0/1.1.2) ten
+  drugi, zasłonięty błąd się odkrył. Naprawione: format wyjścia jest teraz podawany wprost
+  (`-f mjpeg`), niezależnie od rozszerzenia pliku tymczasowego.
+- **Naprawa: odświeżanie podglądu listy przerywało edycję na telefonie, mimo że ochrona w
+  JS (`editingIds`) wyglądała poprawnie i w ogóle nie wykonywała żadnego odświeżania w
+  trakcie edycji.** Prawdziwa przyczyna: natywny gest przeglądarki mobilnej „przeciągnij,
+  żeby odświeżyć” — przewinięcie do samego początku strony i pociągnięcie w dół powoduje
+  PRAWDZIWE przeładowanie całej strony przez przeglądarkę, co nie ma nic wspólnego z
+  własnym odświeżaniem co 5 s w JS i nie dało się tego naprawić żadną poprawką samego JS.
+  Naprawione przez `overscroll-behavior: contain` w CSS, które wyłącza ten gest.
+
 ## 1.1.2
 - **Port panelu zmieniony z 8097 na 18097.** Retry z 1.1.1 nie pomaga, gdy port jest zajęty
   trwale, nie tylko na chwilę po restarcie — zgłoszenie użytkownika pokazało właśnie taki

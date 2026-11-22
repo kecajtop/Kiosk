@@ -1,3 +1,17 @@
+## 1.4.1
+- **Kolejna próba naprawy: odświeżanie podglądu listy przerywało edycję na telefonie**,
+  mimo że ochrona w JS (`editingIds`) jest poprawna i podczas edycji w ogóle nie wykonuje
+  żadnego odświeżania (ani pojedynczych pól, ani całego cyklu). To zgłoszenie wracało już
+  kilka razy (1.2.1, 1.3.0, 1.3.1, 1.4.0), każdy raz poprawiane na poziomie JS — tym razem
+  podejrzenie jest inne: natywny gest przeglądarki mobilnej „przeciągnij, żeby odświeżyć”.
+  Przewinięcie do samego początku strony i pociągnięcie w dół (np. przy próbie dotarcia do
+  formularza na górze listy) wywołuje PRAWDZIWE przeładowanie całej strony przez
+  przeglądarkę — co nie ma nic wspólnego z naszym JS i nie dało się tego naprawić żadną
+  poprawką samego JS, bo przeglądarka robi to na poziomie niżej. Dodano
+  `overscroll-behavior: contain`, które wyłącza ten gest. To nowa hipoteza, nie
+  potwierdzona jeszcze przez użytkownika — warto sprawdzić, czy problem faktycznie teraz
+  ustąpił.
+
 ## 1.4.0
 - **Automatyczne ukrywanie górnego paska HA** (zegar, nazwa widoku, przyciski odświeżania
   i menu) — oprócz już ukrywanego paska bocznego. W odróżnieniu od paska bocznego, pasek
