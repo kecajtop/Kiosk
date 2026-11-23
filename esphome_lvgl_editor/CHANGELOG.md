@@ -1,3 +1,31 @@
+## 1.6.3
+- **„Prawdziwy LVGL" obsługuje teraz widget `meter`** (zegary, manometry, obrotomierze —
+  wszystko z tarczą i wskazówką). Zgłoszenie: podgląd dalej „nic nie pokazywał" mimo
+  naprawy zawieszenia w 1.6.2 — przyczyna była inna: `meter` w ogóle nie był na liście
+  obsługiwanych widgetów (`SUPPORTED_TYPES`), więc serializer po cichu go pomijał —
+  strona składająca się głównie/wyłącznie z `meter` (jak w załączonym pliku urządzenia:
+  `meter_page`, zegar na `clock_page`) wychodziła więc pusta, mimo że zwykły CSS-owy
+  podgląd pokazywał ją poprawnie.
+  - LVGL v9 usunęło stary widget `lv_meter` na rzecz `lv_scale` (ESPHome tłumaczy
+    `meter:` na `lv_scale` pod spodem) — `wasm/interpreter.c` robi teraz to samo:
+    `lv_scale_create` w trybie `LV_SCALE_MODE_ROUND_INNER`, zakres/kąt/obrót z pierwszej
+    skali (`range_from`/`range_to`/`angle_range`/`rotation`), zwykłe i duże podziałki
+    (`ticks`/`ticks.major`, ze stylami przez `LV_PART_ITEMS`/`LV_PART_INDICATOR`) i jedna
+    wskazówka-linia (`lv_scale_set_line_needle_value`) z pierwszego wpisu `indicators`
+    zawierającego `line`.
+  - **Ograniczenie v1**: obsługiwana jest tylko PIERWSZA skala z `scales:` i co najwyżej
+    JEDNA wskazówka — kolejne skale (np. osobny pierścień minut/godzin na zegarze),
+    kolorowe sekcje (`tick_style`) i wskazówki typu `img`/`arc` są na razie pomijane po
+    cichu, tak jak reszta nieobsługiwanych właściwości w tym pliku. Wystarcza to do
+    podglądu typowej pojedynczej tarczy (manometr, zegar z jedną wskazówką), ale nie do
+    pełnego odwzorowania złożonego zegara z wieloma pierścieniami na raz.
+  - Zweryfikowane: `scripts/extract-scenes.ts` na załączonym pliku urządzenia (meter_page,
+    clock_page) + izolowany test WASM (bez Reacta) renderujący obie sceny i porównujący
+    liczbę nie-białych pikseli (dowód, że coś faktycznie się rysuje, nie pusty ekran) +
+    zrzut do PNG potwierdzający wizualnie poprawną tarczę ze wskazówką i podziałkami +
+    dwukrotny powtórzony render tej samej sceny (regresja do zawieszenia z 1.6.2) — bez
+    błędów, każdy render < 10ms.
+
 ## 1.6.2
 - **Naprawa: cała przeglądarka wisła po przełączeniu strony w „Prawdziwym LVGL"
   (nie tylko po pierwszym otwarciu, ale od DRUGIEGO renderu).** Sterownik

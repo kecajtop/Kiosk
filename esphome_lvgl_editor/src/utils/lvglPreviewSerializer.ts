@@ -34,12 +34,16 @@ function toHex(color: unknown): string | undefined {
   return parseHexColor(str as string | number);
 }
 
-/** Te same typy, które wasm/interpreter.c potrafi zbudować. Reszta (meter, spinner, image,
+/** Te same typy, które wasm/interpreter.c potrafi zbudować. Reszta (spinner, image,
  * msgbox, spinbox, buttonmatrix w pełni...) jest na razie pomijana. */
 const SUPPORTED_TYPES = new Set([
   'obj', 'label', 'button', 'bar', 'slider', 'switch', 'checkbox', 'arc', 'led',
-  'dropdown', 'roller', 'textarea', 'line',
+  'dropdown', 'roller', 'textarea', 'line', 'meter',
 ]);
+
+function numOr(v: unknown, fallback: number): number {
+  return typeof v === 'number' && !Number.isNaN(v) ? v : fallback;
+}
 
 export interface PreviewNode {
   type: string;
@@ -55,6 +59,14 @@ export interface PreviewNode {
   checked?: boolean;
   options?: string;
   children?: PreviewNode[];
+  scale?: {
+    range_from: number; range_to: number; angle_range: number; rotation: number;
+    ticks?: {
+      count: number; width: number; length: number; color: string;
+      major?: { stride: number; width: number; length: number; color: string };
+    };
+    needle?: { width: number; color: string; r_mod: number; value: number };
+  };
 }
 
 export interface PreviewScene {
@@ -156,6 +168,54 @@ function serializeWidget(widget: Widget, config: LVGLConfig, fontRegistry: Retur
     case 'textarea':
       node.text = w.text || '';
       break;
+    case 'meter': {
+      // interpreter.c buduje to przez lv_scale (LVGL v9 nie ma już lv_meter - ESPHome samo
+      // tłumaczy `meter:` na lv_scale pod spodem). v1: tylko PIERWSZA skala z `scales` (jedna
+      // "tarcza") i co najwyżej JEDNA wskazówka (pierwszy wpis `indicators` z kluczem `line`)
+      // - w realnym LVGL tyle wystarcza do podglądu typowego zegara/manometru. Dodatkowe
+      // skale, sekcje kolorowe (`tick_style`) i inne typy wskaźników (`arc`, `img`) są na
+      // razie pomijane po cichu, tak jak reszta nieobsługiwanych właściwości w tym pliku.
+      const scales = Array.isArray(w.scales) ? w.scales : [];
+      const scale = scales[0];
+      if (scale) {
+        const s: any = {
+          range_from: numOr(scale.range_from, 0),
+          range_to: numOr(scale.range_to, 100),
+          angle_range: numOr(scale.angle_range, 270),
+          rotation: numOr(scale.rotation, 135),
+        };
+        const ticks = scale.ticks;
+        if (ticks) {
+          s.ticks = {
+            count: numOr(ticks.count, 11),
+            width: numOr(ticks.width, 1),
+            length: numOr(ticks.length, 8),
+            color: toHex(ticks.color) ?? '#000000',
+          };
+          if (ticks.major) {
+            s.ticks.major = {
+              stride: numOr(ticks.major.stride, 5),
+              width: numOr(ticks.major.width, 2),
+              length: numOr(ticks.major.length, 12),
+              color: toHex(ticks.major.color) ?? '#000000',
+            };
+          }
+        }
+        const indicators = Array.isArray(scale.indicators) ? scale.indicators : [];
+        const needleEntry = indicators.find((i: any) => i && i.line);
+        if (needleEntry) {
+          const line = needleEntry.line;
+          s.needle = {
+            width: numOr(line.width, 3),
+            color: toHex(line.color) ?? '#ff0000',
+            r_mod: numOr(line.r_mod, -10),
+            value: numOr(line.value, (s.range_from + s.range_to) / 2),
+          };
+        }
+        node.scale = s;
+      }
+      break;
+    }
   }
 
   if (widget.type === 'obj' && Array.isArray(w.widgets)) {

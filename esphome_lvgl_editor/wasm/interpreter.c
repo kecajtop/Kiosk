@@ -226,6 +226,50 @@ static void build_node(lv_obj_t *parent, cJSON *node) {
         obj = lv_buttonmatrix_create(parent);
     } else if (!strcmp(type, "line")) {
         obj = lv_line_create(parent);
+    } else if (!strcmp(type, "meter")) {
+        /* LVGL v9 usunęło lv_meter - ESPHome samo tłumaczy `meter:` na lv_scale pod spodem,
+           więc tutaj robimy to samo. Tylko jedna "skala" (patrz lvglPreviewSerializer.ts,
+           node.scale) ustawiona jako okrągła tarcza ze wskazówką-linią. */
+        obj = lv_scale_create(parent);
+        lv_scale_set_mode(obj, LV_SCALE_MODE_ROUND_INNER);
+        cJSON *scale = cJSON_GetObjectItemCaseSensitive(node, "scale");
+        if (scale) {
+            int range_from = (int)jnum(scale, "range_from", 0);
+            int range_to = (int)jnum(scale, "range_to", 100);
+            lv_scale_set_range(obj, range_from, range_to);
+            lv_scale_set_angle_range(obj, (uint32_t)jnum(scale, "angle_range", 270));
+            lv_scale_set_rotation(obj, (int)jnum(scale, "rotation", 135));
+
+            cJSON *ticks = cJSON_GetObjectItemCaseSensitive(scale, "ticks");
+            if (ticks) {
+                int count = (int)jnum(ticks, "count", 11);
+                lv_scale_set_total_tick_count(obj, (uint32_t)(count > 0 ? count : 11));
+                lv_obj_set_style_line_width(obj, (int)jnum(ticks, "width", 1), LV_PART_ITEMS);
+                lv_obj_set_style_length(obj, (int)jnum(ticks, "length", 8), LV_PART_ITEMS);
+                lv_obj_set_style_line_color(obj, hex_to_color(jstr(ticks, "color", "#000000")), LV_PART_ITEMS);
+
+                cJSON *major = cJSON_GetObjectItemCaseSensitive(ticks, "major");
+                if (major) {
+                    int stride = (int)jnum(major, "stride", 5);
+                    lv_scale_set_major_tick_every(obj, (uint32_t)(stride > 0 ? stride : 5));
+                    lv_obj_set_style_line_width(obj, (int)jnum(major, "width", 2), LV_PART_INDICATOR);
+                    lv_obj_set_style_length(obj, (int)jnum(major, "length", 12), LV_PART_INDICATOR);
+                    lv_obj_set_style_line_color(obj, hex_to_color(jstr(major, "color", "#000000")), LV_PART_INDICATOR);
+                    lv_scale_set_label_show(obj, true);
+                }
+            }
+
+            cJSON *needle = cJSON_GetObjectItemCaseSensitive(scale, "needle");
+            if (needle) {
+                lv_obj_t *needle_line = lv_line_create(obj);
+                lv_obj_set_style_line_width(needle_line, (int)jnum(needle, "width", 3), 0);
+                lv_obj_set_style_line_color(needle_line, hex_to_color(jstr(needle, "color", "#ff0000")), 0);
+                lv_obj_set_style_line_rounded(needle_line, true, 0);
+                int r_mod = (int)jnum(needle, "r_mod", -10);
+                int value = (int)jnum(needle, "value", (range_from + range_to) / 2);
+                lv_scale_set_line_needle_value(obj, needle_line, r_mod, value);
+            }
+        }
     } else {
         obj = lv_obj_create(parent);
     }

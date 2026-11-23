@@ -37,9 +37,20 @@ w edytorze to tylko nowy JSON + jedno wywołanie render().
 
 Obsługiwane typy widgetów: `obj, label, button, bar, slider, switch, checkbox, arc,
 led, dropdown, roller, textarea`. Częściowo: `line` (tylko jako pusty obiekt, bez
-punktów). Jeszcze NIE obsługiwane: `meter, spinner, image, msgbox`, pełne
-`buttonmatrix` (siatka przycisków) i `spinbox` (tylko tworzony, bez formatowania
-cyfr/kroku).
+punktów), `meter` (patrz niżej - tylko jedna skala i jedna wskazówka). Jeszcze NIE
+obsługiwane: `spinner, image, msgbox`, pełne `buttonmatrix` (siatka przycisków) i
+`spinbox` (tylko tworzony, bez formatowania cyfr/kroku).
+
+### `meter`
+
+LVGL v9 usunęło stary widget `lv_meter` na rzecz `lv_scale` (ESPHome samo tłumaczy
+`meter:` na `lv_scale` pod spodem) - `interpreter.c` robi to samo. Obsługiwane: zakres/
+kąt/obrót, zwykłe i duże podziałki (ze stylem), jedna wskazówka-linia. **Tylko
+PIERWSZA skala z `scales:`** i **co najwyżej JEDNA wskazówka** (pierwszy wpis
+`indicators` z kluczem `line`) - kolejne skale (np. osobny pierścień minut/godzin na
+zegarze), kolorowe sekcje (`tick_style`) i wskazówki typu `img`/`arc` są pomijane po
+cichu. Wystarcza do podglądu typowej pojedynczej tarczy (manometr, zegar z jedną
+wskazówką), nie do pełnego zegara z wieloma pierścieniami naraz.
 
 Widgety/właściwości spoza tej listy są pomijane po cichu przez serializer (patrz
 `SUPPORTED_TYPES` w `lvglPreviewSerializer.ts`) - prawdziwy podgląd wtedy pokaże
