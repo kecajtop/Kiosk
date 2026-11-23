@@ -1,3 +1,16 @@
+## 1.2.2
+- **Scalanie wszystkich gotowych filmów jednego timelapse'u w jeden plik.** Przycisk „Scal
+  wszystkie w jeden plik” w panelu „Filmy” (widoczny, gdy są co najmniej 2 pliki) - łączy je
+  w kolejności nagrania (ffmpeg, demuxer `concat`). Najpierw próbuje szybkiego, bezstratnego
+  łączenia bez ponownego kodowania („stream copy” - wszystkie pliki normalnie mają ten sam
+  kodek, bo powstały z tego samego renderu), a jeśli się nie uda (np. pliki z różnych wersji
+  dodatku/konfiguracji), automatycznie próbuje ponownie z pełnym przekodowaniem. Działa w
+  tle (może potrwać dla dużej liczby/dużych plików) i dzieli tę samą kolejkę/priorytet CPU
+  (`nice`) co zwykłe renderowanie, żeby nie odpalić dwóch ciężkich ffmpegów naraz. Scalony
+  plik pojawia się na liście jak zwykły render (też kopiowany do Media Browser HA, jeśli
+  `/media` jest zamapowane) - oryginalne, niescalanie pliki zostają bez zmian (możesz je
+  potem ręcznie usunąć, jeśli nie są już potrzebne).
+
 ## 1.2.1
 - **Widoczne ostrzeżenie, gdy okno przechwytywania „dzień”/„noc” nie działa.** Zgłoszenie:
   mimo wybranego okna „dzień (wschód→zachód)”, timelapse łapał klatki także w nocy. Przyczyna:

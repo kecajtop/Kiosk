@@ -286,8 +286,12 @@ function render(){
 }
 async function loadVideos(id, e){
   const list=await api('api/timelapses/'+id+'/videos');
+  const mergeRow = list.length>=2
+    ? `<div class="vrow"><button data-act="mergeall">Scal wszystkie w jeden plik (${list.length})</button>
+       <span class="hint">Łączy wszystkie poniższe filmy w jeden, w kolejności nagrania. Działa w tle.</span></div>`
+    : '';
   if(!list.length){ e.vids.innerHTML='<p class="hint">Brak gotowych filmów jeszcze.</p>'; return; }
-  e.vids.innerHTML=list.map(v=>
+  e.vids.innerHTML=mergeRow+list.map(v=>
     `<div class="vrow"><a href="api/videos/${id}/${v.name}" target="_blank">${v.name}</a>
      <span class="hint">${fmtBytes(v.size)} · ${new Date(v.mtime*1000).toLocaleString()}</span>
      <button class="danger" data-del="${v.name}" style="padding:2px 7px;font-size:12px">Usuń</button></div>`
@@ -297,6 +301,24 @@ async function loadVideos(id, e){
     await api('api/videos/'+id+'/'+b.dataset.del, 'DELETE');
     loadVideos(id, e);
   });
+  const mb=e.vids.querySelector('[data-act=mergeall]');
+  if(mb) mb.onclick=async()=>{
+    if(!confirm('Scalić wszystkie '+list.length+' plików w jeden? Dla dużej liczby/dużych '+
+                'plików może to potrwać dłużej - działa w tle, nowy plik pojawi się na '+
+                'liście automatycznie po zakończeniu.')) return;
+    mb.disabled=true; mb.textContent='Scalanie w tle…';
+    try{ await api('api/timelapses/'+id+'/merge-all','POST'); }
+    catch(err){ alert(err.message); mb.disabled=false; return; }
+    // Odpytuj status co 3 s, aż flaga "rendering" (ta sama co przy zwykłym renderze) zgaśnie,
+    // wtedy odśwież listę filmów - scalony plik pojawi się razem z resztą.
+    const poll=setInterval(async()=>{
+      try{
+        const st=await api('api/status');
+        if(!st[id] || !st[id].rendering){ clearInterval(poll); loadVideos(id, e); }
+      }catch(err){}
+    }, 3000);
+    setTimeout(()=>clearInterval(poll), 10*60*1000);   // bezpiecznik - nie pytaj wiecznie
+  };
 }
 async function act(a,id,e){
   if(a==='del'){ if(!confirm('Usunąć timelapse (razem z klatkami i filmami)?')) return; await api('api/timelapses/'+id,'DELETE'); return load(); }

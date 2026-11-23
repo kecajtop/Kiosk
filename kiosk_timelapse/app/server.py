@@ -46,7 +46,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.2.1"          # = version w config.yaml
+ADDON_VERSION = "1.2.2"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
@@ -521,6 +521,81 @@ def do_render(tid, reason):
         rt_set(tid, rendering=False)
 
 
+# ------------------------------------------------------------ scalanie wszystkich filmów
+
+def merge_all_videos(tid):
+    """Łączy wszystkie gotowe pliki mp4 danego timelapse'u w jeden, w kolejności nagrania
+    (nazwy plików zaczynają się od znacznika czasu renderu, więc zwykłe sortowanie
+    alfabetyczne = chronologiczne). Dzieli ten sam `RENDER_LOCK`/`nice` co zwykłe
+    renderowanie (patrz do_render) - to też ciężka operacja ffmpeg, więc nie powinna
+    odpalać się równolegle z renderem ani zabierać CPU innym procesom."""
+    c = load()
+    t = next((x for x in c["timelapses"] if x["id"] == tid), None)
+    if not t:
+        return
+    vdir = os.path.join(videos_root(), tid)
+    try:
+        names = sorted(n for n in os.listdir(vdir)
+                        if n.endswith(".mp4") and ".tmp" not in n)
+    except OSError:
+        names = []
+    if len(names) < 2:
+        rt_log(tid, "scalanie: za mało gotowych filmów do scalenia (potrzeba co najmniej 2)")
+        return
+
+    rt_set(tid, rendering=True)
+    rt_log(tid, "scalanie %d plików wideo w jeden…" % len(names))
+    listfile = os.path.join(RUN_DIR, "merge-%s.txt" % tid)
+    out_name = "%s_scalone_%s.mp4" % (tid, time.strftime("%Y%m%d-%H%M%S"))
+    out_path = os.path.join(vdir, out_name)
+    tmp_path = out_path + ".tmp.mp4"
+    try:
+        with open(listfile, "w") as f:
+            for n in names:
+                p = os.path.join(vdir, n).replace("'", "'\\''")
+                f.write("file '%s'\n" % p)
+
+        def run_concat(extra_args):
+            cmd = _niced(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", listfile] +
+                         extra_args + ["-movflags", "+faststart", tmp_path])
+            with RENDER_LOCK:
+                return subprocess.run(cmd, capture_output=True,
+                                       timeout=max(120, len(names) * 30))
+
+        # Najpierw szybkie, bezstratne scalenie ("stream copy" - bez ponownego kodowania) -
+        # działa, bo wszystkie pliki pochodzą z tego samego timelapse'u i normalnie mają ten
+        # sam kodek/parametry (ffmpeg zawsze koduje je tak samo, patrz do_render). Jeśli się
+        # nie uda (np. pliki nagrane różnymi wersjami dodatku z inną konfiguracją kodeka),
+        # spróbuj ponownie z pełnym przekodowaniem - wolniejsze, ale odporne na drobne
+        # różnice między plikami.
+        p = run_concat(["-c", "copy"])
+        if p.returncode != 0 or not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
+            rt_log(tid, "scalanie: szybkie łączenie się nie powiodło (%s) — próbuję z "
+                        "ponownym kodowaniem (wolniej)" % (_ffmpeg_err(p.stderr) or "?"))
+            p = run_concat(["-vsync", "vfr", "-pix_fmt", "yuv420p",
+                            "-c:v", "libx264", "-preset", "veryfast"])
+            if p.returncode != 0 or not os.path.exists(tmp_path) or os.path.getsize(tmp_path) == 0:
+                raise RuntimeError(_ffmpeg_err(p.stderr) or "ffmpeg nie utworzył pliku wyjściowego")
+        os.replace(tmp_path, out_path)
+        rt_log(tid, "scalanie zakończone: %s (%d plików)" % (out_name, len(names)))
+
+        try:
+            mdir = os.path.join(MEDIA_DIR, tid)
+            os.makedirs(mdir, exist_ok=True)
+            shutil.copy2(out_path, os.path.join(mdir, out_name))
+        except Exception:
+            pass
+    except Exception as e:
+        rt_log(tid, "scalanie nie powiodło się: %r" % e)
+    finally:
+        for p2 in (listfile, tmp_path):
+            try:
+                os.remove(p2)
+            except OSError:
+                pass
+        rt_set(tid, rendering=False)
+
+
 # ------------------------------------------------------------------- czyszczenie (retencja)
 
 def _cleanup_frames(tid, days):
@@ -937,6 +1012,17 @@ class Handler(BaseHTTPRequestHandler):
             if not any(x["id"] == mr.group(1) for x in load()["timelapses"]):
                 raise KeyError(mr.group(1))
             enqueue_render(mr.group(1), "ręcznie")
+            return self.send(200, {"ok": True})
+
+        mm = re.match(r"^/api/timelapses/([a-z0-9]{1,20})/merge-all$", path)
+        if self.command == "POST" and mm:
+            tid = mm.group(1)
+            if not any(x["id"] == tid for x in load()["timelapses"]):
+                raise KeyError(tid)
+            # W osobnym wątku (jak render) - może potrwać dłużej dla dużej liczby/dużych
+            # plików, więc odpowiedź HTTP wraca od razu, a panel odpytuje "rendering" w
+            # /api/status (ten sam wzorzec/pole co zwykły render).
+            threading.Thread(target=merge_all_videos, args=(tid,), daemon=True).start()
             return self.send(200, {"ok": True})
 
         mc = re.match(r"^/api/timelapses/([a-z0-9]{1,20})/capture-now$", path)
