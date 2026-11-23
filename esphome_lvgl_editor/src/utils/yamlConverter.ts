@@ -777,6 +777,17 @@ const parseWidget = (w: any, index: number, styles: StyleDefinition[] = [], font
               if (widgetData.options) baseWidget.options = widgetData.options;
               if (widgetData.selected !== undefined) baseWidget.selected = widgetData.selected;
               break;
+            case 'textarea':
+              // Brakowało tego case'a w ogóle - `text`/`placeholder`/... z YAML nigdy nie
+              // trafiały do modelu widgetu (ani do CSS-owego podglądu, ani do "Prawdziwego
+              // LVGL" - oba czytają ten sam zparsowany widget), więc textarea zawsze
+              // wyglądała na pustą w edytorze, niezależnie od tego, co było w pliku.
+              if (widgetData.text !== undefined) baseWidget.text = widgetData.text;
+              if (widgetData.placeholder !== undefined) baseWidget.placeholder = widgetData.placeholder;
+              if (widgetData.one_line !== undefined) baseWidget.one_line = widgetData.one_line;
+              if (widgetData.password_mode !== undefined) baseWidget.password_mode = widgetData.password_mode;
+              if (widgetData.max_length !== undefined) baseWidget.max_length = widgetData.max_length;
+              break;
             case 'led':
               if (widgetData.color != null) baseWidget.color = parseColor(widgetData.color);
               if (widgetData.brightness !== undefined) baseWidget.brightness = widgetData.brightness;

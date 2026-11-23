@@ -158,9 +158,17 @@ function serializeWidget(widget: Widget, config: LVGLConfig, fontRegistry: Retur
       node.max = w.max_value ?? 100;
       node.value = w.value ?? 0;
       break;
-    case 'led':
+    case 'led': {
       node.checked = w.checked !== false;
+      // LED koloru NIE trzyma w `bg_color`/`styles` jak inne widgety - ma własne,
+      // dedykowane pole `color` (patrz LedWidget w types/widgets.ts, tak samo czyta je
+      // CSS-owy podgląd w CanvasWidget.tsx) - bez tego interpreter.c zawsze dostawał
+      // pusty node.bg_color i renderował diodę w domyślnym czerwonym kolorze,
+      // niezależnie od tego, co użytkownik faktycznie skonfigurował.
+      const ledColor = toHex(w.color);
+      if (ledColor) node.bg_color = ledColor;
       break;
+    }
     case 'dropdown':
     case 'roller':
       node.options = Array.isArray(w.options) ? w.options.join('\n') : (w.options || 'Opcja 1\nOpcja 2');

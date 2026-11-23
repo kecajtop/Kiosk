@@ -1,3 +1,23 @@
+## 1.6.4
+- **Naprawa: pole `color` widgetu `led` było ignorowane w „Prawdziwym LVGL" — dioda
+  zawsze wychodziła czerwona, niezależnie od skonfigurowanego koloru.** Znalezione przy
+  przeglądowym teście wszystkich widgetów: `led` trzyma kolor we własnym polu `color`
+  (nie w `bg_color`/`styles` jak reszta widgetów — tak samo czyta je zwykły CSS-owy
+  podgląd w `CanvasWidget.tsx`), a `lvglPreviewSerializer.ts` tego pola w ogóle nie
+  przepisywało do sceny dla WASM, więc `interpreter.c` zawsze dostawał pusty `bg_color`
+  i używał swojej wartości domyślnej (czerwony).
+- **Naprawa: pole `text` (i `placeholder`/`one_line`/`password_mode`/`max_length`)
+  widgetu `textarea` nigdy nie było wczytywane z YAML — pole tekstowe zawsze wychodziło
+  puste, w OBU podglądach (CSS i „Prawdziwy LVGL" czytają ten sam zparsowany model
+  widgetu).** W `yamlConverter.ts` brakowało całego `case 'textarea':` w switchu, który
+  wczytuje właściwości widgetu z pliku YAML do wewnętrznego modelu edytora — dla
+  pozostałych widgetów (label, switch, bar/slider/arc, dropdown/roller, led, spinbox,
+  msgbox, buttonmatrix, meter) taki `case` istniał, dla textarea go zabrakło.
+  - Oba błędy znalezione i zweryfikowane tym samym sposobem: jedna testowa strona z
+    wszystkimi obsługiwanymi widgetami naraz (`scripts/extract-scenes.ts` + izolowany
+    render WASM + zrzut do PNG), porównanie oczekiwanych wartości z tym, co faktycznie
+    wyszło w scenie JSON i na obrazku.
+
 ## 1.6.3
 - **„Prawdziwy LVGL" obsługuje teraz widget `meter`** (zegary, manometry, obrotomierze —
   wszystko z tarczą i wskazówką). Zgłoszenie: podgląd dalej „nic nie pokazywał" mimo
