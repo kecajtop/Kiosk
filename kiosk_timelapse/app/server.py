@@ -46,7 +46,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.2.0"          # = version w config.yaml
+ADDON_VERSION = "1.2.1"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
@@ -162,13 +162,32 @@ def to_window(v, default):
 # Supervisor sam wstrzykuje do kontenera dodatku, gdy w config.yaml jest `homeassistant_api:
 # true` (bez potrzeby żadnego tokenu wklejanego przez użytkownika, w odróżnieniu od dodatku
 # Dashboard RTSP, który loguje się do samego frontendu, nie tylko odpytuje stan).
-SUN = {"above_horizon": None, "updated": 0}
+SUN = {"above_horizon": None, "updated": 0, "error": None}
 SUN_LOCK = threading.Lock()
 
 
 def sun_above_horizon():
     with SUN_LOCK:
         return SUN["above_horizon"]
+
+
+def sun_status():
+    """Diagnostyka dla panelu — żeby okno 'dzień'/'noc' nigdy nie zawodziło *po cichu*.
+    Bez tego, przy np. braku SUPERVISOR_TOKEN po aktualizacji bez restartu dodatku, timelapse
+    po prostu łapał klatki całą dobę (fallback „nie blokuj przechwytywania” w
+    in_capture_window), a jedyny trop był w logu dodatku, którego nikt nie czyta rutynowo —
+    więc wyglądało to jak zwykły bug ('wybrałem dzień, a łapie też w nocy'), nie jak
+    utrata łączności z API HA."""
+    if not SUPERVISOR_TOKEN:
+        return {"ok": False, "above_horizon": None,
+                "error": "Brak dostępu do API Home Assistant (SUPERVISOR_TOKEN) — dodatek "
+                         "prawdopodobnie zaktualizowany bez restartu. Zrestartuj dodatek w "
+                         "Ustawienia → Dodatki → Timelapse RTSP."}
+    with SUN_LOCK:
+        above, updated, error = SUN["above_horizon"], SUN["updated"], SUN["error"]
+    if error and (above is None or time.time() - updated > 300):
+        return {"ok": False, "above_horizon": above, "error": error}
+    return {"ok": above is not None, "above_horizon": above, "error": None}
 
 
 def sun_loop():
@@ -187,7 +206,10 @@ def sun_loop():
             with SUN_LOCK:
                 SUN["above_horizon"] = (data.get("state") == "above_horizon")
                 SUN["updated"] = time.time()
+                SUN["error"] = None
         except Exception as e:
+            with SUN_LOCK:
+                SUN["error"] = "nie udało się odczytać stanu słońca (sun.sun) z Home Assistant: %r" % e
             log("nie udało się odczytać stanu słońca (sun.sun) z Home Assistant: %r" % e)
         time.sleep(120)   # stan słońca zmienia się rzadko - co 2 minuty w zupełności wystarczy
 
@@ -843,6 +865,10 @@ class Handler(BaseHTTPRequestHandler):
                     fc = 0
                 out[tid] = {"status": r["status"], "last_capture_ts": r["last_capture_ts"],
                             "frame_count": fc, "rendering": r["rendering"]}
+            # Klucz "_sun" nie koliduje z żadnym prawdziwym id timelapse'u (id-eki to
+            # secrets.token_hex(4), same znaki hex, bez podkreślnika) - bezpieczny sposób na
+            # dorzucenie diagnostyki okna dzień/noc bez zmiany kształtu reszty odpowiedzi.
+            out["_sun"] = sun_status()
             return self.send(200, out)
 
         if self.command == "POST" and path == "/api/timelapses":

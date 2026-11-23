@@ -41,6 +41,7 @@ label{color:var(--muted);font-size:12.5px;display:block;margin-bottom:3px}
 <h1>🎞️ Timelapse RTSP — poklatkowe filmy z kamer RTSP</h1>
 
 <div id="diskwarn" class="card" style="display:none;border-color:var(--badline);background:var(--badbg);color:var(--bad)"></div>
+<div id="sunwarn" class="card" style="display:none;border-color:var(--badline);background:var(--badbg);color:var(--bad)"></div>
 
 <div class="card">
 <h2>Ustawienia — miejsce składowania</h2>
@@ -155,7 +156,24 @@ const rows=new Map();
 async function load(){
   CFG=await api('api/config');
   try{ STATUS=await api('api/status'); }catch(e){ STATUS={}; }
+  renderSunWarn();
   render();
+}
+function renderSunWarn(){
+  const w=$('sunwarn');
+  const sun=STATUS._sun;
+  // Pokazuj ostrzeżenie tylko gdy ktoś faktycznie korzysta z okna dzień/noc — jeśli
+  // wszystkie timelapse'y są na "zawsze"/"zakres godzin", odczyt słońca i tak nie jest
+  // używany, więc jego ewentualny błąd nikogo nie powinien niepokoić.
+  const usesSun=(CFG.timelapses||[]).some(t=>t.capture_window==='day'||t.capture_window==='night');
+  if(usesSun && sun && !sun.ok){
+    w.style.display='';
+    w.textContent='⚠ Okno przechwytywania „dzień”/„noc” NIE DZIAŁA: '+sun.error+
+      ' Dopóki to się nie naprawi, przechwytywanie dla timelapse\'ów z tym oknem działa jak '+
+      '„zawsze” (łapie klatki także w nocy).';
+  }else{
+    w.style.display='none';
+  }
 }
 function buildRow(t){
   const l=$('list');

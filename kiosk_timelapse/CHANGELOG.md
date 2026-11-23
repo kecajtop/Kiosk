@@ -1,3 +1,15 @@
+## 1.2.1
+- **Widoczne ostrzeżenie, gdy okno przechwytywania „dzień”/„noc” nie działa.** Zgłoszenie:
+  mimo wybranego okna „dzień (wschód→zachód)”, timelapse łapał klatki także w nocy. Przyczyna:
+  gdy dodatek nie może odczytać stanu słońca z Home Assistant (np. brak SUPERVISOR_TOKEN po
+  aktualizacji bez restartu dodatku, albo chwilowy brak łączności z API HA), `in_capture_window`
+  *celowo* nie blokuje przechwytywania („lepiej złapać klatkę na wszelki wypadek niż przegapić
+  całe okno") — ale dotąd jedyny ślad tego zostawał w logu dodatku, którego nikt rutynowo nie
+  czyta, więc wyglądało to jak zwykły bug, a nie utrata łączności z API HA. Teraz: jeśli
+  jakikolwiek timelapse ma ustawione okno „dzień”/„noc”, a odczyt stanu słońca nie działa, w
+  panelu pojawia się czerwony baner z dokładnym powodem (ten sam wzór co istniejące
+  ostrzeżenie o małej ilości miejsca na dysku).
+
 ## 1.2.0
 - **Wykrywanie osób przez zewnętrzny serwer [DOODS](https://github.com/snowzach/doods).**
   Dodatek nie uruchamia ani nie konfiguruje samego DOODS — tylko wysyła do niego już

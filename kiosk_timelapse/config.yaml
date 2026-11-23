@@ -1,5 +1,5 @@
 name: Timelapse RTSP
-version: "1.2.0"
+version: "1.2.1"
 slug: timelapse_rtsp
 description: Nagrywa poklatkowe filmy (timelapse) z dowolnych strumieni RTSP (kamer, NVR) według harmonogramu
 arch:
