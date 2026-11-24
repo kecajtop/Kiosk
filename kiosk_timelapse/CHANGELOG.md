@@ -1,3 +1,19 @@
+## 1.2.7
+- **Znaleziona i naprawiona prawdziwa przyczyna braku SUPERVISOR_TOKEN** (diagnostyka z
+  1.2.6 to ujawniła): obraz bazowy `ghcr.io/home-assistant/*-base` ma `ENTRYPOINT /init`
+  (s6-overlay v3). Ten dodatek nie ma własnej usługi pod `/etc/services.d/` (tylko goły
+  `CMD`), a s6-overlay bez `S6_KEEP_ENV=1` **resetuje środowisko procesu do minimum**
+  zanim odpali nasz `CMD` - log z 1.2.6 pokazał dokładnie to: w procesie Pythona widoczne
+  były tylko `PATH`, `PWD`, `OLDPWD`, `SHLVL`, żadnych zmiennych wstrzykniętych przez
+  Dockera/Supervisora, w tym `SUPERVISOR_TOKEN`. Supervisor przez cały czas poprawnie
+  ustawiał `hassio_api`/`homeassistant_api` i wstrzykiwał token do kontenera - ginął on
+  w drodze przez `/init`, zanim dotarł do aplikacji.
+  - Naprawa: `ENV S6_KEEP_ENV=1` w `Dockerfile` - każe s6-overlay zachować pełne
+    środowisko kontenera zamiast je czyścić.
+  - Jak poprzednie zmiany dotykające budowania obrazu, to wymaga **pełnej reinstalacji**
+    dodatku (nie samego restartu) - diagnostyczny log z 1.2.6 zostaje, żeby można było
+    jednym spojrzeniem w log po reinstalacji potwierdzić, że token już jest obecny.
+
 ## 1.2.6
 - **Diagnostyka SUPERVISOR_TOKEN**: `ha addons info` potwierdził, że Supervisor ma
   poprawnie zapisane `hassio_api: true` i `homeassistant_api: true` dla tego dodatku -

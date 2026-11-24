@@ -47,7 +47,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.2.6"          # = version w config.yaml
+ADDON_VERSION = "1.2.7"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
