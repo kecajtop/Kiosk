@@ -1,3 +1,21 @@
+## 1.2.4
+- **Konfiguracja (lista timelapse'ów i ustawień) przeżywa teraz odinstalowanie/reinstalację
+  dodatku.** Zgłoszenie: po radzie "odinstaluj i zainstaluj ponownie" (żeby wymusić
+  nadanie uprawnienia `homeassistant_api`) użytkownik słusznie zauważył, że `/data` to
+  prywatny folder TEGO dodatku, który Supervisor kasuje razem z nim przy odinstalowaniu -
+  czyli cała konfiguracja (adresy RTSP, godziny, retencja) przepadłaby.
+  - Każdy zapis `config.json` jest teraz (best-effort, nie blokuje normalnego zapisu)
+    kopiowany też do `/share/timelapse_rtsp/config_backup.json` - `/share` jest
+    współdzielone między wszystkimi dodatkami i samym Home Assistantem, więc przeżywa
+    odinstalowanie/reinstalację tego konkretnego dodatku.
+  - Jeśli po starcie `/data/config.json` wygląda na pusty/świeży (brak timelapse'ów), a
+    kopia w `/share` istnieje i ma jakieś timelapse'y, dodatek **automatycznie** ją
+    przywraca - bez żadnej akcji ze strony użytkownika. W logu pojawia się wtedy jasna
+    informacja, że tak się stało (ile timelapse'ów przywrócono).
+  - Zweryfikowane lokalnie: zapis configu z jednym timelapse'em, ręczne skasowanie całego
+    folderu `/data` (symulacja tego, co robi Supervisor przy odinstalowaniu), kolejne
+    wczytanie configu - timelapse wraca automatycznie, `/data/config.json` odtworzony.
+
 ## 1.2.3
 - **Naprawa: log dodatku zaśmiecony pełnym tracebackiem `ConnectionResetError`/
   `BrokenPipeError` za każdym razem, gdy przeglądarka albo proxy Ingress HA po prostu

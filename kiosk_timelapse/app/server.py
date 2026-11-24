@@ -47,7 +47,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.2.3"          # = version w config.yaml
+ADDON_VERSION = "1.2.4"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
@@ -68,11 +68,32 @@ def log(msg):
 CONF_LOCK = threading.Lock()
 
 
+CONF_BACKUP = "/share/timelapse_rtsp/config_backup.json"
+
+
 def load():
     try:
         c = json.load(open(CONF))
     except Exception:
         c = {}
+    if not c.get("timelapses"):
+        # /data jest prywatnym folderem TEGO dodatku - przy odinstalowaniu (nie tylko
+        # aktualizacji/restarcie) Supervisor go kasuje razem z dodatkiem. /share jest
+        # współdzielone między wszystkimi dodatkami i samym HA, więc przeżywa
+        # odinstalowanie/reinstalację - stąd trzymana tam kopia zapasowa (patrz save()).
+        # Jeśli /data wygląda na puste (świeża instalacja po reinstalacji), a kopia w
+        # /share istnieje, przywróć z niej automatycznie - bez tego trzeba by ręcznie
+        # wpisywać wszystkie timelapse'y od nowa po każdym odinstalowaniu dodatku.
+        try:
+            backup = json.load(open(CONF_BACKUP))
+            if backup.get("timelapses"):
+                c = backup
+                log("przywrócono config.json z kopii zapasowej w /share (prawdopodobnie "
+                    "świeży /data po odinstalowaniu/reinstalacji dodatku) - %d timelapse'ów" %
+                    len(backup["timelapses"]))
+                save(c)
+        except Exception:
+            pass
     c.setdefault("timelapses", [])
     c.setdefault("storage_dir", DATA)
     # Globalne ustawienia DOODS (jeden współdzielony serwer wykrywania dla wszystkich
@@ -92,6 +113,17 @@ def save(c):
     with open(tmp, "w") as f:
         json.dump(c, f, ensure_ascii=False, indent=1)
     os.replace(tmp, CONF)
+    # Kopia zapasowa w /share (patrz CONF_BACKUP) - best-effort, nigdy nie blokuje
+    # normalnego zapisu. Jeśli /share z jakiegoś powodu nie jest dostępne, po prostu nie
+    # będzie backupu - nie przerywamy przez to zwykłego działania dodatku.
+    try:
+        os.makedirs(os.path.dirname(CONF_BACKUP), exist_ok=True)
+        tmp_b = CONF_BACKUP + (".tmp.%d" % threading.get_ident())
+        with open(tmp_b, "w") as f:
+            json.dump(c, f, ensure_ascii=False, indent=1)
+        os.replace(tmp_b, CONF_BACKUP)
+    except Exception:
+        pass
 
 
 def storage_dir():
