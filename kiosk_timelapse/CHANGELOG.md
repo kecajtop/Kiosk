@@ -1,3 +1,9 @@
+## 1.2.8
+- Usunięty diagnostyczny log `DIAG env: ...` dodany w 1.2.6 - potwierdzone (po pełnej
+  reinstalacji z 1.2.7), że `SUPERVISOR_TOKEN` teraz prawidłowo dociera do aplikacji,
+  więc logowanie nazw zmiennych środowiskowych przy każdym starcie nie jest już
+  potrzebne. Poza tym bez zmian funkcjonalnych.
+
 ## 1.2.7
 - **Znaleziona i naprawiona prawdziwa przyczyna braku SUPERVISOR_TOKEN** (diagnostyka z
   1.2.6 to ujawniła): obraz bazowy `ghcr.io/home-assistant/*-base` ma `ENTRYPOINT /init`

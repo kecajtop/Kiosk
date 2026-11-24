@@ -47,7 +47,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.2.7"          # = version w config.yaml
+ADDON_VERSION = "1.2.8"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
@@ -1292,26 +1292,7 @@ def _bind_server(retries=10, delay=2):
             time.sleep(delay)
 
 
-def _debug_log_env_once():
-    """Diagnostyka SUPERVISOR_TOKEN: Supervisor (wg `ha addons info`) ma ustawione
-    hassio_api: true i homeassistant_api: true dla tego dodatku, a mimo to token nie
-    dociera do procesu wg SUPERVISOR_TOKEN/HASSIO_TOKEN. Zamiast zgadywać dalej, logujemy
-    przy starcie same NAZWY zmiennych środowiskowych (nigdy wartości - mogłyby tam być
-    sekrety) plus jawnie długość tokenu (0 = brak/pusty), żeby zobaczyć co naprawdę widzi
-    proces Pythona w kontenerze."""
-    try:
-        names = sorted(os.environ.keys())
-        log("DIAG env: zmienne widoczne w procesie (%d): %s" % (len(names), ", ".join(names)))
-        tok = os.environ.get("SUPERVISOR_TOKEN")
-        tok2 = os.environ.get("HASSIO_TOKEN")
-        log("DIAG env: SUPERVISOR_TOKEN obecny=%s dlugosc=%d | HASSIO_TOKEN obecny=%s dlugosc=%d"
-            % (tok is not None, len(tok or ""), tok2 is not None, len(tok2 or "")))
-    except Exception as e:
-        log("DIAG env: blad podczas logowania (%s)" % e)
-
-
 def main():
-    _debug_log_env_once()
     os.makedirs(DATA, exist_ok=True)
     os.makedirs(frames_root(), exist_ok=True)
     os.makedirs(videos_root(), exist_ok=True)
