@@ -24,6 +24,7 @@ import secrets
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -46,7 +47,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.2.2"          # = version w config.yaml
+ADDON_VERSION = "1.2.3"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
@@ -1119,6 +1120,21 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_DELETE = do_HEAD = route
 
 
+class _QuietHTTPServer(ThreadingHTTPServer):
+    """Zwykły ThreadingHTTPServer z jedną różnicą: nie zaśmieca logu (stderr) pełnym
+    tracebackiem za każdym razem, gdy klient (przeglądarka albo proxy Ingress HA) po prostu
+    zamknie połączenie w trakcie żądania - ConnectionResetError/BrokenPipeError to normalne,
+    nieszkodliwe zdarzenie (np. ktoś zamknął kartę albo odświeżył panel w złym momencie), nie
+    błąd dodatku. Każdy inny wyjątek nadal dostaje pełny traceback jak domyślnie - to by
+    ukryło prawdziwy błąd."""
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def _bind_server(retries=10, delay=2):
     """host_network: true (dodane w 1.1.0, żeby dodatek widział kamery w sieci LAN - patrz
     komentarz w config.yaml) oznacza, że port jest teraz prawdziwym gniazdem na hoście, nie
@@ -1128,7 +1144,7 @@ def _bind_server(retries=10, delay=2):
     całym dodatkiem nie startującym, zamiast po prostu chwilę zaczekać."""
     for attempt in range(1, retries + 1):
         try:
-            srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+            srv = _QuietHTTPServer(("0.0.0.0", PORT), Handler)
             srv.daemon_threads = True
             return srv
         except OSError as e:

@@ -1,3 +1,12 @@
+## 1.2.3
+- **Naprawa: log dodatku zaśmiecony pełnym tracebackiem `ConnectionResetError`/
+  `BrokenPipeError` za każdym razem, gdy przeglądarka albo proxy Ingress HA po prostu
+  zamkną połączenie w trakcie żądania** (np. ktoś zamknął kartę albo odświeżył panel w
+  złym momencie) - zupełnie normalne zdarzenie, nie błąd dodatku, ale wyglądało groźnie
+  w logu i utrudniało znalezienie prawdziwych problemów (np. przy diagnozowaniu okna
+  dzień/noc z 1.2.1). Te dwa konkretne wyjątki są teraz wyciszane; każdy inny błąd
+  nadal dostaje pełny traceback jak wcześniej.
+
 ## 1.2.2
 - **Scalanie wszystkich gotowych filmów jednego timelapse'u w jeden plik.** Przycisk „Scal
   wszystkie w jeden plik” w panelu „Filmy” (widoczny, gdy są co najmniej 2 pliki) - łączy je
