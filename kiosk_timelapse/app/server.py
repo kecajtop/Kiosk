@@ -47,7 +47,7 @@ ID_RE = re.compile(r"^[a-z0-9]{1,20}$")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 FILE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,120}$")
 CAPTURE_WINDOWS = ("always", "time_range", "night", "day")
-ADDON_VERSION = "1.2.4"          # = version w config.yaml
+ADDON_VERSION = "1.2.5"          # = version w config.yaml
 
 NICE_BIN = shutil.which("nice")
 SUPERVISOR_TOKEN = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HASSIO_TOKEN")
@@ -131,6 +131,95 @@ def storage_dir():
     może je zmienić w Ustawieniach (np. na /media/... albo /share/..., jeśli dysk dodatku
     jest mały). config.json zawsze zostaje w DATA (patrz komentarz przy stałej DATA)."""
     return load().get("storage_dir") or DATA
+
+
+# --------------------------------------------------------- kamery z Home Assistanta (config:ro)
+
+CONFIG_DIR = "/config"   # wymaga `config:ro` w map: (config.yaml) - tylko odczyt
+
+_CAM_PLATFORM_RE = re.compile(r"^(\s*)-\s*platform:\s*(generic|ffmpeg)\s*$")
+_CAM_FIELD_RE = re.compile(r"^(\s*)(name|stream_source|input):\s*(.+?)\s*$")
+
+
+def _scan_yaml_file_for_cameras(path, out):
+    """Bardzo proste, LINIOWE skanowanie bloków `- platform: generic/ffmpeg` w pliku YAML
+    Home Assistanta - celowo NIE pełny parser YAML (HA używa własnych tagów !include/
+    !secret/!include_dir_merge_named itp., których zwykły `yaml.safe_load` by nie obsłużył
+    bez dodatkowej pracy, a ten dodatek nie ma nawet biblioteki PyYAML w obrazie). Wystarcza
+    to do rozpoznania typowych wpisów kamer - coś bardziej nietypowego po prostu nie trafi
+    na listę (trzeba wtedy wpisać ręcznie, jak dotąd)."""
+    with open(path, "r", errors="ignore") as f:
+        lines = f.readlines()
+    i, n = 0, len(lines)
+    while i < n:
+        m = _CAM_PLATFORM_RE.match(lines[i])
+        if not m:
+            i += 1
+            continue
+        base_indent = len(m.group(1))
+        entry = {}
+        j = i + 1
+        while j < n:
+            line = lines[j]
+            if not line.strip():
+                j += 1
+                continue
+            indent = len(line) - len(line.lstrip(" "))
+            if indent <= base_indent:
+                break
+            fm = _CAM_FIELD_RE.match(line)
+            if fm:
+                entry[fm.group(2)] = fm.group(3).strip().strip("\"'")
+            j += 1
+        name = entry.get("name") or ("kamera z %s" % os.path.basename(path))
+        url = entry.get("stream_source") or entry.get("input")
+        if url and url.startswith("!secret"):
+            # Nigdy nie czytamy secrets.yaml - taka kamera trafia na listę BEZ adresu,
+            # do ręcznego uzupełnienia, zamiast cichego podstawiania czegokolwiek.
+            url = None
+        if name not in out or (url and not out[name].get("rtsp_url")):
+            out[name] = {"name": name, "rtsp_url": url, "source": "yaml"}
+        i = j
+
+
+def discover_ha_cameras():
+    """Best-effort lista kamer z configu Home Assistanta (nazwa + adres RTSP, jeśli jawny),
+    do wyboru przy dodawaniu timelapse'u zamiast ręcznego wpisywania wszystkiego. Dwa
+    źródła, oba tylko do odczytu:
+      1. /config/.storage/core.config_entries (JSON) - kamery dodane przez UI, integracja
+         "generic"/"ffmpeg" trzyma tam stream_source jawnym tekstem.
+      2. Zwykłe pliki *.yaml pod /config - kamery skonfigurowane ręcznie w YAML (patrz
+         _scan_yaml_file_for_cameras - celowo uproszczone skanowanie, nie pełny parser).
+    Nigdy nie otwiera secrets.yaml. Jeśli /config nie jest zamapowane (starsza wersja
+    dodatku przed dodaniem config:ro) albo coś pójdzie nie tak - po prostu pusta lista,
+    bez przerywania działania reszty panelu."""
+    out = {}
+    try:
+        entries = json.load(open(os.path.join(CONFIG_DIR, ".storage", "core.config_entries")))
+        for e in entries.get("data", {}).get("entries", []):
+            if e.get("domain") not in ("generic", "ffmpeg"):
+                continue
+            opts = e.get("options") or e.get("data") or {}
+            url = opts.get("stream_source") or opts.get("input")
+            name = e.get("title") or "Kamera"
+            if url:
+                out[name] = {"name": name, "rtsp_url": url, "source": "ui"}
+    except Exception:
+        pass
+    try:
+        for root, _dirs, files in os.walk(CONFIG_DIR):
+            if os.sep + ".storage" in root + os.sep:
+                continue
+            for fn in files:
+                if fn == "secrets.yaml" or not fn.endswith((".yaml", ".yml")):
+                    continue
+                try:
+                    _scan_yaml_file_for_cameras(os.path.join(root, fn), out)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return sorted(out.values(), key=lambda x: x["name"].lower())
 
 
 def frames_root():
@@ -926,6 +1015,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.command == "GET" and path == "/api/config":
             return self.send(200, {"timelapses": load()["timelapses"], "version": ADDON_VERSION})
+
+        if self.command == "GET" and path == "/api/ha-cameras":
+            return self.send(200, {"cameras": discover_ha_cameras()})
 
         if self.command == "GET" and path == "/api/settings":
             c = load()

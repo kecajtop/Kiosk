@@ -1,5 +1,5 @@
 name: Timelapse RTSP
-version: "1.2.4"
+version: "1.2.5"
 slug: timelapse_rtsp
 description: Nagrywa poklatkowe filmy (timelapse) z dowolnych strumieni RTSP (kamer, NVR) według harmonogramu
 arch:
@@ -31,5 +31,11 @@ host_network: true
 map:
   - media:rw
   - share:rw
+  # Tylko do odczytu - do wyciągania listy kamer (nazwa + adres RTSP, jeśli jawny) z
+  # configu Home Assistanta przy dodawaniu timelapse'u (patrz discover_ha_cameras() w
+  # server.py). Dodatek nigdy niczego tu nie zapisuje i nigdy nie otwiera secrets.yaml.
+  # UWAGA: tak jak homeassistant_api, to uprawnienie zadziała dopiero po pełnej
+  # reinstalacji dodatku, nie po samym restarcie/aktualizacji.
+  - config:ro
 options: {}
 schema: {}

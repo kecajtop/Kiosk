@@ -1,3 +1,25 @@
+## 1.2.5
+- **Lista kamer z Home Assistanta przy dodawaniu timelapse'u**, zamiast ręcznego
+  wpisywania wszystkiego od zera. Nowy rozwijany wybór „Kamera z Home Assistanta" w
+  formularzu „Nowy timelapse" - wybranie kamery wypełnia pola Nazwa/Adres RTSP, jeśli
+  Home Assistant trzyma go jawnym tekstem w swoim configu.
+  - Wymaga nowego uprawnienia **tylko do odczytu** do folderu `/config` Home Assistanta
+    (`map: config:ro`) - tak jak przy `homeassistant_api`, zadziała dopiero po **pełnej
+    reinstalacji** dodatku, nie po samym restarcie.
+  - Dwa źródła: kamery dodane przez UI (`/config/.storage/core.config_entries`,
+    integracje `generic`/`ffmpeg`) i kamery skonfigurowane ręcznie w plikach YAML pod
+    `/config` (proste skanowanie bloków `- platform: generic/ffmpeg`, celowo NIE pełny
+    parser YAML - dodatek nie ma biblioteki do tego w obrazie, a HA i tak używa
+    własnych tagów `!include`/`!secret`).
+  - **Nigdy nie otwiera `secrets.yaml`.** Kamera, której adres w configu jest podany
+    przez `!secret` (albo pochodzi z integracji bez jawnego adresu, np. ONVIF), trafia
+    na listę z samą nazwą - adres trzeba i tak wpisać ręcznie, zamiast cokolwiek po
+    cichu podstawiać.
+  - Zweryfikowane lokalnie na przykładowym `/config` (core.config_entries + YAML z
+    kamerą jawną, kamerą przez `!secret` i kamerą ONVIF) - w wyniku: jawne adresy
+    wyciągnięte poprawnie, `!secret` poprawnie pominięty (bez czytania `secrets.yaml`),
+    ONVIF poprawnie pominięta.
+
 ## 1.2.4
 - **Konfiguracja (lista timelapse'ów i ustawień) przeżywa teraz odinstalowanie/reinstalację
   dodatku.** Zgłoszenie: po radzie "odinstaluj i zainstaluj ponownie" (żeby wymusić

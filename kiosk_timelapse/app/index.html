@@ -85,6 +85,9 @@ odpowiedzi z DOODS nigdy nie przerywa zwykłego przechwytywania.</p>
 <div class="card">
 <h2>Nowy timelapse</h2>
 <div class="row">
+  <div class="field"><label>Kamera z Home Assistanta</label>
+    <select id="nhacam" style="width:200px"><option value="">— wpisz ręcznie poniżej —</option></select>
+  </div>
   <div class="field"><label>Nazwa</label><input id="nname" placeholder="np. Ogród" style="width:150px"></div>
   <div class="field"><label>Adres RTSP</label><input id="nurl" placeholder="rtsp://user:pass@host:554/stream1" style="width:270px"></div>
   <div class="field"><label>Transport</label><select id="ntransport"><option value="tcp">TCP</option><option value="udp">UDP</option></select></div>
@@ -153,11 +156,34 @@ function fmtTs(ts){
 let CFG={timelapses:[]}, STATUS={};
 const editingIds=new Set();
 const rows=new Map();
+let HA_CAMERAS_LOADED=false;
 async function load(){
   CFG=await api('api/config');
   try{ STATUS=await api('api/status'); }catch(e){ STATUS={}; }
   renderSunWarn();
   render();
+  if(!HA_CAMERAS_LOADED){ HA_CAMERAS_LOADED=true; loadHaCameras(); }
+}
+async function loadHaCameras(){
+  const sel=$('nhacam');
+  let cams=[];
+  try{ cams=(await api('api/ha-cameras')).cameras||[]; }catch(e){ return; }
+  if(!cams.length) return;   // np. dodatek jeszcze bez config:ro albo brak rozpoznanych kamer
+  for(const c of cams){
+    const opt=document.createElement('option');
+    opt.value=c.name;
+    opt.textContent=c.rtsp_url ? c.name : c.name+' (adres trzeba wpisać ręcznie)';
+    opt.dataset.url=c.rtsp_url||'';
+    sel.appendChild(opt);
+  }
+  sel.onchange=()=>{
+    const opt=sel.selectedOptions[0];
+    if(!opt || !opt.value) return;
+    $('nname').value=opt.value;
+    if(opt.dataset.url) $('nurl').value=opt.dataset.url;
+    else alert('Ta kamera nie ma jawnego adresu RTSP w configu Home Assistanta (np. użyto '+
+               '!secret albo to kamera ONVIF) - wpisz adres ręcznie w polu „Adres RTSP”.');
+  };
 }
 function renderSunWarn(){
   const w=$('sunwarn');
