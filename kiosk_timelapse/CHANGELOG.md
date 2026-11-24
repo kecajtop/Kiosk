@@ -1,3 +1,17 @@
+## 1.2.6
+- **Diagnostyka SUPERVISOR_TOKEN**: `ha addons info` potwierdził, że Supervisor ma
+  poprawnie zapisane `hassio_api: true` i `homeassistant_api: true` dla tego dodatku -
+  więc token *powinien* trafiać do kontenera, a mimo to po stronie aplikacji wciąż
+  wychodzi jako brak. Zamiast zgadywać dalej, dodatek przy każdym starcie loguje teraz
+  (tylko raz, na starcie `main()`):
+  - pełną listę **nazw** zmiennych środowiskowych widocznych w procesie (nigdy wartości
+    - mogłyby tam trafić sekrety),
+  - jawnie, czy `SUPERVISOR_TOKEN` i `HASSIO_TOKEN` w ogóle istnieją w środowisku i jaka
+    jest długość ich wartości (0 = brak albo pusty string - to rozróżnienie wcześniej
+    było niewidoczne w logu).
+  Pozwoli to zobaczyć, czy token faktycznie nie jest wstrzykiwany przez Supervisora do
+  tego konkretnego procesu, czy np. trafia pod inną nazwą zmiennej, czy jest pusty.
+
 ## 1.2.5
 - **Lista kamer z Home Assistanta przy dodawaniu timelapse'u**, zamiast ręcznego
   wpisywania wszystkiego od zera. Nowy rozwijany wybór „Kamera z Home Assistanta" w
